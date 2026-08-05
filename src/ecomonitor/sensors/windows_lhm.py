@@ -3,29 +3,14 @@ from dataclasses import dataclass
 
 from ecomonitor.sensors.base import PowerReading, SensorUnavailableError, now_utc
 
-#Backend Windows via il pacchetto HardwareMonitor (PyPI, BSD-3), che include
-#gia' LibreHardwareMonitorLib.dll e il wrapper pythonnet: basta l'extra
-#"windows" del progetto, nessuna DLL da vendorizzare a mano. Richiede .NET 4.7+
+#Backend Windows via il pacchetto HardwareMonitor (PyPI), che include gia' la
+#DLL di LibreHardwareMonitor e il wrapper pythonnet. Richiede .NET 4.7+.
+#Verificato su macchine reali: senza admin Update() non solleva eccezioni, il
+#sensore Package esiste ma resta a 0.0 (fallimento silenzioso), i sensori GPU
+#funzionano lo stesso, e dram_w resta None su qualunque CPU client
 
-#Vincoli verificati su macchine reali:
-#- senza privilegi admin Computer.Update() NON solleva eccezioni: il sensore
-#  "CPU Package" esiste ma il suo Value resta 0.0. Il fallimento e' silenzioso,
-#  quindi 0.0 sul Package viene trattato come "non valido" e non come CPU a
-#  consumo nullo (fisicamente implausibile)
-#- i sensori GPU (NVAPI/ADL, non MSR) funzionano anche senza admin
-#- su un desktop AMD con APU + Radeon dedicata compaiono due hardware GpuAmd
-#  distinti, entrambi con potenza valida: e' il motivo per cui integrata e
-#  dedicata sono due campi separati in PowerReading. Piu' GPU dedicate vengono
-#  invece sommate in un unico gpu_dedicated_w
-#- dram_w resta None su qualunque CPU client: su AMD non esiste un dominio
-#  DRAM, su Intel il sensore "CPU Memory" esiste (MSR 0x619) ma riporta
-#  costantemente 0.0 perche' il RAPL DRAM PowerPlane e' popolato solo sulle
-#  piattaforme server. La via PMIC/SPD5 usata da HWiNFO non e' implementata da
-#  LibreHardwareMonitor per nessun vendor (verificato nel suo codice sorgente)
-
-#Pattern di nome osservati per le GPU integrate (case-insensitive): la libreria
-#non distingue integrata e dedicata a livello di HardwareType, un'APU AMD e una
-#Radeon dedicata sono entrambe GpuAmd. Euristica, non una regola garantita
+#Nomi osservati per le GPU integrate: la libreria non distingue integrata e
+#dedicata, un'APU AMD e una Radeon sono entrambe GpuAmd. Euristica
 _INTEGRATED_GPU_NAME_HINTS = (
     "radeon(tm) graphics",  # APU AMD generiche
     "vega graphics",

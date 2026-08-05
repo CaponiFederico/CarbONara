@@ -4,14 +4,10 @@ import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-#GPU dedicata su Linux: RAPL non la copre in nessun caso (non e' un dominio del
-#die della CPU), va letta per altra via.
-#- NVIDIA: il binario nvidia-smi, installato insieme al driver proprietario,
-#  invece di legare il progetto a pynvml
-#- AMD: il driver amdgpu espone la potenza istantanea via hwmon
-#- Intel Arc/Flex: i driver i915/xe espongono via hwmon solo un contatore di
-#  energia cumulativa, quindi serve un delta fra due letture (vedi
-#  IntelArcGpuReader). Non verificato su hardware Arc reale
+#GPU dedicata su Linux: RAPL non la copre (non e' un dominio del die della
+#CPU). NVIDIA via nvidia-smi, AMD via hwmon (potenza istantanea), Intel
+#Arc/Flex via hwmon ma con un contatore di energia, quindi serve un delta
+#(IntelArcGpuReader). Non verificato su hardware Arc reale
 
 DRM_ROOT = Path("/sys/class/drm")
 _CARD_DIR_PATTERN = re.compile(r"^card\d+$")

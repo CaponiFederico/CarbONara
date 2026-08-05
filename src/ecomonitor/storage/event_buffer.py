@@ -1,15 +1,12 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-#Campionare e persistere sono due decisioni diverse: la misura ha bisogno di
-#5 s, la persistenza no. Una riga ogni 5 s sono ~17 000 righe e ~2,4 MB al
-#giorno, e una transazione SQLite ogni 5 s in un'app che vuole ridurre i
-#consumi. Qui i tick vengono sommati in memoria e ne esce una riga al minuto.
-#
-#La finestra viene chiusa subito, prima della scadenza, quando cambia il regime
-#di attribuzione o dopo un intervallo scartato: nessuna riga mescola due regimi
-#o attraversa una finestra non osservata, cosi' resta rieseguibile dal
-#ricalcolo offline. charge_events non passa da qui: e' l'audit trail del pool
+#Campionare e persistere sono decisioni diverse: la misura ha bisogno di 5 s,
+#la persistenza no (a 5 s sono ~17 000 righe e ~2,4 MB al giorno). Qui i tick
+#vengono sommati e ne esce una riga al minuto.
+#La finestra viene chiusa prima della scadenza quando cambia il regime di
+#attribuzione o dopo un intervallo scartato, cosi' nessuna riga mescola due
+#regimi e resta rieseguibile dal ricalcolo offline
 
 DEFAULT_FLUSH_INTERVAL_SECONDS = 60.0
 

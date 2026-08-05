@@ -9,12 +9,9 @@ from ecomonitor.sensors.linux_gpu import (
     read_nvidia_gpu_power_w,
 )
 
-#RAPL espone contatori di energia cumulativa in microjoule, non potenza
-#istantanea: i Watt sono il delta di energia fra due letture diviso il tempo
-#trascorso. Il wraparound del contatore e' gestito qui, cosi' il chiamante
-#riceve sempre potenza gia' pulita.
-#Servono permessi di lettura su /sys/class/powercap/intel-rapl*/energy_uj
-#(root, o una regola udev dedicata)
+#RAPL espone contatori di energia in microjoule, non potenza istantanea: i Watt
+#sono il delta fra due letture diviso il tempo. Il wraparound e' gestito qui.
+#Servono permessi su /sys/class/powercap/intel-rapl*/energy_uj (root o udev)
 
 RAPL_ROOT = Path("/sys/class/powercap")
 

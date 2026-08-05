@@ -6,15 +6,11 @@ from pathlib import Path
 from PySide6.QtCore import QObject
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
-#Due processi sulla stessa macchina scrivono sullo stesso database e leggono la
-#stessa batteria: ogni punto percentuale finisce due volte in charge_events, e
-#battery_pool_state viene sovrascritto a turno. Da quando la finestra si
-#nasconde nella tray e' lo scenario tipico di chi crede di aver chiuso l'app e
-#la riavvia.
-#Un QLocalServer col nome derivato dal percorso dei dati: due istanze sono in
-#conflitto esattamente quando condividerebbero un database. Rispetto a un file
-#di lock la seconda istanza puo' anche parlare con la prima, che riporta in
-#primo piano la finestra
+#Due processi sullo stesso database contano ogni ricarica due volte e si
+#sovrascrivono lo stato del pool a turno: scenario tipico di chi crede di aver
+#chiuso l'app (tray) e la riavvia. Il QLocalServer ha il nome derivato dal
+#percorso dei dati, cosi' il conflitto e' esattamente quello che conta, e la
+#seconda istanza puo' chiedere alla prima di mostrarsi
 
 logger = logging.getLogger(__name__)
 

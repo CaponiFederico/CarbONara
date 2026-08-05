@@ -1,21 +1,14 @@
 from ecomonitor.sensors.base import PowerReading
 
-#Integra letture istantanee di potenza (W) in energia cumulata (Wh) con il
-#metodo dei trapezi fra letture successive. Il wraparound dei contatori RAPL e'
-#gia' gestito nel backend: qui arrivano sempre Watt puliti.
-#
-#Gli intervalli troppo lunghi vengono scartati, non integrati: fra due tick
-#separati da una sospensione (coperchio chiuso, ibernazione) la macchina non ha
-#consumato nulla, ma il trapezio conterebbe comunque (W_prima + W_dopo)/2 * dt.
-#Con un dt di 8 ore e ~20 W ai due estremi sono ~160 Wh inventati, contro i
-#~0.03 Wh di un tick da 5 s: dominerebbe l'intero totale giornaliero.
-#La finestra viene esclusa dal conteggio, non stimata, e skipped_gap_seconds la
-#rende osservabile invece che silenziosa
+#Integra la potenza (W) in energia (Wh) col metodo dei trapezi. Gli intervalli
+#troppo lunghi vengono scartati, non integrati: dopo una sospensione la
+#macchina non ha consumato nulla, ma il trapezio conterebbe ~160 Wh inventati
+#su 8 ore. La finestra e' esclusa dal conteggio, non stimata, e
+#skipped_gap_seconds la rende osservabile
 
 DEFAULT_MAX_INTERVAL_SECONDS = 60.0
-#12x il polling di default (5 s): un tick in ritardo per un driver lento resta
-#integrato, una sospensione no. L'Orchestrator lo ricalcola dall'intervallo
-#configurato invece di usare questa costante
+#12x il polling di default: un tick in ritardo resta integrato, una
+#sospensione no. L'Orchestrator lo ricalcola dall'intervallo configurato
 
 
 class EnergyIntegrator:
