@@ -1,18 +1,8 @@
 # Elenca tutto l'hardware e tutti i sensori (non solo quelli di tipo Power)
-# che LibreHardwareMonitor vede su questa macchina. Serve a distinguere
-# "sensore assente o non supportato dall'hardware" da "bug nel nostro filtro"
-# (vedi ecomonitor/sensors/windows_lhm.py).
+# che LibreHardwareMonitor vede su questa macchina
 #
-# Da eseguire in un terminale da amministratore, con pip install -e ".[windows]":
+# Da eseguire in un terminale da amministratore con pip install -e ".[windows]":
 #     python scripts/diagnose_windows_sensors.py
-#
-# Punti emersi provando su macchine reali:
-# - su portatili con grafica ibrida la GPU dedicata spesso non ha un sensore di
-#   potenza attivo quando e' spenta per risparmio energetico: non e' un bug
-# - l'hardware "Memory" espone quasi sempre solo utilizzo e clock, mai potenza:
-#   per questo di CPU e Motherboard stampiamo TUTTI i sensori, per cercare un
-#   eventuale rail pertinente con un nome diverso da "DRAM"
-
 from HardwareMonitor.Hardware import HardwareType
 from HardwareMonitor.Util import OpenComputer
 

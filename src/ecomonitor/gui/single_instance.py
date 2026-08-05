@@ -6,11 +6,9 @@ from pathlib import Path
 from PySide6.QtCore import QObject
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
-#Due processi sullo stesso database contano ogni ricarica due volte e si
-#sovrascrivono lo stato del pool a turno: scenario tipico di chi crede di aver
-#chiuso l'app (tray) e la riavvia. Il QLocalServer ha il nome derivato dal
-#percorso dei dati, cosi' il conflitto e' esattamente quello che conta, e la
-#seconda istanza puo' chiedere alla prima di mostrarsi
+#Due processi non devono coesistere sullo stesso database: il secondo avvio deve chiudersi subito, e
+#il primo deve riportare in primo piano la finestra esistente. Il secondo avvio comunica con il primo 
+#via socket locale, e il primo risponde mostrando la finestra 
 
 logger = logging.getLogger(__name__)
 

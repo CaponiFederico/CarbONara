@@ -7,11 +7,7 @@ from datetime import datetime
 from ecomonitor.orchestrator import Orchestrator
 from ecomonitor.storage.db import LocalDatabase
 
-#Prototipo da riga di comando: stessa catena di misura della GUI, senza Qt.
-#Serve per provare l'applicazione su una macchina senza ambiente grafico e per
-#raccogliere tracce durante i test. Ctrl+C chiude passando da flush(), cosi'
-#non si perde la riga ancora nel buffer ne' lo stato del pool
-
+#Prototipo da riga di comando
 logger = logging.getLogger(__name__)
 
 

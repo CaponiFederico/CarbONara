@@ -13,15 +13,9 @@ from PySide6.QtWidgets import (
 
 from ecomonitor.config import API_KEY_ENV_VAR, ConfigManager
 
-#La configurazione vive in un JSON nella cartella utente, fuori dal repo:
-#corretto, ma finche' era l'unico modo di configurare l'app senza chiave
-#l'applicazione funzionava in silenzio sulle medie statiche, cioe' sembrava
-#funzionare. Le modifiche hanno effetto al riavvio: zona, chiave e modello
-#vengono letti alla costruzione dell'Orchestrator, e cambiarli a caldo
-#lascerebbe il pool in uno stato misto
+#La configurazione vive in un JSON nella cartella utente
 
 _ATTRIBUTION_MODELS = ("weighted_average", "fifo")
-
 
 class SettingsDialog(QDialog):
     def __init__(self, parent: QWidget | None = None, manager: ConfigManager | None = None) -> None:

@@ -21,7 +21,7 @@ from ecomonitor.sensors.factory import get_backend
 from ecomonitor.storage.db import LocalDatabase
 from ecomonitor.storage.event_buffer import EnergyEventBuffer, EnergySample
 
-#Un tick, in ordine: legge i sensori e integra W -> Wh, legge lo stato di
+#legge i sensori e integra W -> Wh, legge lo stato di
 #alimentazione, campiona l'intensita' di rete con la sua cadenza, delega
 #l'attribuzione, persiste consumo, eventuale ricarica e stato del pool.
 #Non importa Qt: la catena sensore -> carbonio -> database resta verificabile
@@ -37,35 +37,6 @@ TOTALS_RESYNC_INTERVAL_SECONDS = 300.0
 GAP_THRESHOLD_SECONDS = 600.0
 #oltre questa distanza fra due tick l'app era chiusa o sospesa: un salto della
 #percentuale e' una ricarica avvenuta al buio, da ricostruire
-
-
-class CompensatedSum:
-    #Somma con compensazione dell'errore (Kahan-Babuska-Neumaier). Serve perche'
-    #il totale del giorno e' accumulato in memoria e non da SUM() di SQLite:
-    #una somma ingenua diverge nell'ultimo bit dopo un centinaio di righe, e
-    #l'errore cresce col numero di addendi
-
-    __slots__ = ("_compensation", "_sum")
-
-    def __init__(self, value: float = 0.0) -> None:
-        self._sum = value
-        self._compensation = 0.0
-
-    def add(self, value: float) -> None:
-        total = self._sum + value
-        if abs(self._sum) >= abs(value):
-            self._compensation += (self._sum - total) + value
-        else:
-            self._compensation += (value - total) + self._sum
-        self._sum = total
-
-    def reset(self, value: float = 0.0) -> None:
-        self._sum = value
-        self._compensation = 0.0
-
-    @property
-    def value(self) -> float:
-        return self._sum + self._compensation
 
 
 class Orchestrator:
@@ -139,8 +110,8 @@ class Orchestrator:
         self._last_pool_save_at: datetime | None = None
         self._current_intensity = self.grid_service.get_current_intensity()
 
-        self._written_wh = CompensatedSum()
-        self._written_gco2 = CompensatedSum()
+        self._written_wh = 0.0
+        self._written_gco2 = 0.0
         self._last_totals_resync_at: datetime | None = None
         self._resync_totals(self._active_day)
 
@@ -156,20 +127,16 @@ class Orchestrator:
         self.db.record_buffered_energy_row(row)
         if row.timestamp.astimezone().date() != self._active_day:
             return
-        self._written_wh.add(row.wh)
-        self._written_gco2.add(row.gco2)
+        self._written_wh += row.wh
+        self._written_gco2 += row.gco2
 
     def _resync_totals(self, day: date) -> None:
         totals = self.db.sum_energy_events_for_day(day)
-        self._written_wh.reset(totals["energy_wh"])
-        self._written_gco2.reset(totals["operational_gco2"])
+        self._written_wh = totals["energy_wh"]
+        self._written_gco2 = totals["operational_gco2"]
 
     def _daily_totals(self, now: datetime) -> tuple[float, float]:
-        #Quanto e' gia' su database piu' quanto e' ancora nel buffer. La query
-        #per tick costava ~3,5 ms di CPU, la voce piu' cara del ciclo di
-        #polling in un'app che misura consumi: il totale e' esattamente cio'
-        #che l'app ha appena scritto. Il risincrono periodico rende
-        #l'ottimizzazione verificabile invece che creduta
+        #Quanto e' gia' su database piu' quanto e' ancora nel buffer
         if (
             self._last_totals_resync_at is None
             or (now - self._last_totals_resync_at).total_seconds()
@@ -179,8 +146,8 @@ class Orchestrator:
             self._last_totals_resync_at = now
 
         return (
-            self._written_wh.value + self.buffer.pending_wh,
-            self._written_gco2.value + self.buffer.pending_gco2,
+            self._written_wh + self.buffer.pending_wh,
+            self._written_gco2 + self.buffer.pending_gco2,
         )
 
     def _accumulate_active_time(self, now: datetime) -> None:

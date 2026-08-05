@@ -105,10 +105,7 @@ class _EnergyCounterState:
 
 
 class IntelArcGpuReader:
-    #A differenza delle funzioni NVIDIA/AMD ha stato persistente: energy1_input
-    #e' un contatore di energia in microjoule, non una potenza istantanea, e
-    #serve un delta fra due letture (stesso principio di RAPL). Va istanziato
-    #una volta e interrogato ripetutamente, non ricreato a ogni lettura
+    #come rapl
 
     def __init__(self) -> None:
         self._energy_paths: list[Path] = []

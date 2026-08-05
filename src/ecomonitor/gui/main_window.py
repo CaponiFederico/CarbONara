@@ -5,13 +5,8 @@ from PySide6.QtWidgets import QGridLayout, QLabel, QMainWindow, QPushButton, QWi
 
 from ecomonitor.gui.settings_dialog import SettingsDialog
 
-#Le etichette dicono esplicitamente che il numero riguarda l'uso attivo di
-#CPU/GPU, mai il "consumo totale del dispositivo": schermo, ventole e disco non
-#sono misurati. Intensita' applicata e provenienza del dato di rete sono due
-#assi separati: senza chiave API la finestra diceva "in tempo reale" mostrando
-#una media annuale.
-#La finestra e' passiva: riceve valori gia' pronti dall'orchestratore e non fa
-#I/O per conto proprio sul thread della GUI
+#definisce le etichette per le fonti di dati, perche' alcune sono
+#tecniche e poco leggibili. La label viene mostrata nella finestra principale
 
 _SOURCE_LABELS = {
     "grid_live": "consumo da rete elettrica",

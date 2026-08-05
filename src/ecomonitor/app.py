@@ -13,7 +13,8 @@ from ecomonitor.gui.tray import create_tray_icon
 from ecomonitor.orchestrator import Orchestrator
 
 #Qui resta solo cio' che riguarda la GUI: la logica di misura e attribuzione
-#sta in ecomonitor.orchestrator, che non importa Qt.
+#sta in ecomonitor.orchestrator
+
 #Orchestrator.tick() fa I/O bloccante verso i driver (decine o centinaia di ms):
 #sul thread della GUI l'event loop di Qt si blocca e la finestra smette di
 #rispondere. PollingWorker lo sposta su un QThread dedicato e comunica solo via
@@ -41,14 +42,13 @@ class PollingWorker(QObject):
                 self.tick_ready.emit(result)
             except Exception:
                 #un tick fallito (sensore momentaneamente non leggibile, disco
-                #occupato) non deve terminare il thread e lasciare la finestra
-                #congelata su valori vecchi senza dirlo
+                #occupato) non deve bloccare l'app: si riprova al prossimo intervallo
                 logger.exception("Tick fallito, si riprova al prossimo intervallo")
 
             self._interruptible_sleep(self._poll_interval_ms)
 
     def _interruptible_sleep(self, total_ms: int) -> None:
-        #a passi piccoli invece che in un blocco unico, cosi' stop() viene
+        #a passi piccoli cosi' stop() viene
         #notato entro ~100ms: altrimenti alla chiusura il thread resta
         #addormentato oltre il timeout di wait() e Qt aborta
         step_ms = 100
@@ -67,13 +67,9 @@ SIGINT_POLL_MS = 500
 
 
 def _install_sigint_handler(app: QApplication) -> QTimer:
-    #Qt non integra SIGINT col proprio event loop: mentre gira, l'interprete
-    #Python non esegue nulla e l'handler non parte, quindi il KeyboardInterrupt
-    #arriva in un punto arbitrario (visto: a meta' di cleanup(), col thread di
-    #polling non fermato e un abort di Qt). Con SIG_DFL non ci sono crash ma si
-    #salta flush(), perdendo lo stato del pool dall'ultimo salvataggio.
-    #Qui l'handler chiede solo l'uscita ordinata, e un timer che non fa nulla
-    #da' all'interprete l'occasione di eseguirlo
+    #Qt non gestisce SIGINT: senza questo Ctrl+C non chiude l'app, e su Windows
+    #non arriva neanche KeyboardInterrupt. Il timer scatta ogni mezzo secondo
+    #per restituire il controllo all'interprete e far eseguire l'handler
 
     def _request_quit(*_) -> None:
         signal.signal(signal.SIGINT, signal.SIG_DFL)  # un secondo Ctrl+C forza
@@ -92,8 +88,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
     app = QApplication(sys.argv)
-    #va tenuto un riferimento: un QTimer senza parent raccolto dal garbage
-    #collector smette di scattare
+    #un QTimer senza parent raccolto dal garbage collector smette di scattare
     sigint_timer = _install_sigint_handler(app)
     #l'app e' un monitor continuo: chiudere la finestra la nasconde nella tray
     #invece di terminare il processo, altrimenti ogni chiusura farebbe perdere
@@ -122,10 +117,7 @@ def main() -> None:
     tray = create_tray_icon(window, on_quit=app.quit)
 
     def announce_background_mode() -> None:
-        #una volta sola nella vita dell'installazione: e' un gesto quotidiano,
-        #ripeterlo lo trasformerebbe nella notifica che si impara a ignorare.
-        #Senza avviso l'app resta a misurare mentre l'utente crede di averla
-        #chiusa
+        #una volta sola nella vita dell'installazione
         config = orchestrator.config_manager.config
         if config.tray_notice_shown or not tray.supportsMessages():
             return

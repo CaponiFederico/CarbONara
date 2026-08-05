@@ -3,11 +3,7 @@ from collections.abc import Callable
 from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import QMainWindow, QMenu, QSystemTrayIcon
 
-#QSystemTrayIcon nativo, nessuna dipendenza aggiuntiva: Qt copre finestra e
-#tray. Perche' la tray serva a qualcosa servono tre cose insieme:
-#setQuitOnLastWindowClosed(False) in app.py, closeEvent che nasconde in
-#main_window.py, e qui una voce che esce davvero
-
+#QSystemTrayIcon nativo, nessuna dipendenza aggiuntiva
 
 def _placeholder_icon() -> QIcon:
     #icona segnaposto a tinta unita, da sostituire con un asset reale

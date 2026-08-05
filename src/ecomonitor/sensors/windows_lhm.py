@@ -4,10 +4,9 @@ from dataclasses import dataclass
 from ecomonitor.sensors.base import PowerReading, SensorUnavailableError, now_utc
 
 #Backend Windows via il pacchetto HardwareMonitor (PyPI), che include gia' la
-#DLL di LibreHardwareMonitor e il wrapper pythonnet. Richiede .NET 4.7+.
-#Verificato su macchine reali: senza admin Update() non solleva eccezioni, il
-#sensore Package esiste ma resta a 0.0 (fallimento silenzioso), i sensori GPU
-#funzionano lo stesso, e dram_w resta None su qualunque CPU client
+#DLL di LibreHardwareMonitor e il wrapper pythonnet
+#  Richiede .NET 4.7+.
+
 
 #Nomi osservati per le GPU integrate: la libreria non distingue integrata e
 #dedicata, un'APU AMD e una Radeon sono entrambe GpuAmd. Euristica

@@ -8,12 +8,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-#CLI di verifica (python -m ecomonitor.diagnostics <comando>): controlla su una
-#macchina reale cio' che non si puo' provare con oggetti finti, cioe' sensori,
-#rete, batteria e la catena completa fino al database. Gli script in scripts/
-#approfondiscono un singolo sottosistema, qui si guarda l'insieme.
-#Output in ASCII puro: la console di Windows non usa UTF-8 per default e le
-#lettere accentate verrebbero stampate male proprio nei referti di verifica
+#CLI di verifica (python -m ecomonitor.diagnostics <comando>)
 
 OK = "[ OK ]"
 WARN = "[WARN]"
@@ -44,8 +39,10 @@ def _has_elevated_privileges() -> bool | None:
             return bool(ctypes.windll.shell32.IsUserAnAdmin())
         except Exception:
             return None
-    if hasattr(os, "geteuid"):
-        return os.geteuid() == 0
+    #getattr e non os.geteuid diretto: su Windows quella funzione non esiste
+    geteuid = getattr(os, "geteuid", None)
+    if geteuid is not None:
+        return geteuid() == 0
     return None
 
 
@@ -402,7 +399,8 @@ def cmd_battery(args: argparse.Namespace) -> None:
 
     _title(f"Osservazione della batteria per {args.minutes:g} minuti")
 
-    if psutil.sensors_battery() is None:
+    previous = psutil.sensors_battery()
+    if previous is None:
         _line(
             INFO,
             "nessuna batteria: su questo dispositivo il pool non entra mai in gioco "
@@ -416,7 +414,6 @@ def cmd_battery(args: argparse.Namespace) -> None:
     )
 
     deadline = time.monotonic() + args.minutes * 60
-    previous = psutil.sensors_battery()
     charged = discharged = 0.0
     transitions = 0
     print(

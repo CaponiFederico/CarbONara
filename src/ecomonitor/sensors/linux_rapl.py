@@ -32,7 +32,7 @@ class _RaplDomain:
         now = time.monotonic()
         energy = self.read_energy_uj()
 
-        if self.last_energy_uj is None:
+        if self.last_energy_uj is None or self.last_timestamp is None:
             self.last_energy_uj, self.last_timestamp = energy, now
             return None
 
@@ -67,10 +67,7 @@ def _discover_domains() -> dict[str, _RaplDomain]:
 
 class LinuxRaplBackend:
     def __init__(self) -> None:
-        #_discover_domains() trova i file anche senza root (i "name" sono
-        #leggibili da tutti), ma il warm-up legge energy_uj, di norma
-        #riservato a root: senza questo except il PermissionError grezzo
-        #arriverebbe al factory, che sa gestire solo SensorUnavailableError
+        #_discover_domains() trova i file anche senza root 
         try:
             self._domains = _discover_domains()
             if not self._domains:
@@ -117,13 +114,10 @@ class LinuxRaplBackend:
                 dram_w = (dram_w or 0.0) + watts
             elif name == "uncore":
                 #PP1, "graphics uncore" nel driver del kernel: su CPU client
-                #Intel e' la GPU integrata, non un consumo generico da
-                #scartare. Non va sommato a package_w, che gia' lo include
+                #Intel e' la GPU integrata
                 gpu_integrated_w = (gpu_integrated_w or 0.0) + watts
             #"core" (PP0) e' un sotto-dominio gia' incluso in "package-N":
-            #sommarlo sarebbe un doppio conteggio. "psys" va ignorato per il
-            #motivo opposto, e' un sovrainsieme della sola CPU
-
+            
         #la GPU dedicata non passa da RAPL in nessun caso
         nvidia_w = read_nvidia_gpu_power_w()
         amd_w = read_amd_gpu_power_w()

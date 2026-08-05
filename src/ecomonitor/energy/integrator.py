@@ -1,10 +1,7 @@
 from ecomonitor.sensors.base import PowerReading
 
 #Integra la potenza (W) in energia (Wh) col metodo dei trapezi. Gli intervalli
-#troppo lunghi vengono scartati, non integrati: dopo una sospensione la
-#macchina non ha consumato nulla, ma il trapezio conterebbe ~160 Wh inventati
-#su 8 ore. La finestra e' esclusa dal conteggio, non stimata, e
-#skipped_gap_seconds la rende osservabile
+#troppo lunghi vengono scartati, non integrati
 
 DEFAULT_MAX_INTERVAL_SECONDS = 60.0
 #12x il polling di default: un tick in ritardo resta integrato, una

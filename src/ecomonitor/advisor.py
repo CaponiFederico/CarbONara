@@ -4,13 +4,7 @@ from enum import Enum
 
 from ecomonitor.carbon.grid_intensity import IntensityPoint
 
-#Suggerisce se conviene ricaricare adesso o aspettare: qui si guarda avanti,
-#il pool guarda indietro. "L'intensita' e' sopra la media" non e' azionabile,
-#con la previsione oraria il consiglio diventa "aspetta le 14:00, -38%" ed e'
-#verificabile a posteriori. La media mobile resta come ripiego.
-#Sotto una soglia critica di carica il consiglio e' sempre "carica ora": un'app
-#che lascia l'utente senza batteria per qualche grammo viene disinstallata
-
+#Suggerisce se conviene ricaricare adesso o aspettare
 
 class ChargeRecommendation(Enum):
     CHARGE_NOW = "charge_now"
@@ -77,8 +71,7 @@ class CarbonAwareAdvisor:
         critical_battery_percent: float = 20.0,
     ) -> None:
         #le due soglie sono rapporti rispetto al riferimento, usate solo nel
-        #ripiego su media mobile. Sotto min_saving_ratio non vale la pena
-        #chiedere di aspettare: la previsione ha un errore proprio
+        #ripiego su media mobile
         self.good_threshold_ratio = good_threshold_ratio
         self.bad_threshold_ratio = bad_threshold_ratio
         self.min_saving_ratio = min_saving_ratio
@@ -146,8 +139,7 @@ class CarbonAwareAdvisor:
                     best_time=best.timestamp,
                     saving_percent=saving * 100.0,
                 )
-            #nessun momento migliore in vista: se l'attuale e' il minimo della
-            #finestra e' proprio il momento giusto
+            #se l'attuale e' il minimo della finestra e' il momento giusto
             recommendation = (
                 ChargeRecommendation.CHARGE_NOW
                 if current_intensity <= best.g_per_kwh
@@ -178,10 +170,7 @@ class CarbonAwareAdvisor:
 
 
 class RollingAverage:
-    #Media mobile usata come riferimento quando manca la previsione. Va
-    #alimentata a ogni campione, collegati o no: costruirla solo mentre si e'
-    #attaccati significherebbe misurare proprio gli istanti in cui la domanda
-    #"conviene attaccare?" non ha senso
+    #Media mobile usata come riferimento quando manca la previsione
 
     def __init__(self, window_size: int = 288) -> None:
         self.window_size = window_size  # 288 campioni = 24 h a uno ogni 5 minuti
