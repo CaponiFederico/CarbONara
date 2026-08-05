@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ecomonitor"
+version = "0.1.0"
+description = "Monitoraggio del consumo energetico e delle emissioni di CO2-eq di laptop/desktop (tesi triennale, green computing)"
+requires-python = ">=3.11"
+dependencies = [
+    "psutil>=5.9",
+    "platformdirs>=4.0",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+gui = [
+    "PySide6>=6.6",
+]
+windows = [
+    "HardwareMonitor>=1.2",
+]
+dev = [
+    "ruff>=0.6",
+]
+
+[project.scripts]
+ecomonitor = "ecomonitor.app:main"
+ecomonitor-cli = "ecomonitor.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ecomonitor"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+ignore = [
+    # `date.today()` e `datetime.now()` senza tz sono deliberati, non sviste:
+    # i totali giornalieri sono per giorno di calendario **locale** dell'utente
+    # (vedi LocalDatabase.sum_energy_events_for_day), mentre i timestamp sono
+    # salvati in UTC. Convertirli a UTC sposterebbe le prime ore di ogni
+    # giornata sul giorno precedente, due ore in Italia d'estate.
+    "DTZ005",
+    "DTZ011",
+    # pythonnet propaga le eccezioni .NET come Exception generiche: non c'e' un
+    # tipo piu' stretto da catturare quando LibreHardwareMonitor fallisce.
+    "BLE001",
+]
