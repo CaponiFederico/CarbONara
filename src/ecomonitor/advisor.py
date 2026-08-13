@@ -29,6 +29,28 @@ class AdviceSource(Enum):
     # ne' previsione ne' storico sufficiente
 
 
+class ReferenceSource(Enum):
+    FORECAST_MEAN = "forecast_mean"
+    # media dei punti previsti nelle prossime 24 h
+
+    OBSERVED = "observed"
+    # media mobile dei campioni osservati, usata come ripiego
+
+
+_REFERENCE_LABELS = {
+    ReferenceSource.FORECAST_MEAN: "la media prevista per le prossime 24 h",
+    ReferenceSource.OBSERVED: "la media recente",
+}
+
+
+def _percentuale(valore: float) -> str:
+    #"l'8%" e "l'11%", non "il 8%": elisione davanti a otto, undici, diciotto e
+    #ottanta-ottantanove, gli unici numeri fino a 100 che iniziano per vocale
+    n = round(valore)
+    articolo = "l'" if n in (8, 11, 18) or 80 <= n <= 89 else "il "
+    return f"{articolo}{n}%"
+
+
 @dataclass(frozen=True)
 class ChargeAdvice:
     recommendation: ChargeRecommendation
@@ -37,7 +59,27 @@ class ChargeAdvice:
     best_intensity: float | None = None
     best_time: datetime | None = None
     reference_intensity: float | None = None
+    reference_source: ReferenceSource | None = None
     saving_percent: float | None = None
+
+    def _reference_clause(self) -> str:
+        #dice quanto vale il momento in assoluto, che la sola previsione non
+        #copre: il minimo delle prossime ore puo' essere comunque un pessimo
+        #valore. Il testo cambia con la provenienza del riferimento, che non
+        #vale la stessa cosa nei due casi
+        if (
+            self.current_intensity is None
+            or self.reference_intensity is None
+            or self.reference_intensity <= 0
+            or self.reference_source is None
+        ):
+            return ""
+        label = _REFERENCE_LABELS[self.reference_source]
+        delta = (self.current_intensity - self.reference_intensity) / self.reference_intensity
+        if abs(delta) < 0.01:
+            return f", in linea con {label}"
+        verso = "sopra" if delta > 0 else "sotto"
+        return f", {_percentuale(abs(delta) * 100)} {verso} {label}"
 
     def message(self) -> str:
         #testo pronto per l'interfaccia, una riga
@@ -57,8 +99,16 @@ class ChargeAdvice:
                 f"(-{self.saving_percent:.0f}%)"
             )
         if self.recommendation is ChargeRecommendation.CHARGE_NOW:
-            return f"buon momento per caricare ({current} gCO2/kWh)"
-        return f"momento nella media ({current} gCO2/kWh)"
+            return f"buon momento per caricare ({current} gCO2/kWh{self._reference_clause()})"
+        if self.source is AdviceSource.FORECAST and self.best_time is not None:
+            #NEUTRAL da previsione non vuol dire "nella media": vuol dire che
+            #qualcosa di meglio c'e', ma non abbastanza da aspettare
+            local_time = self.best_time.astimezone().strftime("%H:%M")
+            return (
+                f"{current} gCO2/kWh{self._reference_clause()}: aspettare le {local_time} "
+                f"farebbe risparmiare solo {_percentuale(self.saving_percent or 0.0)}"
+            )
+        return f"momento nella media ({current} gCO2/kWh{self._reference_clause()})"
 
 
 class CarbonAwareAdvisor:
@@ -67,16 +117,44 @@ class CarbonAwareAdvisor:
         good_threshold_ratio: float = 0.85,
         bad_threshold_ratio: float = 1.15,
         min_saving_ratio: float = 0.10,
+        at_minimum_ratio: float = 0.02,
         horizon_hours: float = 12.0,
+        reference_horizon_hours: float = 24.0,
         critical_battery_percent: float = 20.0,
     ) -> None:
         #le due soglie sono rapporti rispetto al riferimento, usate solo nel
-        #ripiego su media mobile
+        #ripiego su media mobile.
+        #at_minimum_ratio: sotto questo scarto dal minimo previsto adesso vale
+        #quanto il momento migliore in vista, quindi e' gia' il momento giusto
         self.good_threshold_ratio = good_threshold_ratio
         self.bad_threshold_ratio = bad_threshold_ratio
         self.min_saving_ratio = min_saving_ratio
+        self.at_minimum_ratio = at_minimum_ratio
         self.horizon_hours = horizon_hours
+        self.reference_horizon_hours = reference_horizon_hours
         self.critical_battery_percent = critical_battery_percent
+
+    def _resolve_reference(
+        self,
+        forecast: list[IntensityPoint] | None,
+        observed: float | None,
+        now: datetime,
+    ) -> tuple[float | None, ReferenceSource | None]:
+        #La media osservata e' distorta dal pattern di utilizzo: l'app campiona
+        #solo mentre e' accesa, quindi su un uso diurno mancano proprio le fasce
+        #piu' sporche, e "sotto la media" finisce per dire "e' mezzogiorno".
+        #La media prevista copre tutte le ore per costruzione, e va preferita
+        window_end = now + timedelta(hours=self.reference_horizon_hours)
+        upcoming = [
+            point.g_per_kwh
+            for point in (forecast or [])
+            if now < point.timestamp <= window_end and point.g_per_kwh > 0
+        ]
+        if upcoming:
+            return sum(upcoming) / len(upcoming), ReferenceSource.FORECAST_MEAN
+        if observed is not None and observed > 0:
+            return observed, ReferenceSource.OBSERVED
+        return None, None
 
     def recommend(
         self, current_intensity: float, reference_intensity: float
@@ -116,6 +194,8 @@ class CarbonAwareAdvisor:
                 current_intensity=current_intensity,
             )
 
+        reference, reference_source = self._resolve_reference(forecast, reference_intensity, now)
+
         horizon_end = now + timedelta(hours=self.horizon_hours)
         upcoming = [
             point
@@ -137,12 +217,17 @@ class CarbonAwareAdvisor:
                     current_intensity=current_intensity,
                     best_intensity=best.g_per_kwh,
                     best_time=best.timestamp,
+                    reference_intensity=reference,
+                    reference_source=reference_source,
                     saving_percent=saving * 100.0,
                 )
-            #se l'attuale e' il minimo della finestra e' il momento giusto
+            #niente da aspettare. Se poi lo scarto dal minimo previsto e' dentro
+            #at_minimum_ratio, adesso e' di fatto il minimo: decidere fra
+            #"carica ora" e "nella media" su due gCO2/kWh contraddirebbe la
+            #soglia sopra, che ha appena dichiarato quella differenza irrilevante
             recommendation = (
                 ChargeRecommendation.CHARGE_NOW
-                if current_intensity <= best.g_per_kwh
+                if saving <= self.at_minimum_ratio
                 else ChargeRecommendation.NEUTRAL
             )
             return ChargeAdvice(
@@ -151,15 +236,18 @@ class CarbonAwareAdvisor:
                 current_intensity=current_intensity,
                 best_intensity=best.g_per_kwh,
                 best_time=best.timestamp,
+                reference_intensity=reference,
+                reference_source=reference_source,
                 saving_percent=max(0.0, saving * 100.0),
             )
 
-        if reference_intensity is not None and reference_intensity > 0:
+        if reference is not None:
             return ChargeAdvice(
-                recommendation=self.recommend(current_intensity, reference_intensity),
+                recommendation=self.recommend(current_intensity, reference),
                 source=AdviceSource.HISTORY,
                 current_intensity=current_intensity,
-                reference_intensity=reference_intensity,
+                reference_intensity=reference,
+                reference_source=reference_source,
             )
 
         return ChargeAdvice(
@@ -172,8 +260,9 @@ class CarbonAwareAdvisor:
 class RollingAverage:
     #Media mobile usata come riferimento quando manca la previsione
 
-    def __init__(self, window_size: int = 288) -> None:
+    def __init__(self, window_size: int = 288, min_samples: int = 12) -> None:
         self.window_size = window_size  # 288 campioni = 24 h a uno ogni 5 minuti
+        self.min_samples = min_samples  # 12 campioni = un'ora di campionamento
         self._samples: list[float] = []
 
     def add(self, value: float) -> None:
@@ -182,7 +271,14 @@ class RollingAverage:
             self._samples.pop(0)
 
     @property
+    def sample_count(self) -> int:
+        return len(self._samples)
+
+    @property
     def average(self) -> float | None:
-        if not self._samples:
+        #None finche' i campioni non bastano: su un'installazione nuova la
+        #media sarebbe il valore corrente confrontato con se stesso, cioe' un
+        #riferimento che sembra informativo e non lo e'
+        if len(self._samples) < self.min_samples:
             return None
         return sum(self._samples) / len(self._samples)

@@ -13,13 +13,9 @@ venv/
 .coverage
 htmlcov/
 
-# La configurazione con la chiave ElectricityMaps vive nella cartella utente di
-# sistema, non qui: se una copia finisce nel repo per una prova non deve poter
-# essere committata per sbaglio.
 config.json
 *.key
 secrets*
 
-# Ambiente di sviluppo
 .vscode/
 .idea/

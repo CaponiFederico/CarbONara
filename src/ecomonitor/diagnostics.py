@@ -131,9 +131,7 @@ def cmd_sensors(args: argparse.Namespace) -> None:
 
     _title(f"Sensori di potenza ({samples} campioni a {interval:.0f}s di distanza)")
     print(
-        f"{INFO} l'intervallo minimo e' 1s per scelta: RAPL e i contatori hwmon\n"
-        f"       sono contatori di energia, e due letture ravvicinate danno una\n"
-        f"       potenza media su una finestra troppo corta, quindi rumorosa."
+        f"{INFO} campionamento dati da sensori hardware reali (o stima TDP se non leggibili) "
     )
 
     backend = get_backend()
@@ -176,8 +174,7 @@ def cmd_sensors(args: argparse.Namespace) -> None:
     else:
         _line(
             INFO,
-            "GPU dedicata non letta: assente, oppure spenta in questo momento "
-            "(grafica ibrida) - non e' un errore di per se'",
+            "GPU dedicata non letta: assente, oppure spenta in questo momento ",
         )
 
     if last.gpu_integrated_w is not None and last.gpu_dedicated_w is not None:
@@ -223,7 +220,9 @@ def cmd_sensors(args: argparse.Namespace) -> None:
 
 
 def cmd_grid(args: argparse.Namespace) -> None:
-    from ecomonitor.advisor import CarbonAwareAdvisor
+    import platformdirs
+
+    from ecomonitor.advisor import CarbonAwareAdvisor, RollingAverage
     from ecomonitor.carbon.grid_intensity import (
         STATIC_FALLBACK_G_PER_KWH,
         GridCarbonIntensityService,
@@ -279,7 +278,40 @@ def cmd_grid(args: argparse.Namespace) -> None:
             "l'intensita' corrente",
         )
 
-    advice = CarbonAwareAdvisor().advise(current_intensity=intensity, forecast=forecast)
+    #stessa media mobile che usa l'app: senza, la diagnostica stamperebbe un
+    #consiglio diverso da quello mostrato nella finestra sullo stesso istante
+    rolling = RollingAverage()
+    db_path = platformdirs.user_data_path("ecomonitor") / "local.db"
+    if db_path.exists():
+        from ecomonitor.storage.db import LocalDatabase
+
+        for value in LocalDatabase(db_path).recent_grid_intensities(
+            rolling.window_size, zone=service.zone
+        ):
+            rolling.add(value)
+
+    if rolling.average is not None:
+        _line(
+            OK,
+            f"media recente della zona: {rolling.average:.0f} gCO2/kWh "
+            f"({rolling.sample_count} campioni)",
+        )
+    else:
+        _line(
+            WARN,
+            f"media recente non disponibile: {rolling.sample_count} campioni salvati, "
+            f"ne servono almeno {rolling.min_samples}",
+        )
+
+    if forecast:
+        #e' il riferimento che l'advisor preferisce: la media osservata copre
+        #solo le ore in cui l'app era accesa
+        media_prevista = sum(p.g_per_kwh for p in forecast) / len(forecast)
+        _line(OK, f"media prevista 24h: {media_prevista:.0f} gCO2/kWh (riferimento preferito)")
+
+    advice = CarbonAwareAdvisor().advise(
+        current_intensity=intensity, forecast=forecast, reference_intensity=rolling.average
+    )
     print(f"{INFO} consiglio ora: {advice.message()} (fonte: {advice.source.value})")
 
 
