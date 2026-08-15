@@ -11,7 +11,7 @@ from ecomonitor.storage.db import LocalDatabase
 logger = logging.getLogger(__name__)
 
 #serve a testare il backend e l'orchestrator senza GUI, e a raccogliere dati
-_ETICHETTE_RETE = {
+_GRID_SOURCE_LABELS = {
     "live": "dati live",
     "static_fallback": "media statica",
 }
@@ -22,21 +22,21 @@ def _intensity_source(result: dict) -> str:
     source = attribution.source.value
 
     if source == "grid_live":
-        rete = _ETICHETTE_RETE.get(
+        grid_label = _GRID_SOURCE_LABELS.get(
             result["grid_intensity_source"], result["grid_intensity_source"]
         )
-        return f"da rete ({rete})"
+        return f"da rete ({grid_label})"
     if source == "battery_pool":
         return "da storico batteria"
     if source == "battery_pool_partial":
         return f"da storico parziale ({attribution.pool_coverage_ratio * 100:.0f}% tracciato)"
     if source == "battery_pool_fallback":
-        riferimento = (
+        reference_label = (
             "media nazionale"
             if result["unknown_origin_source"] == "static_country_mean"
             else "media finestra scoperta"
         )
-        return f"senza storico ({riferimento})"
+        return f"senza storico ({reference_label})"
     return source
 
 

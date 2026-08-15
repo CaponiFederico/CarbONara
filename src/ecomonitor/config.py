@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
@@ -7,6 +8,8 @@ import platformdirs
 
 #Configurazione in JSON nella cartella utente di sistema, quindi fuori dal
 #repository: la chiave ElectricityMaps e' un segreto personale
+
+logger = logging.getLogger(__name__)
 
 APP_NAME = "ecomonitor"
 API_KEY_ENV_VAR = "ECOMONITOR_EM_API_KEY"
@@ -58,21 +61,48 @@ class ConfigManager:
 
     def _load(self) -> AppConfig:
         if not self.path.exists():
-            #il file va creato davvero: e' l'unico posto in cui incollare la
-            #chiave o correggere la zona
-            self.config = AppConfig()
-            try:
-                self.save()
-            except OSError:
-                pass  # cartella non scrivibile: si parte con i default in memoria
-            return self.config
+            return self._create_default()
 
-        data = json.loads(self.path.read_text(encoding="utf-8"))
+        try:
+            #utf-8-sig, con utf-8 puro il BOM fa
+            #fallire json.loads e l'applicazione non parte
+            data = json.loads(self.path.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            return self._recover_from_invalid(exc)
+
+        if not isinstance(data, dict):
+            return self._recover_from_invalid("il contenuto non e' un oggetto JSON")
 
         #ignora le chiavi sconosciute invece di sollevare TypeError: un file
         #scritto da un'altra versione non deve impedire l'avvio
         known = {field.name for field in fields(AppConfig)}
         return AppConfig(**{key: value for key, value in data.items() if key in known})
+
+    def _create_default(self) -> AppConfig:
+        #il file va creato 
+        self.config = AppConfig()
+        try:
+            self.save()
+        except OSError:
+            pass  # cartella non scrivibile: si parte con i default in memoria
+        return self.config
+
+    def _recover_from_invalid(self, reason: object) -> AppConfig:
+        #Il file esiste ma non e' leggibile
+        quarantined = self.path.with_name(self.path.name + ".invalid")
+        try:
+            self.path.replace(quarantined)
+        except OSError:
+            quarantined = None
+
+        logger.warning(
+            "Configurazione non leggibile (%s). Si riparte dai valori predefiniti; "
+            "il file precedente %s",
+            reason,
+            f"e' stato rinominato in {quarantined.name}" if quarantined else
+            "non e' stato possibile metterlo da parte",
+        )
+        return self._create_default()
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
