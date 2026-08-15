@@ -21,6 +21,47 @@ _GRID_SOURCE_LABELS = {
 }
 
 
+#Spiegazioni per chi non e' tecnico: compaiono passando il mouse su una riga
+#Descrivono il significato del dato e non del valore
+
+_FIELD_HELP = {
+    "power": (
+        "Quanta energia stanno usando in questo momento il processore e la scheda "
+        "grafica, in watt. Non è il consumo totale del computer: schermo, ventole "
+        "e disco non sono inclusi."
+    ),
+    "energy": (
+        "Quanta energia hanno consumato processore e scheda grafica da mezzanotte "
+        "a adesso. Un wattora (Wh) è l'energia che consuma un apparecchio da 1 watt "
+        "acceso per un'ora."
+    ),
+    "operational_gco2": (
+        "I grammi di anidride carbonica emessi per produrre l'energia che hai usato "
+        "oggi. Dipendono da quanta ne hai consumata e da quanto era pulita la rete "
+        "elettrica nel momento in cui l'hai consumata."
+    ),
+    "intensity": (
+        "Quanto è pulita l'elettricità che stai usando: grammi di CO2 per ogni "
+        "kilowattora prodotto. In Italia va da circa 100 quando c'è molto sole e "
+        "vento, a oltre 400 quando la rete va soprattutto a gas. Più basso è meglio."
+    ),
+    "grid_source": (
+        "Da dove arriva il dato sull'elettricità: misurato in tempo reale per la tua "
+        "zona, oppure una media annuale del paese quando il dato in tempo reale non "
+        "è disponibile."
+    ),
+    "advisor": (
+        "Se conviene collegare l'alimentatore adesso oppure aspettare un momento in "
+        "cui l'elettricità sarà più pulita. Non compare sui computer fissi, che non "
+        "hanno una batteria da ricaricare."
+    ),
+    "settings": (
+        "Zona elettrica, chiave di accesso ai dati in tempo reale e modello di "
+        "attribuzione. Le modifiche valgono dal prossimo avvio."
+    ),
+}
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -29,32 +70,28 @@ class MainWindow(QMainWindow):
         central = QWidget(self)
         layout = QGridLayout(central)
 
-        layout.addWidget(QLabel("Potenza istantanea (CPU+GPU):"), 0, 0)
-        self.power_label = QLabel("—")
-        layout.addWidget(self.power_label, 0, 1)
-
-        layout.addWidget(QLabel("Energia uso attivo oggi:"), 1, 0)
-        self.energy_label = QLabel("—")
-        layout.addWidget(self.energy_label, 1, 1)
-
-        layout.addWidget(QLabel("CO2eq operativa oggi:"), 2, 0)
-        self.operational_gco2_label = QLabel("—")
-        layout.addWidget(self.operational_gco2_label, 2, 1)
-
-        layout.addWidget(QLabel("Intensità applicata:"), 3, 0)
-        self.intensity_label = QLabel("—")
-        layout.addWidget(self.intensity_label, 3, 1)
-
-        layout.addWidget(QLabel("Dati rete elettrica:"), 4, 0)
-        self.grid_source_label = QLabel("—")
-        layout.addWidget(self.grid_source_label, 4, 1)
-
-        layout.addWidget(QLabel("Suggerimento ricarica:"), 5, 0)
-        self.advisor_label = QLabel("—")
-        layout.addWidget(self.advisor_label, 5, 1)
+        self.power_label = self._add_row(
+            layout, 0, "Potenza istantanea (CPU+GPU):", _FIELD_HELP["power"]
+        )
+        self.energy_label = self._add_row(
+            layout, 1, "Energia uso attivo oggi:", _FIELD_HELP["energy"]
+        )
+        self.operational_gco2_label = self._add_row(
+            layout, 2, "CO2eq operativa oggi:", _FIELD_HELP["operational_gco2"]
+        )
+        self.intensity_label = self._add_row(
+            layout, 3, "Intensità applicata:", _FIELD_HELP["intensity"]
+        )
+        self.grid_source_label = self._add_row(
+            layout, 4, "Dati rete elettrica:", _FIELD_HELP["grid_source"]
+        )
+        self.advisor_label = self._add_row(
+            layout, 5, "Suggerimento ricarica:", _FIELD_HELP["advisor"]
+        )
 
         self.settings_button = QPushButton("Impostazioni…")
         self.settings_button.clicked.connect(self.open_settings)
+        self._describe(self.settings_button, _FIELD_HELP["settings"])
         layout.addWidget(self.settings_button, 6, 0, 1, 2)
 
         self.setCentralWidget(central)
@@ -62,6 +99,25 @@ class MainWindow(QMainWindow):
         self.on_hidden: Callable[[], None] | None = None
         #chiamata quando la finestra viene nascosta chiudendola: cosa
         #notificare lo decide app.py, la finestra non sa nulla della tray
+
+    # -- costruzione -------------------------------------------------------
+
+    @staticmethod
+    def _describe(widget: QWidget, help_text: str) -> None:
+        #Il tooltip da solo e' raggiungibile con il solo mouse
+        widget.setToolTip(f"<qt>{help_text}</qt>")
+        widget.setAccessibleDescription(help_text)
+
+    def _add_row(self, layout: QGridLayout, row: int, caption: str, help_text: str) -> QLabel:
+        #la spiegazione va su entrambe le cellei
+        caption_label = QLabel(caption)
+        value_label = QLabel("—")
+        value_label.setAccessibleName(caption.rstrip(":"))
+        for widget in (caption_label, value_label):
+            self._describe(widget, help_text)
+        layout.addWidget(caption_label, row, 0)
+        layout.addWidget(value_label, row, 1)
+        return value_label
 
     # -- interazione -------------------------------------------------------
 
