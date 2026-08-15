@@ -61,6 +61,38 @@ class PollingWorker(QObject):
         self._running = False
 
 
+class WindowUpdater(QObject):
+    #Riceve i tick e aggiorna la finestra. Deve essere un QObject creato nel
+    #thread della GUI, con lo slot registrato: solo allora Qt accoda la chiamata
+    #all'event loop del thread giusto
+
+    def __init__(self, window: MainWindow) -> None:
+        super().__init__()
+        self._window = window
+
+    @Slot(dict)
+    def on_tick_ready(self, result: dict) -> None:
+        reading = result["reading"]
+        attribution = result["attribution"]
+        self._window.update_power(reading.total_w, reading.is_estimated)
+        #i totali arrivano gia' calcolati dal thread di polling: la finestra
+        #non deve interrogare SQLite per conto suo
+        self._window.update_daily_totals(
+            result["today_energy_wh"], result["today_operational_gco2"]
+        )
+        self._window.update_attribution(
+            attribution.intensity_g_per_kwh,
+            attribution.source.value,
+            attribution.is_estimated_intensity,
+            grid_source=result["grid_intensity_source"],
+            zone=result["grid_zone"],
+            coverage_ratio=attribution.pool_coverage_ratio,
+        )
+
+        advice: ChargeAdvice = result["advice"]
+        self._window.update_advisor(advice.message())
+
+
 SIGINT_POLL_MS = 500
 #ogni quanto restituire il controllo all'interprete perche' possa eseguire un
 #handler in sospeso, ed e' anche la latenza massima fra Ctrl+C e la chiusura
@@ -137,30 +169,15 @@ def main() -> None:
     window.on_hidden = announce_background_mode
     window.show()
 
-    def on_tick_ready(result: dict) -> None:
-        reading = result["reading"]
-        attribution = result["attribution"]
-        window.update_power(reading.total_w, reading.is_estimated)
-        #i totali arrivano gia' calcolati dal thread di polling: la finestra
-        #non deve interrogare SQLite per conto suo
-        window.update_daily_totals(result["today_energy_wh"], result["today_operational_gco2"])
-        window.update_attribution(
-            attribution.intensity_g_per_kwh,
-            attribution.source.value,
-            attribution.is_estimated_intensity,
-            grid_source=result["grid_intensity_source"],
-            zone=result["grid_zone"],
-            coverage_ratio=attribution.pool_coverage_ratio,
-        )
-
-        advice: ChargeAdvice = result["advice"]
-        window.update_advisor(advice.message())
+    #creato qui, cioe' nel thread della GUI: e' quello che rende la consegna
+    #accodata invece che diretta
+    updater = WindowUpdater(window)
 
     worker = PollingWorker(orchestrator, orchestrator.config_manager.config.poll_interval_seconds)
     thread = QThread()
     worker.moveToThread(thread)
     thread.started.connect(worker.run)
-    worker.tick_ready.connect(on_tick_ready)
+    worker.tick_ready.connect(updater.on_tick_ready)
 
     def cleanup() -> None:
         sigint_timer.stop()
