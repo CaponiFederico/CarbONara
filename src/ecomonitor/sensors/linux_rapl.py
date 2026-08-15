@@ -89,14 +89,6 @@ class LinuxRaplBackend:
         self._intel_gpu_reader = IntelArcGpuReader()
         self._intel_gpu_reader.read_power_w()  # warm-up, stesso motivo dei domini
 
-    def is_available(self) -> bool:
-        try:
-            for domain in self._domains.values():
-                domain.read_energy_uj()
-            return True
-        except (OSError, PermissionError):
-            return False
-
     def read(self) -> PowerReading:
         package_w = 0.0
         dram_w: float | None = None

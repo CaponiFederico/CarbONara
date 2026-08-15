@@ -15,10 +15,10 @@ class AttributionSource(Enum):
     # batteria: intensita' ereditata dalle ricariche
 
     BATTERY_POOL_PARTIAL = "battery_pool_partial"
-    # batteria: con pool parziale, miscela fra storico e ripiego
+    # batteria: con pool parziale, miscela fra storico e riferimento di origine ignota
 
-    BATTERY_POOL_FALLBACK = "battery_pool_fallback" 
-    # batteria: senza pool, ripiego all'intensita' di rete
+    BATTERY_POOL_FALLBACK = "battery_pool_fallback"
+    # batteria: senza pool, tutto sul riferimento di origine ignota 
 
 FULL_COVERAGE_RATIO = 0.999
 #Sopra questa frazione di copertura il prelievo e' considerato interamente
@@ -66,6 +66,10 @@ class CarbonAttributionService:
         charge_intensity_g_per_kwh: float | None = None,
         #se passato sostituisce l'intensita' live
 
+        unknown_origin_intensity_g_per_kwh: float | None = None,
+        #Riferimento per energia gia' in batteria di cui non si sa quando e'
+        #entrata
+
     ) -> AttributionResult:
         #Attribuisce l'energia consumata in questo intervallo a rete o
         #batteria e aggiorna lo storico di ricarica
@@ -94,7 +98,11 @@ class CarbonAttributionService:
 
         return self._attribute_on_battery(
             delta_wh=delta_wh,
-            grid_intensity_g_per_kwh=grid_intensity_g_per_kwh,
+            unknown_origin_intensity_g_per_kwh=(
+                unknown_origin_intensity_g_per_kwh
+                if unknown_origin_intensity_g_per_kwh is not None
+                else grid_intensity_g_per_kwh
+            ),
             charged=charged,
             drained=drained,
         )
@@ -125,11 +133,12 @@ class CarbonAttributionService:
         self,
         *,
         delta_wh: float,
-        grid_intensity_g_per_kwh: float,
+        unknown_origin_intensity_g_per_kwh: float,
         charged: float,
         drained: float,
     ) -> AttributionResult:
-        #Scollegato: l'intensita' la decide lo storico di ricarica
+        #Scollegato: l'intensita' dello storico di ricarica 
+        #le parti scoperte prendono il riferimento di origine ignota
         had_history = self.pool.has_history
         outcome = self.pool.discharge_with_coverage(drained)
         coverage = outcome.coverage_ratio if had_history else 0.0
@@ -137,8 +146,8 @@ class CarbonAttributionService:
 
         if not had_history or pool_intensity <= 0.0:
             return AttributionResult(
-                gco2=gco2_from_wh(delta_wh, grid_intensity_g_per_kwh),
-                intensity_g_per_kwh=grid_intensity_g_per_kwh,
+                gco2=gco2_from_wh(delta_wh, unknown_origin_intensity_g_per_kwh),
+                intensity_g_per_kwh=unknown_origin_intensity_g_per_kwh,
                 source=AttributionSource.BATTERY_POOL_FALLBACK,
                 charged_percent=charged,
                 discharged_percent=drained,
@@ -155,8 +164,11 @@ class CarbonAttributionService:
                 pool_coverage_ratio=coverage,
             )
 
-        # Copertura parziale miscela storico e ripiego 
-        blended = coverage * pool_intensity + (1.0 - coverage) * grid_intensity_g_per_kwh
+        # Copertura parziale miscela storico e riferimento di origine ignota
+        blended = (
+            coverage * pool_intensity
+            + (1.0 - coverage) * unknown_origin_intensity_g_per_kwh
+        )
         return AttributionResult(
             gco2=gco2_from_wh(delta_wh, blended),
             intensity_g_per_kwh=blended,

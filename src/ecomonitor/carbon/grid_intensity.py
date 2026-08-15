@@ -51,10 +51,6 @@ class LocalIntensityHistory(Protocol):
     ) -> float | None: ...
 
 
-class GridIntensityProvider(Protocol):
-    def get_current_intensity(self, zone: str) -> float: ...
-
-
 class StaticFallbackProvider:
     def get_current_intensity(self, zone: str) -> float:
         country = country_code_from_zone(zone)
@@ -62,7 +58,7 @@ class StaticFallbackProvider:
 
 
 class ElectricityMapsProvider:
-    #Client per l'API ElectricityMaps v3.
+    #Client per l'API ElectricityMaps v3
 
     #Endpoint usati:
     #/carbon-intensity/latest  
@@ -137,9 +133,17 @@ class GridCarbonIntensityService:
 
     @property
     def last_value_source(self) -> str:
-        #live se l'ultimo valore restituito da get_current_intensity() arriva da ElectricityMaps 
+        #live se l'ultimo valore restituito da get_current_intensity() arriva da ElectricityMaps
         #static_fallback se e' la media nazionale di ripiego
         return self._last_value_source
+
+    @property
+    def static_country_mean(self) -> float:
+        #Media annuale del paese, usata come riferimento per l'energia di cui
+        #non si conosce l'istante di ricarica
+        return STATIC_FALLBACK_G_PER_KWH.get(
+            self.country_code, STATIC_FALLBACK_G_PER_KWH["DEFAULT"]
+        )
 
     def get_current_intensity(self) -> float:
         now = time.monotonic()

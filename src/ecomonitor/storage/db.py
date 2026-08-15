@@ -92,12 +92,6 @@ class ChargeRecord:
     is_reconstructed: bool
     intensity_source: str | None
 
-    @property
-    def is_observed(self) -> bool:
-        #solo un valore letto davvero da ElectricityMaps in quel momento: la
-        #media statica e le medie ricostruite valgono meno di una misura
-        return self.intensity_source == "live"
-
 
 @dataclass(frozen=True)
 class TraceEvent:
@@ -137,19 +131,6 @@ class TraceEvent:
             sum(charge.percent_charged * charge.intensity_g_per_kwh for charge in self.charges)
             / total
         )
-
-    @property
-    def charge_is_reconstructed(self) -> bool:
-        return any(charge.is_reconstructed for charge in self.charges)
-
-    @property
-    def observed_charge_ratio(self) -> float:
-        #frazione dei punti caricati la cui intensita' e' una misura live
-        total = sum(charge.percent_charged for charge in self.charges)
-        if total <= 0:
-            return 1.0
-        observed = sum(c.percent_charged for c in self.charges if c.is_observed)
-        return observed / total
 
 
 def to_utc_iso(moment: datetime) -> str:
@@ -442,10 +423,11 @@ class LocalDatabase:
     def mean_grid_intensity_between(
         self, start: datetime, end: datetime, zone: str | None = None
     ) -> float | None:
-        #implementa il protocollo LocalIntensityHistory di grid_intensity.py
+        #ricostruzione offline: media dei campioni osservati fra start ed end, filtrando
+        #per zona se specificata. Ritorna None se non ci sono campioni
         query = (
             "SELECT AVG(g_per_kwh), COUNT(*) FROM grid_intensity_samples "
-            "WHERE timestamp >= ? AND timestamp <= ?"
+            "WHERE timestamp > ? AND timestamp < ?"
         )
         params: list = [to_utc_iso(start), to_utc_iso(end)]
         if zone is not None:
@@ -456,9 +438,9 @@ class LocalDatabase:
         return row[0] if row[1] > 0 else None
 
     def recent_grid_intensities(self, limit: int = 288, zone: str | None = None) -> list[float]:
-        #Ultimi campioni osservati, per la media mobile dell'Advisor. Il filtro
-        #per zona non e' un dettaglio: la tabella accumula i campioni di tutte
-        #le zone in cui il dispositivo si e' trovato, e un portatile si sposta
+        #Ritorna gli ultimi campioni di intensita' osservati, ordinati 
+        # dal piu' vecchio al piu' recente. limit e' il numero massimo 
+        #di campioni da restituire, zone filtra per zona se specificata
         query = "SELECT g_per_kwh FROM grid_intensity_samples"
         params: list = []
         if zone is not None:
@@ -490,10 +472,3 @@ class LocalDatabase:
             )
             conn.commit()
 
-    def get_daily_summary(self, day: date) -> dict | None:
-        with closing(self._connect()) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT * FROM daily_summary WHERE day = ?", (day.isoformat(),)
-            ).fetchone()
-            return dict(row) if row else None

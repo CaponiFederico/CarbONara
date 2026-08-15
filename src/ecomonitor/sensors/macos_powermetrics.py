@@ -9,8 +9,5 @@ class MacosPowermetricsBackend:
             "verifica su hardware Apple reale)"
         )
 
-    def is_available(self) -> bool:
-        return False
-
     def read(self) -> PowerReading:
         raise SensorUnavailableError("MacosPowermetricsBackend non implementato")

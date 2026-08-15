@@ -275,7 +275,7 @@ def cmd_grid(args: argparse.Namespace) -> None:
         _line(
             WARN,
             "storico non disponibile: le ricariche avvenute ad app chiusa useranno "
-            "l'intensita' corrente",
+            "la media nazionale",
         )
 
     #stessa media mobile che usa l'app: senza, la diagnostica stamperebbe un

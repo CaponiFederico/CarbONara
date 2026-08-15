@@ -41,11 +41,6 @@ class SensorBackend(Protocol):
 
     def read(self) -> PowerReading: ...
 
-    def is_available(self) -> bool:
-        #True se il backend puo' leggere dati hardware reali su questa
-        #macchina. Non solleva eccezioni
-        ...
-
 
 def now_utc() -> datetime:
     return datetime.now(UTC)

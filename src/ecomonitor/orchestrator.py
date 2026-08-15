@@ -38,6 +38,21 @@ GAP_THRESHOLD_SECONDS = 600.0
 #oltre questa distanza fra due tick l'app era chiusa o sospesa: un salto della
 #percentuale e' una ricarica avvenuta al buio, da ricostruire
 
+SINGLE_CHARGE_WINDOW_SECONDS = 24 * 3600.0
+#Se la batteria non e' stata osservata per piu' di un giorno, la ricarica
+#avvenuta in quel periodo e' attribuita alla media nazionale
+#Se invece il gap e' minore, la finestra di ricarica e' stimata 
+# a partire dall'ultima osservazione
+
+
+POOL_STALE_AFTER_SECONDS = 7 * 24 * 3600.0
+#Oltre una settimana senza osservare la batteria il pool e' considerato scaduto
+
+def _pool_is_stale(last_seen: datetime | None, now: datetime) -> bool:
+    if last_seen is None:
+        return False
+    return (now - last_seen).total_seconds() >= POOL_STALE_AFTER_SECONDS
+
 
 class Orchestrator:
     def __init__(
@@ -73,6 +88,15 @@ class Orchestrator:
         #il pool riparte da dove era rimasto: senza questo ogni riavvio
         #azzererebbe lo storico di ricarica
         pool, last_percent, last_seen = self.db.load_pool_state()
+        if pool is not None and _pool_is_stale(last_seen, now_utc()):
+            logger.info(
+                "Storico di ricarica piu' vecchio di %.0f giorni: considerato scaduto e "
+                "azzerato. Il consumo a batteria sara' attribuito alla media nazionale "
+                "finche' non si osserva una nuova ricarica",
+                POOL_STALE_AFTER_SECONDS / 86400.0,
+            )
+            pool, last_percent = None, None
+
         configured_model = AttributionModel(config.attribution_model)
         if pool is None:
             pool = BatteryCarbonPool(model=configured_model)
@@ -89,6 +113,12 @@ class Orchestrator:
         self.attribution = CarbonAttributionService(pool)
         self._last_battery_percent = last_percent
         self._last_seen_at = last_seen
+
+        #Riferimento per l'energia gia' in batteria di cui non si conosce
+        #l'istante di ricarica. Si parte dalla media nazionale e la si sostituisce
+        #con la media della finestra scoperta quando c'e' e si riesce a leggerla
+        self._unknown_origin_intensity = self.grid_service.static_country_mean
+        self._unknown_origin_source = "static_country_mean"
 
         self.advisor = CarbonAwareAdvisor()
         self.rolling_avg = RollingAverage()
@@ -197,11 +227,10 @@ class Orchestrator:
     def _charge_window_end(
         self, start: datetime, now: datetime, charged_percent: float
     ) -> datetime:
-        #Una batteria si ricarica in circa due ore e poi resta a fondo scala:
-        #mediare l'intensita' su tutta la notte attribuirebbe alla ricarica
-        #anche sei ore in cui non caricava. La finestra viene ristretta alla
-        #durata plausibile, ancorata all'inizio del periodo scoperto. Resta
-        #un'assunzione dichiarata, non una misura
+        #Una batteria si ricarica in circa due ore e poi resta a fondo scala
+
+        #Vale solo sotto SINGLE_CHARGE_WINDOW_SECONDS: e' il chiamante a decidere
+        #se ancorare la finestra qui o prendere l'intera finestra scoperta
         rate = self.config_manager.config.charge_rate_percent_per_hour
         if rate <= 0 or charged_percent <= 0:
             return now
@@ -211,9 +240,9 @@ class Orchestrator:
     def _resolve_charge_intensity(
         self, now: datetime, charged_percent: float
     ) -> tuple[float | None, bool, str]:
-        #Per una ricarica avvenuta ad app chiusa ritorna la media della finestra
-        #non osservata (e True), altrimenti (None, False) e si usa l'intensita'
-        #corrente. Il terzo elemento e' la provenienza del numero
+        #Per una ricarica avvenuta ad app chiusa si cerca 
+        # di ricostruire la finestra di ricarica e la media di rete
+
         live_source = self.grid_service.last_value_source
         if self._last_seen_at is None:
             return None, False, live_source
@@ -223,18 +252,81 @@ class Orchestrator:
         if charged_percent <= MIN_SIGNIFICANT_DELTA_PERCENT:
             return None, False, live_source  # finestra scoperta ma nessuna ricarica
 
-        window_end = self._charge_window_end(self._last_seen_at, now, charged_percent)
+        uses_whole_window = gap > SINGLE_CHARGE_WINDOW_SECONDS
+        if uses_whole_window and self._unknown_origin_source != "static_country_mean":
+            #_handle_uncovered_window() ha gia' misurato questa stessa finestra
+            #in questo tick: riusarla evita una seconda chiamata identica all'API
+            return (
+                self._unknown_origin_intensity,
+                True,
+                f"{self._unknown_origin_source}_window",
+            )
+
+        window_end = now if uses_whole_window else self._charge_window_end(
+            self._last_seen_at, now, charged_percent
+        )
         mean = self.grid_service.get_mean_intensity_between(self._last_seen_at, window_end)
         if mean is None:
+            #La media nazionale non dipende dall'ora
+            country_mean = self.grid_service.static_country_mean
             logger.info(
                 "Ricarica avvenuta ad app chiusa (%.0f min) senza storico di rete: "
-                "attribuita all'intensita' corrente",
+                "attribuita alla media nazionale (%.0f gCO2/kWh)",
                 gap / 60.0,
+                country_mean,
             )
-            #ricostruita nel senso che il periodo non e' stato osservato, ma il
-            #numero e' quello di adesso: vanno dette entrambe le cose
-            return None, True, live_source
-        return mean, True, self.grid_service.last_mean_source or "reconstructed_local"
+            return country_mean, True, "static_country_mean"
+
+        #il suffisso _window distingue le righe prodotte dalla media sull'intera
+        #finestra da quelle con la finestra stretta ancorata all'inizio, senza
+        #perdere la provenienza 
+        source = self.grid_service.last_mean_source or "reconstructed_local"
+        return mean, True, f"{source}_window" if uses_whole_window else source
+
+    def _expire_pool(self, gap_seconds: float) -> None:
+        #Il pool va svuotato 
+        logger.info(
+            "Batteria non osservata per %.1f giorni: storico di ricarica azzerato, "
+            "si riparte dalla media nazionale",
+            gap_seconds / 86400.0,
+        )
+        self.battery_pool.reset()
+        #anche l'ultima percentuale e' scaduta: usarla darebbe un delta su una
+        #settimana
+        self._last_battery_percent = None
+        self._unknown_origin_intensity = self.grid_service.static_country_mean
+        self._unknown_origin_source = "static_country_mean"
+
+    def _refresh_unknown_origin_reference(self, start: datetime, end: datetime) -> None:
+        #Media sull'intera finestra scoperta: la carica non tracciata e' entrata
+        #in un istante ignoto dentro la finestra
+        mean = self.grid_service.get_mean_intensity_between(start, end)
+        if mean is not None:
+            self._unknown_origin_intensity = mean
+            self._unknown_origin_source = self.grid_service.last_mean_source or "uncovered_local"
+            return
+
+        self._unknown_origin_intensity = self.grid_service.static_country_mean
+        self._unknown_origin_source = "static_country_mean"
+        logger.info(
+            "Finestra scoperta di %.0f min senza storico di rete: l'energia di origine "
+            "ignota sara' attribuita alla media nazionale (%.0f gCO2/kWh)",
+            (end - start).total_seconds() / 60.0,
+            self._unknown_origin_intensity,
+        )
+
+    def _handle_uncovered_window(self, now: datetime) -> None:
+        #Va chiamato prima di calcolare il Delta% del tick: se il pool e' scaduto
+        #azzera anche la percentuale di riferimento, e quel calcolo deve vederla
+        if self._last_seen_at is None:
+            return
+        gap = (now - self._last_seen_at).total_seconds()
+        if gap < GAP_THRESHOLD_SECONDS:
+            return
+        if gap >= POOL_STALE_AFTER_SECONDS:
+            self._expire_pool(gap)
+            return
+        self._refresh_unknown_origin_reference(self._last_seen_at, now)
 
     def tick(self) -> dict:
         reading = self.backend.read()
@@ -251,6 +343,7 @@ class Orchestrator:
 
         self._accumulate_active_time(now)
         self._refresh_grid_intensity(now)
+        self._handle_uncovered_window(now)
 
         charged_percent = 0.0
         if power_state.battery_percent is not None and self._last_battery_percent is not None:
@@ -266,6 +359,7 @@ class Orchestrator:
             previous_battery_percent=self._last_battery_percent,
             grid_intensity_g_per_kwh=self._current_intensity,
             charge_intensity_g_per_kwh=charge_intensity,
+            unknown_origin_intensity_g_per_kwh=self._unknown_origin_intensity,
         )
 
         #gli eventi di consumo passano dal buffer, che chiude la riga da solo
@@ -333,6 +427,9 @@ class Orchestrator:
             "active_hours_today": self.active_hours_today,
             "grid_intensity_source": self.grid_service.last_value_source,
             "grid_zone": self.grid_service.zone,
+            #da dove viene il riferimento applicato all'energia di origine
+            #ignota
+            "unknown_origin_source": self._unknown_origin_source,
         }
 
     def _maybe_save_pool_state(self, now: datetime, force: bool = False) -> None:

@@ -135,14 +135,6 @@ class WindowsLhmBackend:
         except Exception:
             return False
 
-    def is_available(self) -> bool:
-        try:
-            for hardware in self._computer.Hardware:
-                hardware.Update()
-            return True
-        except Exception:
-            return False
-
     def read(self) -> PowerReading:
         for hardware in self._computer.Hardware:
             hardware.Update()

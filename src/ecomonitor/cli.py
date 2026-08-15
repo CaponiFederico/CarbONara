@@ -10,6 +10,35 @@ from ecomonitor.storage.db import LocalDatabase
 #Prototipo da riga di comando
 logger = logging.getLogger(__name__)
 
+#serve a testare il backend e l'orchestrator senza GUI, e a raccogliere dati
+_ETICHETTE_RETE = {
+    "live": "dati live",
+    "static_fallback": "media statica",
+}
+
+
+def _intensity_source(result: dict) -> str:
+    attribution = result["attribution"]
+    source = attribution.source.value
+
+    if source == "grid_live":
+        rete = _ETICHETTE_RETE.get(
+            result["grid_intensity_source"], result["grid_intensity_source"]
+        )
+        return f"da rete ({rete})"
+    if source == "battery_pool":
+        return "da storico batteria"
+    if source == "battery_pool_partial":
+        return f"da storico parziale ({attribution.pool_coverage_ratio * 100:.0f}% tracciato)"
+    if source == "battery_pool_fallback":
+        riferimento = (
+            "media nazionale"
+            if result["unknown_origin_source"] == "static_country_mean"
+            else "media finestra scoperta"
+        )
+        return f"senza storico ({riferimento})"
+    return source
+
 
 def _format_tick(result: dict) -> str:
     reading = result["reading"]
@@ -24,7 +53,7 @@ def _format_tick(result: dict) -> str:
     return (
         f"{datetime.now():%H:%M:%S}  {stima}{reading.total_w:6.2f} W  "
         f"oggi {result['today_energy_wh']:7.2f} Wh  {result['today_operational_gco2']:7.2f} gCO2  "
-        f"{attribution.intensity_g_per_kwh:4.0f} gCO2/kWh via {attribution.source.value}  "
+        f"{attribution.intensity_g_per_kwh:4.0f} gCO2/kWh {_intensity_source(result)}  "
         f"[{alimentazione}]"
     )
 

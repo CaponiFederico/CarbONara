@@ -2,11 +2,14 @@ from dataclasses import dataclass
 from datetime import datetime
 
 #Campionare e persistere sono decisioni diverse: la misura ha bisogno di 5 s,
-#la persistenza no (a 5 s sono ~17 000 righe e ~2,4 MB al giorno). Qui i tick
-#vengono sommati e ne esce una riga al minuto.
-#La finestra viene chiusa prima della scadenza quando cambia il regime di
-#attribuzione o dopo un intervallo scartato, cosi' nessuna riga mescola due
-#regimi e resta rieseguibile dal ricalcolo offline
+#la persistenza no (a 5 s sono ~17 000 righe e ~2,4 MB al giorno)
+
+#I tick vengono sommati in una riga al minuto
+
+#La finestra di aggregazione si chiude quando:
+# - il tick corrente e' di regime diverso dal precedente (plugged, attribution_source)
+# - il tick corrente e' il primo dopo un buco di campionamento (starts_new_row)
+# - la finestra ha superato il tempo massimo (flush_interval_seconds)
 
 DEFAULT_FLUSH_INTERVAL_SECONDS = 60.0
 
@@ -78,10 +81,6 @@ class EnergyEventBuffer:
     @property
     def pending_gco2(self) -> float:
         return self._gco2
-
-    @property
-    def has_pending(self) -> bool:
-        return self._n > 0
 
     # -- accumulo ----------------------------------------------------------
 

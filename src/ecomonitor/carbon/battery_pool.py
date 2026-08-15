@@ -20,10 +20,6 @@ class DischargeOutcome:
     covered_percent: float
 
     @property
-    def uncovered_percent(self) -> float:
-        return max(0.0, self.requested_percent - self.covered_percent)
-
-    @property
     def coverage_ratio(self) -> float:
         #Frazione del prelievo effettivamente coperta dallo storico (0..1)
 
@@ -116,8 +112,7 @@ class BatteryCarbonPool:
                 self._fifo_layers[0] = (layer_percent, layer_intensity)
 
         #se non ci sono layer, ma stored_percent > 0, la carica residua e' stata
-        # persa per incoerenza di deserializzazione: non attribuiamo intensita' 
-        # a carica che non sappiamo da dove provenga
+        #persa
         self.stored_percent = max(0.0, self.stored_percent - consumed_total)
         if consumed_total <= MIN_SIGNIFICANT_DELTA_PERCENT:
             return DischargeOutcome(self.current_intensity_g_per_kwh, requested, 0.0)
@@ -145,7 +140,13 @@ class BatteryCarbonPool:
         self.model = model
         return True
 
-    #Il pool deve essere serializzabile per poter essere salvato tra un tick e l'altro 
+    def reset(self) -> None:
+        #Svuota il pool conservando il modello
+        self.stored_percent = 0.0
+        self.avg_intensity_g_per_kwh = 0.0
+        self._fifo_layers = deque()
+
+    #Il pool deve essere serializzabile per poter essere salvato tra un tick e l'altro
 
     def to_dict(self) -> dict:
         return {

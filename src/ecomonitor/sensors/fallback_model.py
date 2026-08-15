@@ -23,6 +23,3 @@ class FallbackModelBackend:
             timestamp=now_utc(),
             is_estimated=True,
         )
-
-    def is_available(self) -> bool:
-        return True  # psutil funziona sempre, e' il backend di ultima istanza
