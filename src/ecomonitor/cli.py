@@ -45,16 +45,16 @@ def _format_tick(result: dict) -> str:
     attribution = result["attribution"]
     state = result["power_state"]
 
-    alimentazione = "rete" if state.is_plugged_in else "batteria"
+    power_source = "rete" if state.is_plugged_in else "batteria"
     if state.battery_percent is not None:
-        alimentazione += f" {state.battery_percent:.0f}%"
+        power_source += f" {state.battery_percent:.0f}%"
 
-    stima = "~" if reading.is_estimated else " "
+    estimated_marker = "~" if reading.is_estimated else " "
     return (
-        f"{datetime.now():%H:%M:%S}  {stima}{reading.total_w:6.2f} W  "
+        f"{datetime.now():%H:%M:%S}  {estimated_marker}{reading.total_w:6.2f} W  "
         f"oggi {result['today_energy_wh']:7.2f} Wh  {result['today_operational_gco2']:7.2f} gCO2  "
         f"{attribution.intensity_g_per_kwh:4.0f} gCO2/kWh {_intensity_source(result)}  "
-        f"[{alimentazione}]"
+        f"[{power_source}]"
     )
 
 

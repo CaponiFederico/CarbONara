@@ -43,12 +43,12 @@ _REFERENCE_LABELS = {
 }
 
 
-def _percentuale(valore: float) -> str:
+def _percent_phrase(value: float) -> str:
     #"l'8%" e "l'11%", non "il 8%": elisione davanti a otto, undici, diciotto e
     #ottanta-ottantanove, gli unici numeri fino a 100 che iniziano per vocale
-    n = round(valore)
-    articolo = "l'" if n in (8, 11, 18) or 80 <= n <= 89 else "il "
-    return f"{articolo}{n}%"
+    n = round(value)
+    article = "l'" if n in (8, 11, 18) or 80 <= n <= 89 else "il "
+    return f"{article}{n}%"
 
 
 @dataclass(frozen=True)
@@ -78,8 +78,8 @@ class ChargeAdvice:
         delta = (self.current_intensity - self.reference_intensity) / self.reference_intensity
         if abs(delta) < 0.01:
             return f", in linea con {label}"
-        verso = "sopra" if delta > 0 else "sotto"
-        return f", {_percentuale(abs(delta) * 100)} {verso} {label}"
+        direction = "sopra" if delta > 0 else "sotto"
+        return f", {_percent_phrase(abs(delta) * 100)} {direction} {label}"
 
     def message(self) -> str:
         #testo pronto per l'interfaccia, una riga
@@ -106,7 +106,7 @@ class ChargeAdvice:
             local_time = self.best_time.astimezone().strftime("%H:%M")
             return (
                 f"{current} gCO2/kWh{self._reference_clause()}: aspettare le {local_time} "
-                f"farebbe risparmiare solo {_percentuale(self.saving_percent or 0.0)}"
+                f"farebbe risparmiare solo {_percent_phrase(self.saving_percent or 0.0)}"
             )
         return f"momento nella media ({current} gCO2/kWh{self._reference_clause()})"
 
