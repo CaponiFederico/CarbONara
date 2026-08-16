@@ -378,6 +378,8 @@ class Orchestrator:
                 discharged_percent=result.discharged_percent,
                 pool_coverage_ratio=result.pool_coverage_ratio,
                 battery_assisted=result.battery_assisted,
+                unknown_origin_intensity_g_per_kwh=self._unknown_origin_intensity,
+                unknown_origin_source=self._unknown_origin_source,
                 starts_new_row=self.integrator.skipped_gap_seconds > 0,
             )
         )

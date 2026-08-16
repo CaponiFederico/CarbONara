@@ -30,6 +30,8 @@ class EnergySample:
     discharged_percent: float
     pool_coverage_ratio: float
     battery_assisted: bool
+    unknown_origin_intensity_g_per_kwh: float
+    unknown_origin_source: str
     starts_new_row: bool = False
     #True quando il tick segue una finestra non osservata: il pending va chiuso
     #prima, cosi' nessuna riga attraversa il buco
@@ -51,6 +53,8 @@ class BufferedEnergyRow:
     discharged_percent: float
     pool_coverage_ratio: float
     battery_assisted: bool
+    unknown_origin_intensity_g_per_kwh: float
+    unknown_origin_source: str
     n_samples: int
     started_at: datetime
 
@@ -125,6 +129,10 @@ class EnergyEventBuffer:
             discharged_percent=self._discharged,
             pool_coverage_ratio=coverage,
             battery_assisted=self._assisted,
+            #costante dentro la finestra: un cambio di riferimento avviene solo
+            #dopo un buco, e _regime_changed() chiude comunque la riga prima
+            unknown_origin_intensity_g_per_kwh=self._last.unknown_origin_intensity_g_per_kwh,
+            unknown_origin_source=self._last.unknown_origin_source,
             n_samples=self._n,
             started_at=self._started_at,
         )
@@ -138,6 +146,8 @@ class EnergyEventBuffer:
         return (
             sample.is_plugged != self._last.is_plugged
             or sample.attribution_source != self._last.attribution_source
+            #cambio di riferimento ignoto: la riga precedente e' gia' stata attribuita
+            or sample.unknown_origin_source != self._last.unknown_origin_source
         )
 
     def _elapsed_seconds(self) -> float:

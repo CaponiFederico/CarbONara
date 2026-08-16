@@ -32,7 +32,9 @@ CREATE TABLE IF NOT EXISTS energy_events (
     pool_coverage_ratio REAL,
     battery_assisted INTEGER,
     n_samples INTEGER,
-    duration_seconds REAL
+    duration_seconds REAL,
+    unknown_origin_intensity_g_per_kwh REAL,
+    unknown_origin_source TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_energy_events_timestamp
@@ -120,6 +122,12 @@ class TraceEvent:
     battery_assisted: bool | None
     n_samples: int | None
 
+    unknown_origin_intensity_g_per_kwh: float | None = None
+    #Il riferimento applicato all'energia gia' in batteria di cui non si conosce
+    #l'istante di ricarica
+    unknown_origin_source: str | None = None
+    #reconstructed_api, uncovered_local o static_country_mean
+
     @property
     def charge_intensity_g_per_kwh(self) -> float | None:
         #media pesata delle ricariche dell'intervallo, comoda per riassumere:
@@ -145,7 +153,24 @@ class LocalDatabase:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as conn:
             conn.executescript(SCHEMA)
+            self._add_missing_columns(conn)
             conn.commit()
+
+    @staticmethod
+    def _add_missing_columns(conn: sqlite3.Connection) -> None:
+        #CREATE TABLE IF NOT EXISTS non aggiunge colonne a una tabella che gia'
+        #esiste
+        added = {
+            "energy_events": {
+                "unknown_origin_intensity_g_per_kwh": "REAL",
+                "unknown_origin_source": "TEXT",
+            },
+        }
+        for table, columns in added.items():
+            existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            for name, kind in columns.items():
+                if name not in existing:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.path)
@@ -168,14 +193,16 @@ class LocalDatabase:
         battery_assisted: bool | None = None,
         n_samples: int | None = None,
         duration_seconds: float | None = None,
+        unknown_origin_intensity_g_per_kwh: float | None = None,
+        unknown_origin_source: str | None = None,
     ) -> None:
         with closing(self._connect()) as conn:
             conn.execute(
                 "INSERT INTO energy_events (timestamp, wh, is_plugged, gco2, is_estimated, "
                 "intensity_g_per_kwh, attribution_source, battery_percent, charged_percent, "
                 "discharged_percent, pool_coverage_ratio, battery_assisted, n_samples, "
-                "duration_seconds) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "duration_seconds, unknown_origin_intensity_g_per_kwh, unknown_origin_source) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     to_utc_iso(timestamp),
                     wh,
@@ -191,6 +218,8 @@ class LocalDatabase:
                     None if battery_assisted is None else int(battery_assisted),
                     n_samples,
                     duration_seconds,
+                    unknown_origin_intensity_g_per_kwh,
+                    unknown_origin_source,
                 ),
             )
             conn.commit()
@@ -212,6 +241,8 @@ class LocalDatabase:
             battery_assisted=row.battery_assisted,
             n_samples=row.n_samples,
             duration_seconds=(row.timestamp - row.started_at).total_seconds(),
+            unknown_origin_intensity_g_per_kwh=row.unknown_origin_intensity_g_per_kwh,
+            unknown_origin_source=row.unknown_origin_source,
         )
 
     def sum_energy_events_for_day(self, day: date) -> dict:
@@ -329,6 +360,8 @@ class LocalDatabase:
                         None if row["battery_assisted"] is None else bool(row["battery_assisted"])
                     ),
                     n_samples=row["n_samples"],
+                    unknown_origin_intensity_g_per_kwh=row["unknown_origin_intensity_g_per_kwh"],
+                    unknown_origin_source=row["unknown_origin_source"],
                 )
             )
             previous_ts = ts
