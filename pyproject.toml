@@ -22,6 +22,8 @@ windows = [
 ]
 dev = [
     "ruff>=0.6",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
 ]
 
 [project.scripts]

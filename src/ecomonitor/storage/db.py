@@ -1,4 +1,5 @@
 import json
+import logging
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
@@ -7,6 +8,8 @@ from datetime import time as dt_time
 from pathlib import Path
 
 from ecomonitor.carbon.battery_pool import BatteryCarbonPool
+
+logger = logging.getLogger(__name__)
 
 #Data store locale SQLite:
 #- energy_events: consumo per intervallo, con i gCO2 gia' attribuiti e il
@@ -98,8 +101,7 @@ class ChargeRecord:
 @dataclass(frozen=True)
 class TraceEvent:
     #un intervallo con tutto cio' che serve a rieseguire l'attribuzione con un
-    #modello diverso. I campi recorded_* sono quello che l'app aveva attribuito
-    #in diretta, e servono a verificare che il ricalcolo lo riproduca
+    #modello diverso
 
     timestamp: datetime
     wh: float
@@ -112,8 +114,7 @@ class TraceEvent:
 
     charges: tuple[ChargeRecord, ...]
     #le ricariche cadute dentro l'intervallo: una riga aggregata al minuto puo'
-    #contenere piu' punti caricati a intensita' diverse, e il ricalcolo li
-    #rigioca uno per uno
+    #contenere piu' punti caricati a intensita' diverse
 
     recorded_intensity_g_per_kwh: float | None
     recorded_gco2: float
@@ -142,9 +143,26 @@ class TraceEvent:
 
 
 def to_utc_iso(moment: datetime) -> str:
-    #le righe vengono confrontate lessicograficamente in SQL: mescolare fusi
-    #diversi produrrebbe confronti sbagliati
+    #le righe vengono confrontate con standard utc 
     return moment.astimezone(UTC).isoformat()
+
+
+def default_database_path() -> Path:
+    #GUI, CLI e script di ricalcolo devono aprire lo stesso file,
+    #altrimenti il lock che li tiene separati protegge percorsi diversi
+    import platformdirs
+
+    return Path(platformdirs.user_data_path("ecomonitor")) / "local.db"
+
+
+def local_day_bounds(day: date) -> tuple[datetime, datetime]:
+    #Istanti di inizio e fine di un giorno di calendario locale
+
+    #caso di cambio dell'ora legale in alcuni paesi
+ 
+    start = datetime.combine(day, dt_time.min).astimezone()
+    end = datetime.combine(day + timedelta(days=1), dt_time.min).astimezone()
+    return start, end
 
 
 class LocalDatabase:
@@ -234,8 +252,7 @@ class LocalDatabase:
     def sum_energy_events_for_day(self, day: date) -> dict:
         #day e' un giorno di calendario locale: i timestamp sono in UTC, quindi
         #si confrontano i due estremi convertiti
-        start_local = datetime.combine(day, dt_time.min).astimezone()
-        end_local = start_local + timedelta(days=1)
+        start_local, end_local = local_day_bounds(day)
         with closing(self._connect()) as conn:
             row = conn.execute(
                 "SELECT COALESCE(SUM(wh), 0), COALESCE(SUM(gco2), 0), COUNT(*) "
@@ -251,8 +268,7 @@ class LocalDatabase:
         #Gli intervalli oltre max_gap_seconds sono finestre non osservate e
         #vengono esclusi, non estrapolati. duration_seconds copre il tempo
         #dentro una riga aggregata, che serve alla prima riga di ogni sessione
-        start_local = datetime.combine(day, dt_time.min).astimezone()
-        end_local = start_local + timedelta(days=1)
+        start_local, end_local = local_day_bounds(day)
         with closing(self._connect()) as conn:
             rows = conn.execute(
                 "SELECT timestamp, duration_seconds FROM energy_events "
@@ -422,8 +438,20 @@ class LocalDatabase:
         if row is None:
             return None, None, None
 
-        pool = BatteryCarbonPool.from_dict(json.loads(row[0]))
-        last_seen = datetime.fromisoformat(row[2]) if row[2] else None
+
+        #Si riparte dal pool vuoto: si perde lo storico di ricarica, non l'avvio
+        try:
+            pool = BatteryCarbonPool.from_dict(json.loads(row[0]))
+            last_seen = datetime.fromisoformat(row[2]) if row[2] else None
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
+            logger.warning(
+                "Stato del pool non leggibile (%s): si riparte senza storico di ricarica. "
+                "Il consumo a batteria sara' attribuito alla media nazionale finche' non "
+                "si osserva una nuova ricarica",
+                exc,
+            )
+            return None, None, None
+
         return pool, row[1], last_seen
 
     # -- storico intensita' di rete ----------------------------------------

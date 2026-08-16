@@ -6,6 +6,8 @@ from pathlib import Path
 
 import platformdirs
 
+from ecomonitor.carbon.battery_pool import AttributionModel
+
 #Configurazione in JSON nella cartella utente di sistema, quindi fuori dal
 #repository: la chiave ElectricityMaps e' un segreto personale
 
@@ -13,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 APP_NAME = "ecomonitor"
 API_KEY_ENV_VAR = "ECOMONITOR_EM_API_KEY"
+
+ATTRIBUTION_MODELS: tuple[str, ...] = tuple(model.value for model in AttributionModel)
 
 
 @dataclass
@@ -54,6 +58,82 @@ def default_config_path() -> Path:
     return platformdirs.user_config_path(APP_NAME) / "config.json"
 
 
+def _positive_number(value: object, default: float, field_name: str) -> float:
+    #Un JSON valido puo' contenere valori senza senso
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        logger.warning(
+            "Configurazione: %s='%r' non e' un numero, uso il valore predefinito %g",
+            field_name,
+            value,
+            default,
+        )
+        return default
+
+    if not (number > 0):  # falso anche per NaN, che non e' > 0 ne' <= 0
+        logger.warning(
+            "Configurazione: %s=%r non e' positivo, uso il valore predefinito %g",
+            field_name,
+            value,
+            default,
+        )
+        return default
+    return number
+
+
+def _non_empty_text(value: object, default: str, field_name: str) -> str:
+    text = str(value).strip() if value is not None else ""
+    if not text:
+        logger.warning(
+            "Configurazione: %s vuoto, uso il valore predefinito '%s'", field_name, default
+        )
+        return default
+    return text
+
+
+def _sanitised(config: AppConfig) -> AppConfig:
+    #Normalizza i valori appena letti dal file
+    defaults = AppConfig()
+
+    if config.attribution_model not in ATTRIBUTION_MODELS:
+        #arrivava intatto fino a AttributionModel(...) nel costruttore
+        #dell'Orchestrator: ValueError non gestita, finestra che non compare
+        logger.warning(
+            "Configurazione: modello di attribuzione '%s' sconosciuto, uso '%s' "
+            "(validi: %s)",
+            config.attribution_model,
+            defaults.attribution_model,
+            ", ".join(ATTRIBUTION_MODELS),
+        )
+        config.attribution_model = defaults.attribution_model
+
+    config.em_zone = _non_empty_text(config.em_zone, defaults.em_zone, "em_zone")
+
+    config.country_code = _non_empty_text(
+        config.country_code, defaults.country_code, "country_code"
+    ).upper()
+
+    for field_name in (
+        "poll_interval_seconds",
+        "db_flush_interval_seconds",
+        "grid_sample_interval_seconds",
+        "charge_rate_percent_per_hour",
+    ):
+        setattr(
+            config,
+            field_name,
+            _positive_number(
+                getattr(config, field_name), getattr(defaults, field_name), field_name
+            ),
+        )
+
+    config.tray_notice_shown = bool(config.tray_notice_shown)
+    if config.electricitymaps_api_key is not None:
+        config.electricitymaps_api_key = str(config.electricitymaps_api_key).strip() or None
+    return config
+
+
 class ConfigManager:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or default_config_path()
@@ -76,7 +156,9 @@ class ConfigManager:
         #ignora le chiavi sconosciute invece di sollevare TypeError: un file
         #scritto da un'altra versione non deve impedire l'avvio
         known = {field.name for field in fields(AppConfig)}
-        return AppConfig(**{key: value for key, value in data.items() if key in known})
+        return _sanitised(
+            AppConfig(**{key: value for key, value in data.items() if key in known})
+        )
 
     def _create_default(self) -> AppConfig:
         #il file va creato 

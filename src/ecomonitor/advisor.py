@@ -44,10 +44,9 @@ _REFERENCE_LABELS = {
 
 
 def _percent_phrase(value: float) -> str:
-    #"l'8%" e "l'11%", non "il 8%": elisione davanti a otto, undici, diciotto e
-    #ottanta-ottantanove, gli unici numeri fino a 100 che iniziano per vocale
+    #accenti
     n = round(value)
-    article = "l'" if n in (8, 11, 18) or 80 <= n <= 89 else "il "
+    article = "l'" if n in (1, 8, 11, 18) or 80 <= n <= 89 else "il "
     return f"{article}{n}%"
 
 

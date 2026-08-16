@@ -1,8 +1,5 @@
 import logging
 from datetime import date, datetime, timedelta
-from pathlib import Path
-
-import platformdirs
 
 from ecomonitor.advisor import CarbonAwareAdvisor, ChargeAdvice, RollingAverage
 from ecomonitor.carbon.attribution import CarbonAttributionService
@@ -18,7 +15,7 @@ from ecomonitor.power_context import PowerSourceState, read_power_source_state
 from ecomonitor.reporting import ReportingEngine
 from ecomonitor.sensors.base import SensorBackend, now_utc
 from ecomonitor.sensors.factory import get_backend
-from ecomonitor.storage.db import LocalDatabase
+from ecomonitor.storage.db import LocalDatabase, default_database_path
 from ecomonitor.storage.event_buffer import EnergyEventBuffer, EnergySample
 
 #legge i sensori e integra W -> Wh, legge lo stato di
@@ -75,7 +72,7 @@ class Orchestrator:
         self.buffer = EnergyEventBuffer(config.db_flush_interval_seconds)
         self._read_power_source = power_source_reader
 
-        self.db = db or LocalDatabase(Path(platformdirs.user_data_path("ecomonitor")) / "local.db")
+        self.db = db or LocalDatabase(default_database_path())
         self.reporting = ReportingEngine(self.db)
 
         self.grid_service = grid_service or GridCarbonIntensityService(
@@ -132,10 +129,11 @@ class Orchestrator:
         #le ore attive ripartono da quelle gia' osservate oggi: sono il
         #denominatore di gCO2/ora, il cui numeratore copre l'intera giornata
         self._active_day = date.today()
+
+        #stessa soglia dell'integratore
         self._active_seconds_today = self.db.active_seconds_for_day(
-            self._active_day, GAP_THRESHOLD_SECONDS
+            self._active_day, self.integrator.max_interval_seconds
         )
-        self._last_tick: datetime | None = None
         self._last_grid_sample_at: datetime | None = None
         self._last_pool_save_at: datetime | None = None
         self._current_intensity = self.grid_service.get_current_intensity()
@@ -191,15 +189,11 @@ class Orchestrator:
                 self._write_energy_row(pending)
             self._active_day = today
             self._active_seconds_today = 0.0
-            self._last_tick = None
             self._resync_totals(today)
             self._last_totals_resync_at = now
 
-        if self._last_tick is not None:
-            elapsed = (now - self._last_tick).total_seconds()
-            if 0 < elapsed < GAP_THRESHOLD_SECONDS:
-                self._active_seconds_today += elapsed
-        self._last_tick = now
+        
+        self._active_seconds_today += self.integrator.last_interval_seconds
 
     def _refresh_grid_intensity(self, now: datetime) -> None:
         #si campiona sempre, collegati o no: alimenta la media mobile e lo

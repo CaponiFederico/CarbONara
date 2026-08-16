@@ -7,15 +7,17 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QVBoxLayout,
     QWidget,
 )
 
-from ecomonitor.config import API_KEY_ENV_VAR, ConfigManager
+from ecomonitor.config import API_KEY_ENV_VAR, ATTRIBUTION_MODELS, ConfigManager
 
 #La configurazione vive in un JSON nella cartella utente
 
-_ATTRIBUTION_MODELS = ("weighted_average", "fifo")
+#la lista viene da config.ATTRIBUTION_MODELS
+_ATTRIBUTION_MODELS = ATTRIBUTION_MODELS
 
 class SettingsDialog(QDialog):
     def __init__(self, parent: QWidget | None = None, manager: ConfigManager | None = None) -> None:
@@ -75,5 +77,14 @@ class SettingsDialog(QDialog):
         config.country_code = (self.country_edit.text().strip() or config.country_code).upper()
         config.electricitymaps_api_key = self.api_key_edit.text().strip() or None
         config.attribution_model = self.attribution_combo.currentText()
-        self._manager.save()
+        try:
+            self._manager.save()
+        except OSError as exc:
+            
+            QMessageBox.warning(
+                self,
+                "Impossibile salvare le impostazioni",
+                f"Le modifiche non sono state salvate: {exc}",
+            )
+            return
         super().accept()

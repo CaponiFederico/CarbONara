@@ -11,11 +11,11 @@ from ecomonitor.gui.main_window import MainWindow
 from ecomonitor.gui.single_instance import SingleInstanceGuard
 from ecomonitor.gui.tray import create_tray_icon
 from ecomonitor.orchestrator import Orchestrator
+from ecomonitor.storage.db import default_database_path
+from ecomonitor.storage.lock import DatabaseLock
 
-#Qui resta solo cio' che riguarda la GUI: la logica di misura e attribuzione
-#sta in ecomonitor.orchestrator
 
-#Orchestrator.tick() fa I/O bloccante verso i driver (decine o centinaia di ms):
+#Orchestrator.tick() fa I/O bloccante verso i driver:
 #sul thread della GUI l'event loop di Qt si blocca e la finestra smette di
 #rispondere. PollingWorker lo sposta su un QThread dedicato e comunica solo via
 #segnali
@@ -147,6 +147,16 @@ def main() -> None:
         )
         return
 
+    #SingleInstanceGuard intercetta una seconda GUI 
+    db_lock = DatabaseLock(default_database_path())
+    if not db_lock.acquire():
+        guard.release()
+        logger.error(
+            "Il database e' gia' in uso da un altro processo (probabilmente "
+            "ecomonitor-cli): questa istanza esce senza toccarlo"
+        )
+        return
+
     orchestrator = Orchestrator()
     tray = create_tray_icon(window, on_quit=app.quit) if tray_available else None
     if tray is None:
@@ -190,6 +200,7 @@ def main() -> None:
     def cleanup() -> None:
         sigint_timer.stop()
         guard.release()
+        db_lock.release()
         if tray is not None:
             tray.hide()  # senza questo l'icona resta nella tray dopo l'uscita
         worker.stop()

@@ -3,9 +3,11 @@ import logging
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 
 from ecomonitor.orchestrator import Orchestrator
-from ecomonitor.storage.db import LocalDatabase
+from ecomonitor.storage.db import LocalDatabase, default_database_path
+from ecomonitor.storage.lock import DatabaseLock
 
 #Prototipo da riga di comando
 logger = logging.getLogger(__name__)
@@ -69,9 +71,34 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--quiet", action="store_true", help="stampa solo il riepilogo finale")
     args = parser.parse_args(argv)
 
+    if args.interval is not None and args.interval <= 0:
+        parser.error("--interval deve essere positivo")
+    if args.minutes is not None and args.minutes < 0:
+        parser.error("--minutes non puo' essere negativo")
+
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
 
-    orchestrator = Orchestrator(db=LocalDatabase(args.db) if args.db else None)
+    #Il lock va preso prima di costruire l'Orchestrator che apre il database
+    db_path = Path(args.db) if args.db else default_database_path()
+    lock = DatabaseLock(db_path)
+    if not lock.acquire():
+        parser.error(
+            f"il database {db_path} e' gia' in uso da un'altra istanza di EcoMonitor "
+            "(l'applicazione grafica, o un'altra esecuzione di questo comando). "
+            "Chiudila, oppure usa --db per lavorare su un file separato"
+        )
+
+    try:
+        return _run(args, parser, db_path)
+    finally:
+        lock.release()
+
+
+def _run(args: argparse.Namespace, parser: argparse.ArgumentParser, db_path: Path) -> int:
+    try:
+        orchestrator = Orchestrator(db=LocalDatabase(db_path))
+    except OSError as exc:
+        parser.error(f"impossibile aprire il database ({exc})")
     config = orchestrator.config_manager.config
     interval = args.interval if args.interval is not None else config.poll_interval_seconds
 
@@ -80,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"modello pool    : {orchestrator.battery_pool.model.value}")
     print(f"intervallo      : {interval:g}s — Ctrl+C per uscire\n")
 
-    deadline = time.monotonic() + args.minutes * 60 if args.minutes else None
+    deadline = time.monotonic() + args.minutes * 60 if args.minutes is not None else None
     ticks = 0
     try:
         while deadline is None or time.monotonic() < deadline:

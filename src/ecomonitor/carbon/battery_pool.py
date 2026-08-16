@@ -135,6 +135,13 @@ class BatteryCarbonPool:
                     sum(percent * intensity for percent, intensity in self._fifo_layers) / total
                 )
                 self.stored_percent = total
+            else:
+                #Nessun layer da convertire
+                
+                #Se stored_percent dichiarava comunque della carica, quella carica 
+                #non ha un'intensita' associata
+                self.stored_percent = 0.0
+                self.avg_intensity_g_per_kwh = 0.0
             self._fifo_layers = deque()
 
         self.model = model

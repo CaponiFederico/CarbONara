@@ -48,19 +48,30 @@ class _RaplDomain:
 
 
 def _discover_domains() -> dict[str, _RaplDomain]:
+    #La chiave e' la cartella sysfs (intel-rapl:0:1)
     domains: dict[str, _RaplDomain] = {}
     if not RAPL_ROOT.exists():
         return domains
 
+    #rglob perche' i sottodomini stanno dentro la cartella del package
+    #(intel-rapl:0/intel-rapl:0:1) 
     for entry in sorted(RAPL_ROOT.glob("intel-rapl:*")):
-        name_file = entry / "name"
-        energy_file = entry / "energy_uj"
-        max_range_file = entry / "max_energy_range_uj"
-        if not (name_file.exists() and energy_file.exists()):
-            continue
-        name = name_file.read_text().strip()
-        max_range = int(max_range_file.read_text().strip()) if max_range_file.exists() else 2**32
-        domains[name] = _RaplDomain(name=name, energy_path=energy_file, max_range_uj=max_range)
+        for directory in (entry, *sorted(entry.glob("intel-rapl:*"))):
+            name_file = directory / "name"
+            energy_file = directory / "energy_uj"
+            max_range_file = directory / "max_energy_range_uj"
+            if not (name_file.exists() and energy_file.exists()):
+                continue
+            key = directory.name
+            if key in domains:
+                continue
+            name = name_file.read_text().strip()
+            max_range = (
+                int(max_range_file.read_text().strip()) if max_range_file.exists() else 2**32
+            )
+            domains[key] = _RaplDomain(
+                name=name, energy_path=energy_file, max_range_uj=max_range
+            )
 
     return domains
 
@@ -94,7 +105,10 @@ class LinuxRaplBackend:
         dram_w: float | None = None
         gpu_integrated_w: float | None = None
 
-        for name, domain in self._domains.items():
+        for domain in self._domains.values():
+            #il nome del dominio RAPL, non la chiave del dizionario: quella e'
+            #la cartella sysfs, unica ma priva di significato
+            name = domain.name
             watts = domain.sample_watts()
             if watts is None:
                 continue
@@ -109,7 +123,12 @@ class LinuxRaplBackend:
                 #Intel e' la GPU integrata
                 gpu_integrated_w = (gpu_integrated_w or 0.0) + watts
             #"core" (PP0) e' un sotto-dominio gia' incluso in "package-N":
-            
+
+        #"uncore" (PP1) e' anch'esso DENTRO il package, esattamente come "core".
+        #Va diviso e non sommato
+        if gpu_integrated_w is not None:
+            package_w = max(0.0, package_w - gpu_integrated_w)
+
         #la GPU dedicata non passa da RAPL in nessun caso
         nvidia_w = read_nvidia_gpu_power_w()
         amd_w = read_amd_gpu_power_w()
