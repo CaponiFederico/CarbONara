@@ -41,6 +41,8 @@ def _classify_hardware(hardware_iterable: Iterable, hardware_type, sensor_type) 
     gpu_integrated_w: float | None = None
     gpu_dedicated_w: float | None = None
     found_package = False
+    #Quota di gpu_integrated_w che il sensore conta gia' dentro di se'
+    gpu_integrated_inside_package_w = 0.0
 
     for hardware in hardware_iterable:
         if hardware.HardwareType == hardware_type.Cpu:
@@ -77,6 +79,8 @@ def _classify_hardware(hardware_iterable: Iterable, hardware_type, sensor_type) 
             )
             if is_integrated:
                 gpu_integrated_w = (gpu_integrated_w or 0.0) + gpu_power
+                if hardware.HardwareType == hardware_type.GpuIntel:
+                    gpu_integrated_inside_package_w += gpu_power
             else:
                 gpu_dedicated_w = (gpu_dedicated_w or 0.0) + gpu_power
 
@@ -84,6 +88,10 @@ def _classify_hardware(hardware_iterable: Iterable, hardware_type, sensor_type) 
             for sensor in hardware.Sensors:
                 if sensor.SensorType == sensor_type.Power and sensor.Value is not None:
                     dram_w = (dram_w or 0.0) + float(sensor.Value)
+
+    #Sui client Intel la grafica integrata sta sullo stesso package della CPU 
+    if gpu_integrated_inside_package_w:
+        package_w = max(0.0, package_w - gpu_integrated_inside_package_w)
 
     return _ClassifiedPower(package_w, dram_w, gpu_integrated_w, gpu_dedicated_w, found_package)
 
