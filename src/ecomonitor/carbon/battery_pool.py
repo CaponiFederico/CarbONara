@@ -4,8 +4,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 
-# Sotto questa soglia e' rumore di arrotondamento del sistema operativo
-MIN_SIGNIFICANT_DELTA_PERCENT = 1e-6
+# Sotto questa soglia e' rumore del sensore di carica
+MIN_SIGNIFICANT_DELTA_PERCENT = 0.05
 
 class AttributionModel(Enum):
     WEIGHTED_AVERAGE = "weighted_average"

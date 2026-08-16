@@ -19,3 +19,4 @@ secrets*
 
 .vscode/
 .idea/
+*.png

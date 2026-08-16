@@ -136,7 +136,8 @@ class Orchestrator:
         )
         self._last_grid_sample_at: datetime | None = None
         self._last_pool_save_at: datetime | None = None
-        self._current_intensity = self.grid_service.get_current_intensity()
+        #placeholder, sostituito dal primo tick
+        self._current_intensity = self.grid_service.static_country_mean
 
         self._written_wh = 0.0
         self._written_gco2 = 0.0

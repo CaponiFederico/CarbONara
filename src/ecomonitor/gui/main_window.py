@@ -69,6 +69,8 @@ class MainWindow(QMainWindow):
 
         central = QWidget(self)
         layout = QGridLayout(central)
+        #la colonna dei valori deve poter crescere
+        layout.setColumnStretch(1, 1)
 
         self.power_label = self._add_row(
             layout, 0, "Potenza istantanea (CPU+GPU):", _FIELD_HELP["power"]
@@ -96,6 +98,9 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
 
+        #calibrata prima del primo show()
+        self._calibrate_size()
+
         self.hide_on_close = True
         #Lo decide app.py in base alla presenza di un'area di notifica: senza,
         #nascondersi significherebbe restare vivi e irraggiungibili
@@ -105,6 +110,24 @@ class MainWindow(QMainWindow):
         #notificare lo decide app.py, la finestra non sa nulla della tray
 
     # -- costruzione -------------------------------------------------------
+
+    def _calibrate_size(self) -> None:
+        #le stringhe piu' lunghe 
+        self.intensity_label.setText(
+            "~320 gCO2/kWh — storico di ricarica parziale (73% della carica tracciata)"
+        )
+        self.advisor_label.setText(
+            "conviene aspettare le 09:00: 206 invece di 357 gCO2/kWh (-42%)"
+        )
+        self.grid_source_label.setText(
+            "media statica di ripiego, nessuna chiave API — zona IT-CNO"
+        )
+        self.centralWidget().layout().activate()
+        self.resize(self.sizeHint())
+        self.setMinimumSize(self.size())
+
+        for label in (self.intensity_label, self.advisor_label, self.grid_source_label):
+            label.setText("—")
 
     @staticmethod
     def _describe(widget: QWidget, help_text: str) -> None:
@@ -116,6 +139,7 @@ class MainWindow(QMainWindow):
         #la spiegazione va su entrambe le cellei
         caption_label = QLabel(caption)
         value_label = QLabel("—")
+        value_label.setWordWrap(True)
         value_label.setAccessibleName(caption.rstrip(":"))
         for widget in (caption_label, value_label):
             self._describe(widget, help_text)
@@ -173,3 +197,12 @@ class MainWindow(QMainWindow):
 
     def update_advisor(self, text: str) -> None:
         self.advisor_label.setText(text)
+
+    def fit_to_content(self) -> None:
+        #va chiamato una volta dopo aver aggiornato le etichette di un tick
+        self.centralWidget().layout().activate()
+        hint = self.sizeHint()
+        new_width = max(self.width(), hint.width())
+        new_height = max(self.height(), hint.height())
+        if (new_width, new_height) != (self.width(), self.height()):
+            self.resize(new_width, new_height)

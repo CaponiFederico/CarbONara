@@ -91,6 +91,8 @@ class WindowUpdater(QObject):
         advice: ChargeAdvice = result["advice"]
         self._window.update_advisor(advice.message())
 
+        self._window.fit_to_content()
+
 
 SIGINT_POLL_MS = 500
 #ogni quanto restituire il controllo all'interprete perche' possa eseguire un
@@ -156,6 +158,11 @@ def main() -> None:
         )
         return
 
+    #mostrata subito, prima di Orchestrator
+    window.show()
+    window.raise_()
+    window.activateWindow()
+
     orchestrator = Orchestrator()
     tray = create_tray_icon(window, on_quit=app.quit) if tray_available else None
     if tray is None:
@@ -184,7 +191,6 @@ def main() -> None:
             logger.warning("Impossibile ricordare che l'avviso di background e' stato mostrato")
 
     window.on_hidden = announce_background_mode
-    window.show()
 
     #creato qui, cioe' nel thread della GUI: e' quello che rende la consegna
     #accodata invece che diretta
