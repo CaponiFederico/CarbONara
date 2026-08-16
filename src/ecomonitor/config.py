@@ -183,13 +183,15 @@ class ConfigManager:
         try:
             self.path.replace(quarantined)
         except OSError:
-            quarantined = None
+            moved = False
+        else:
+            moved = True
 
         logger.warning(
             "Configurazione non leggibile (%s). Si riparte dai valori predefiniti; "
             "il file precedente %s",
             reason,
-            f"e' stato rinominato in {quarantined.name}" if quarantined else
+            f"e' stato rinominato in {quarantined.name}" if moved else
             "non e' stato possibile metterlo da parte",
         )
         return self._create_default()

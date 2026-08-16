@@ -3,8 +3,9 @@ import signal
 import sys
 
 import platformdirs
-from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtGui import QPalette
+from PySide6.QtWidgets import QApplication, QStyleFactory, QSystemTrayIcon
 
 from ecomonitor.advisor import ChargeAdvice
 from ecomonitor.gui.main_window import MainWindow
@@ -20,6 +21,41 @@ from ecomonitor.storage.lock import DatabaseLock
 #segnali
 
 logger = logging.getLogger(__name__)
+
+#Stili
+_DARK_AWARE_STYLES = ("windows11", "Fusion")
+
+
+def choose_dark_aware_style(
+    scheme_is_dark: bool, window_lightness: int, available: tuple[str, ...]
+) -> str | None:
+    #Se il sistema e' in tema scuro ma lo stile attuale rende chiaro, sceglie un
+    #altro stile che rispetti il tema scuro. Se non c'e', non fa nulla: 
+    #il tema scuro e' solo un suggerimento, non un obbligo
+    if not scheme_is_dark:
+        return None
+    if window_lightness < 128:
+        return None  # lo stile attuale sta gia' scurendo per conto suo
+    for name in _DARK_AWARE_STYLES:
+        if name in available:
+            return name
+    return None
+
+
+def _apply_dark_aware_style(app: QApplication) -> None:
+    palette_window = app.palette().color(QPalette.ColorGroup.Active, QPalette.ColorRole.Window)
+    chosen = choose_dark_aware_style(
+        scheme_is_dark=app.styleHints().colorScheme() == Qt.ColorScheme.Dark,
+        window_lightness=palette_window.lightness(),
+        available=tuple(QStyleFactory.keys()),
+    )
+    if chosen is None:
+        return
+    previous = app.style().objectName()
+    app.setStyle(chosen)
+    logger.info(
+        "Sistema in tema scuro ma lo stile '%s' rende chiaro: passo a '%s'", previous, chosen
+    )
 
 
 class PollingWorker(QObject):
@@ -121,6 +157,9 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
     app = QApplication(sys.argv)
+    #prima di costruire qualunque widget: cambiare stile dopo li lascerebbe con
+    #la tavolozza vecchia
+    _apply_dark_aware_style(app)
     #un QTimer senza parent raccolto dal garbage collector smette di scattare
     sigint_timer = _install_sigint_handler(app)
 

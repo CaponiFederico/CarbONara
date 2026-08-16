@@ -1,6 +1,7 @@
 import errno
 import logging
 import os
+import sys
 from pathlib import Path
 from types import TracebackType
 
@@ -36,7 +37,10 @@ class DatabaseLock:
 
     def __init__(self, db_path: Path | str) -> None:
         self.path = Path(f"{Path(db_path)}.lock")
-        self._handle = None
+        #annotato esplicitamente: senza, il tipo dedotto e' None e l'analisi
+        #statica considera irraggiungibile tutto il corpo di release() dopo il
+        #controllo, cioe' smette di guardare proprio il rilascio del lock
+        self._handle: int | None = None
 
     def acquire(self) -> bool:
         #False solo quando un altro processo lo tiene davvero: in quel caso il
@@ -107,42 +111,45 @@ class DatabaseLock:
         self.release()
 
 
+#sys.platform e' una stringa costante, non un oggetto: l'analizzatore
+#non sa che non puo' cambiare a runtime e segnala codice morto nei rami
+
+
 def _lock_exclusive_non_blocking(handle: int) -> None:
     #Solleva OSError se un altro processo tiene il lock
-    #NotImplementedError se la piattaforma non offre 
+    #NotImplementedError se la piattaforma non offre
     # una primitiva utilizzabile
-    try:
-        import fcntl
-    except ImportError:
-        pass
-    else:
-        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return
-
-    try:
+    #if/else e non un return anticipato
+    if sys.platform == "win32":
         import msvcrt
-    except ImportError as exc: 
-        raise NotImplementedError("nessuna primitiva di lock disponibile") from exc
 
-    #su Windows il lock e' per intervallo di byte: ne basta uno
-    msvcrt.locking(handle, msvcrt.LK_NBLCK, 1)
+        #su Windows il lock e' per intervallo di byte: ne basta uno
+        msvcrt.locking(handle, msvcrt.LK_NBLCK, 1)
+    else:
+        try:
+            import fcntl
+        except ImportError as exc:
+            #ne' Windows ne' POSIX: il chiamante degrada con un avviso
+            raise NotImplementedError("nessuna primitiva di lock disponibile") from exc
+
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
 def _unlock(handle: int) -> None:
-    try:
-        import fcntl
-    except ImportError:
-        pass
-    else:
-        fcntl.flock(handle, fcntl.LOCK_UN)
-        return
-
-    try:
+    if sys.platform == "win32":
         import msvcrt
-    except ImportError:  
-        return
-    try:
-        os.lseek(handle, 0, os.SEEK_SET)
-        msvcrt.locking(handle, msvcrt.LK_UNLCK, 1)
-    except OSError:
-        pass
+
+        try:
+            #msvcrt sblocca l'intervallo che parte dalla posizione corrente:
+            #dopo la scrittura del PID il descrittore non e' piu' a zero
+            os.lseek(handle, 0, os.SEEK_SET)
+            msvcrt.locking(handle, msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+    else:
+        try:
+            import fcntl
+        except ImportError:
+            return
+
+        fcntl.flock(handle, fcntl.LOCK_UN)

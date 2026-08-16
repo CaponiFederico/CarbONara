@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
 from ecomonitor.advisor import CarbonAwareAdvisor, ChargeAdvice, RollingAverage
@@ -25,6 +26,15 @@ from ecomonitor.storage.event_buffer import EnergyEventBuffer, EnergySample
 #senza GUI, senza hardware e senza rete
 
 logger = logging.getLogger(__name__)
+
+
+def _best_effort(action: Callable[[], None], lost: str) -> None:
+    #Usato solo nel salvataggio di chiusura
+    try:
+        action()
+    except Exception:
+        logger.exception("Salvataggio finale non riuscito: %s", lost)
+
 
 POOL_SAVE_INTERVAL_SECONDS = 60.0
 
@@ -446,14 +456,25 @@ class Orchestrator:
         self._last_pool_save_at = now
 
     def flush(self) -> None:
-        #salvataggio finale: salva l'istante dell'ultima osservazione reale
-        #della batteria, non l'ora di adesso, perche' e' il valore con cui si
-        #misura la finestra rimasta scoperta
-        pending = self.buffer.flush()
+        #Salvataggio finale, alla chiusura dell'applicazione.
+        pending = None
+
+        def _take_pending() -> None:
+            nonlocal pending
+            pending = self.buffer.flush()
+
+        _best_effort(_take_pending, "l'ultimo intervallo non e' stato estratto dal buffer")
         if pending is not None:
-            self._write_energy_row(pending)
-        self.db.save_pool_state(
-            self.battery_pool, self._last_battery_percent, self._last_seen_at or now_utc()
+            _best_effort(
+                lambda: self._write_energy_row(pending),
+                "l'ultimo intervallo di consumo non e' stato registrato",
+            )
+        _best_effort(
+            lambda: self.db.save_pool_state(
+                self.battery_pool, self._last_battery_percent, self._last_seen_at or now_utc()
+            ),
+            "lo stato del pool batteria non e' stato salvato: alla riapertura una "
+            "ricarica gia' contabilizzata potrebbe essere contata di nuovo",
         )
 
     def build_daily_report(self):

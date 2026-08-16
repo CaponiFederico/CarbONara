@@ -64,9 +64,10 @@ class ChargeAdvice:
     reference_horizon_hours: float | None = None
     #Su quante ore e' calcolato il riferimento
 
-    def _reference_label(self) -> str:
-        label = _REFERENCE_LABELS[self.reference_source]
-        if self.reference_source is ReferenceSource.FORECAST_MEAN and self.reference_horizon_hours:
+    def _reference_label(self, source: ReferenceSource) -> str:
+        #La provenienza arriva come parametro invece di essere letta da self:
+        label = _REFERENCE_LABELS[source]
+        if source is ReferenceSource.FORECAST_MEAN and self.reference_horizon_hours:
             return f"{label} per le prossime {self.reference_horizon_hours:g} h"
         return label
 
@@ -82,7 +83,8 @@ class ChargeAdvice:
             or self.reference_source is None
         ):
             return ""
-        label = self._reference_label()
+        #qui reference_source e' gia' stato ristretto a non-None dal filtro sopra
+        label = self._reference_label(self.reference_source)
         delta = (self.current_intensity - self.reference_intensity) / self.reference_intensity
         if abs(delta) < 0.01:
             return f", in linea con {label}"

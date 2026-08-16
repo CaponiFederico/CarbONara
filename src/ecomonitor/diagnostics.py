@@ -322,8 +322,8 @@ def cmd_grid(args: argparse.Namespace) -> None:
     if forecast:
         #e' il riferimento che l'advisor preferisce: la media osservata copre
         #solo le ore in cui l'app era accesa
-        media_prevista = sum(p.g_per_kwh for p in forecast) / len(forecast)
-        _line(OK, f"media prevista 24h: {media_prevista:.0f} gCO2/kWh (riferimento preferito)")
+        forecast_average = sum(p.g_per_kwh for p in forecast) / len(forecast)
+        _line(OK, f"media prevista 24h: {forecast_average:.0f} gCO2/kWh (riferimento preferito)")
 
     advice = CarbonAwareAdvisor().advise(
         current_intensity=intensity, forecast=forecast, reference_intensity=rolling.average
@@ -419,19 +419,19 @@ def cmd_pool(args: argparse.Namespace) -> None:
 
     _title("Persistenza su database")
     with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "verifica.db"
+        db_path = Path(tmp) / "pool_check.db"
         pool = BatteryCarbonPool(model=AttributionModel.FIFO)
         pool.charge(40.0, 120.0)
         pool.charge(20.0, 480.0)
         LocalDatabase(db_path).save_pool_state(pool, 60.0, datetime.now(UTC))
 
-        restored, percent, seen = LocalDatabase(db_path).load_pool_state()
+        restored, restored_percent, seen = LocalDatabase(db_path).load_pool_state()
         if (
             restored is not None
             and restored.model is AttributionModel.FIFO
             and abs(restored.stored_percent - 60.0) < 1e-9
             and restored.discharge(10.0) == 120.0
-            and percent == 60.0
+            and restored_percent == 60.0
             and seen is not None
         ):
             _line(OK, "stato del pool salvato e ricaricato identico (sopravvive al riavvio)")

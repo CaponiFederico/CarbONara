@@ -165,16 +165,101 @@ def local_day_bounds(day: date) -> tuple[datetime, datetime]:
     return start, end
 
 
+def _reference_shape() -> dict[str, tuple[str, dict[str, tuple], list[str]]]:
+    #La forma che SCHEMA descrive
+    with closing(sqlite3.connect(":memory:")) as ref:
+        ref.executescript(SCHEMA)
+        shape = {}
+        tables = ref.execute(
+            "SELECT name, sql FROM sqlite_master "
+            "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        for name, create_sql in tables:
+            #PRAGMA table_info: (cid, nome, tipo, notnull, default, pk)
+            columns = {r[1]: (r[2], r[3], r[4]) for r in ref.execute(f"PRAGMA table_info({name})")}
+            indexes = [
+                sql
+                for (sql,) in ref.execute(
+                    "SELECT sql FROM sqlite_master "
+                    "WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL",
+                    (name,),
+                )
+            ]
+            shape[name] = (create_sql, columns, indexes)
+        return shape
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    #CREATE TABLE IF NOT EXISTS non crea le colonne mancanti, 
+    # quindi si ricostruiscono le tabelle che hanno
+    #colonne rimosse o aggiunte. La ricostruzione e' 
+    #atomica: o passa tutto o il file resta com'era
+    for table, (create_sql, want, index_sqls) in _reference_shape().items():
+        have = {r[1]: (r[2], r[3], r[4]) for r in conn.execute(f"PRAGMA table_info({table})")}
+        if not have:
+            continue  # appena creata da executescript(SCHEMA): gia' giusta
+
+        missing = [name for name in want if name not in have]
+        #NOT NULL senza default, e il codice non la nomina piu'
+        blocking = [
+            name
+            for name, (_type, notnull, default) in have.items()
+            if name not in want and notnull and default is None
+        ]
+        #ADD COLUMN rifiuta NOT NULL senza default anche in aggiunta
+        unaddable = [name for name in missing if want[name][1] and want[name][2] is None]
+
+        if blocking or unaddable:
+            _rebuild_table(conn, table, create_sql, index_sqls, sorted(set(want) & set(have)))
+            logger.info(
+                "Schema di %s ricostruito (colonne rimosse: %s, aggiunte: %s)",
+                table,
+                ", ".join(blocking) or "nessuna",
+                ", ".join(missing) or "nessuna",
+            )
+            continue
+
+        for name in missing:
+            column_type = want[name][0] or "TEXT"
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {column_type}")
+            logger.info("Schema di %s aggiornato: aggiunta la colonna %s", table, name)
+
+
+def _rebuild_table(
+    conn: sqlite3.Connection,
+    table: str,
+    create_sql: str,
+    index_sqls: list[str],
+    carried: list[str],
+) -> None:
+    #Ricostruzione atomica
+    columns = ", ".join(carried)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(f"ALTER TABLE {table} RENAME TO {table}__migration")
+        conn.execute(create_sql)
+        if carried:
+            conn.execute(
+                f"INSERT INTO {table} ({columns}) SELECT {columns} FROM {table}__migration"
+            )
+        conn.execute(f"DROP TABLE {table}__migration")
+        #il RENAME si porta dietro gli indici: vanno ricreati sulla tabella nuova
+        for index_sql in index_sqls:
+            conn.execute(index_sql)
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    conn.execute("COMMIT")
+
+
 class LocalDatabase:
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(self._connect()) as conn:
+        #isolation_level=None: la migrazione governa le sue transazioni a mano
+        with closing(sqlite3.connect(self.path, isolation_level=None)) as conn:
             conn.executescript(SCHEMA)
-            conn.commit()
-
-    #Nessuna migrazione di schema TODO rivedere prima di rilasciare: 
-    # il database e' in beta e non ci sono ancora utenti reali
+            _migrate(conn)
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.path)

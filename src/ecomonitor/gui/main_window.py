@@ -122,7 +122,7 @@ class MainWindow(QMainWindow):
         self.grid_source_label.setText(
             "media statica di ripiego, nessuna chiave API — zona IT-CNO"
         )
-        self.centralWidget().layout().activate()
+        self._activate_layout()
         self.resize(self.sizeHint())
         self.setMinimumSize(self.size())
 
@@ -198,9 +198,15 @@ class MainWindow(QMainWindow):
     def update_advisor(self, text: str) -> None:
         self.advisor_label.setText(text)
 
+    def _activate_layout(self) -> None:
+        central = self.centralWidget()
+        layout = central.layout() if central is not None else None
+        if layout is not None:
+            layout.activate()
+
     def fit_to_content(self) -> None:
         #va chiamato una volta dopo aver aggiornato le etichette di un tick
-        self.centralWidget().layout().activate()
+        self._activate_layout()
         hint = self.sizeHint()
         new_width = max(self.width(), hint.width())
         new_height = max(self.height(), hint.height())
