@@ -1,3 +1,4 @@
+import errno
 import logging
 import os
 from pathlib import Path
@@ -15,6 +16,21 @@ from types import TracebackType
 
 logger = logging.getLogger(__name__)
 
+_LOCK_BUSY_ERRNOS = frozenset(
+    {
+        #Unix: flock(LOCK_EX | LOCK_NB) su una risorsa gia' bloccata. Python
+        #confeziona questi due come BlockingIOError
+        errno.EAGAIN,
+        errno.EWOULDBLOCK,
+        #Windows: msvcrt.locking(LK_NBLCK) su una regione gia' bloccata fallisce
+        #con EACCES, che Python mappa su PermissionError e NON su
+        #BlockingIOError
+        errno.EACCES,
+        errno.EDEADLK,
+    }
+)
+#lock vanno gestiti a seconda della piattaforma
+
 
 class DatabaseLock:
 
@@ -23,23 +39,43 @@ class DatabaseLock:
         self._handle = None
 
     def acquire(self) -> bool:
-        #False se un altro processo lo tiene gia'. Il chiamante deve uscire
-        #senza toccare il database
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        #os.open e non open(): serve un descrittore su cui bloccare
-        handle = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o644)
+        #False solo quando un altro processo lo tiene davvero: in quel caso il
+        #chiamante deve uscire senza toccare il database
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            #os.open e non open(): serve un descrittore su cui bloccare
+            handle = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o644)
+        except OSError as exc:
+            #Se la cartella non e' scrivibile non lo e' nemmeno per il database
+            logger.warning(
+                "Impossibile creare il file di lock %s (%s): si prosegue senza protezione "
+                "contro una seconda istanza",
+                self.path,
+                exc,
+            )
+            return True
 
         try:
             _lock_exclusive_non_blocking(handle)
-        except OSError:
-            os.close(handle)
-            return False
         except NotImplementedError:
             #piattaforma senza primitiva di lock
             os.close(handle)
             logger.warning(
                 "Lock del database non supportato su questa piattaforma: due istanze "
                 "contemporanee non verrebbero intercettate"
+            )
+            return True
+        except OSError as exc:
+            os.close(handle)
+            if exc.errno in _LOCK_BUSY_ERRNOS:
+                #lo tiene un altro processo: il chiamante deve uscire
+                return False
+            #Ogni altro errno 
+            logger.warning(
+                "Lock del database non applicabile su %s (%s): si prosegue senza "
+                "protezione contro una seconda istanza",
+                self.path,
+                exc,
             )
             return True
 

@@ -28,7 +28,6 @@ dev = [
 
 [project.scripts]
 ecomonitor = "ecomonitor.app:main"
-ecomonitor-cli = "ecomonitor.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ecomonitor"]
@@ -39,14 +38,10 @@ target-version = "py311"
 
 [tool.ruff.lint]
 ignore = [
-    # `date.today()` e `datetime.now()` senza tz sono deliberati, non sviste:
-    # i totali giornalieri sono per giorno di calendario **locale** dell'utente
-    # (vedi LocalDatabase.sum_energy_events_for_day), mentre i timestamp sono
-    # salvati in UTC. Convertirli a UTC sposterebbe le prime ore di ogni
-    # giornata sul giorno precedente, due ore in Italia d'estate.
+    #giorni di cambio ora convertiti in utc danno problemi
     "DTZ005",
     "DTZ011",
     # pythonnet propaga le eccezioni .NET come Exception generiche: non c'e' un
-    # tipo piu' stretto da catturare quando LibreHardwareMonitor fallisce.
+    # tipo piu' stretto da catturare quando LibreHardwareMonitor fallisce
     "BLE001",
 ]

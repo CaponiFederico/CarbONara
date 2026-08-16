@@ -149,6 +149,9 @@ class EnergyEventBuffer:
             or sample.attribution_source != self._last.attribution_source
             #cambio di riferimento ignoto: la riga precedente e' gia' stata attribuita
             or sample.unknown_origin_source != self._last.unknown_origin_source
+            #anche a parita' di fonte il valore puo' cambiare
+            or sample.unknown_origin_intensity_g_per_kwh
+            != self._last.unknown_origin_intensity_g_per_kwh
         )
 
     def _elapsed_seconds(self) -> float:

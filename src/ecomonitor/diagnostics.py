@@ -243,27 +243,43 @@ def cmd_grid(args: argparse.Namespace) -> None:
     static = STATIC_FALLBACK_G_PER_KWH.get(
         service.country_code, STATIC_FALLBACK_G_PER_KWH["DEFAULT"]
     )
-    if service.has_live_provider and intensity != static:
+    #La provenienza la dichiara il servizio
+    if service.last_value_source == "live":
         _line(OK, f"valore live: {intensity:.0f} gCO2/kWh (media statica del paese: {static:.0f})")
     elif service.has_live_provider:
         _line(
             WARN,
-            f"valore ottenuto ({intensity:.0f}) uguale alla media statica: "
-            "possibile ricaduta sul ripiego, controllare i log",
+            f"chiave presente ma valore non live ({intensity:.0f} gCO2/kWh, "
+            f"fonte '{service.last_value_source}'): API irraggiungibile o zona non "
+            "coperta, controllare i log",
         )
     else:
         _line(INFO, f"valore statico: {intensity:.0f} gCO2/kWh")
 
     forecast = service.get_forecast()
+    #Stessa finestra che usa l'advisor: forecast[:12]
+    horizon_hours = CarbonAwareAdvisor().horizon_hours
+    moment = datetime.now(UTC)
+    horizon_end = moment + timedelta(hours=horizon_hours)
+    upcoming = [p for p in forecast if moment < p.timestamp <= horizon_end]
+
     if forecast:
-        best = min(forecast[:12], key=lambda point: point.g_per_kwh)
-        worst = max(forecast[:12], key=lambda point: point.g_per_kwh)
         _line(OK, f"previsione: {len(forecast)} punti orari")
-        print(
-            f"{INFO} prossime 12h: minimo {best.g_per_kwh:.0f} alle "
-            f"{best.timestamp.astimezone():%H:%M}, massimo {worst.g_per_kwh:.0f} alle "
-            f"{worst.timestamp.astimezone():%H:%M}"
-        )
+        if upcoming:
+            best = min(upcoming, key=lambda point: point.g_per_kwh)
+            worst = max(upcoming, key=lambda point: point.g_per_kwh)
+            print(
+                f"{INFO} prossime {horizon_hours:g}h ({len(upcoming)} punti): "
+                f"minimo {best.g_per_kwh:.0f} alle "
+                f"{best.timestamp.astimezone():%H:%M}, massimo {worst.g_per_kwh:.0f} alle "
+                f"{worst.timestamp.astimezone():%H:%M}"
+            )
+        else:
+            _line(
+                WARN,
+                "previsione ricevuta ma senza punti entro l'orizzonte dell'advisor: "
+                "verificare l'orologio di sistema",
+            )
     else:
         _line(WARN, "previsione non disponibile: l'advisor usera' la media mobile locale")
 

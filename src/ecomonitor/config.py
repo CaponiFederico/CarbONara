@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import os
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
@@ -58,7 +59,7 @@ def default_config_path() -> Path:
     return platformdirs.user_config_path(APP_NAME) / "config.json"
 
 
-def _positive_number(value: object, default: float, field_name: str) -> float:
+def _positive_number(value: object, default: float, field_name: str, maximum: float) -> float:
     #Un JSON valido puo' contenere valori senza senso
     try:
         number = float(value)  # type: ignore[arg-type]
@@ -71,11 +72,14 @@ def _positive_number(value: object, default: float, field_name: str) -> float:
         )
         return default
 
-    if not (number > 0):  # falso anche per NaN, che non e' > 0 ne' <= 0
+    #math.isfinite scarta NaN E infinito
+    if not math.isfinite(number) or not (0 < number <= maximum):
         logger.warning(
-            "Configurazione: %s=%r non e' positivo, uso il valore predefinito %g",
+            "Configurazione: %s=%r fuori dall'intervallo ammesso (0, %g], "
+            "uso il valore predefinito %g",
             field_name,
             value,
+            maximum,
             default,
         )
         return default
@@ -114,17 +118,21 @@ def _sanitised(config: AppConfig) -> AppConfig:
         config.country_code, defaults.country_code, "country_code"
     ).upper()
 
-    for field_name in (
-        "poll_interval_seconds",
-        "db_flush_interval_seconds",
-        "grid_sample_interval_seconds",
-        "charge_rate_percent_per_hour",
+    #valore finito ma assurdo
+    for field_name, maximum in (
+        #oltre un'ora fra due campioni non si misura piu' niente di utile
+        ("poll_interval_seconds", 3600.0),
+        #una giornata: oltre, una riga aggregata non e' piu' una riga
+        ("db_flush_interval_seconds", 86400.0),
+        ("grid_sample_interval_seconds", 86400.0),
+        #100%/h e' gia' ricarica rapida; mille e' oltre qualunque hardware
+        ("charge_rate_percent_per_hour", 1000.0),
     ):
         setattr(
             config,
             field_name,
             _positive_number(
-                getattr(config, field_name), getattr(defaults, field_name), field_name
+                getattr(config, field_name), getattr(defaults, field_name), field_name, maximum
             ),
         )
 
