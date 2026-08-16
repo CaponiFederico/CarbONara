@@ -30,8 +30,6 @@ class ReplayResult:
     total_wh: float = 0.0
     gco2_by_day: dict[date, float] = field(default_factory=lambda: defaultdict(float))
     battery_gco2: float = 0.0
-    #quanti intervalli hanno dovuto usare un riferimento non registrato
-    approximated_rows: int = 0
 
 
 def replay(trace: list[TraceEvent], model: AttributionModel) -> ReplayResult:
@@ -48,10 +46,6 @@ def replay(trace: list[TraceEvent], model: AttributionModel) -> ReplayResult:
             pool.charge(charge.percent_charged, charge.intensity_g_per_kwh)
 
         drained = event.discharged_percent or 0.0
-        reference = event.recorded_intensity_g_per_kwh or 0.0
-        if event.recorded_source == AttributionSource.BATTERY_POOL_PARTIAL.value:
-            #il riferimento di origine ignota non e' una colonna
-            result.approximated_rows += 1
 
         #charged e' gia' stato applicato sopra: qui si passa solo la scarica
         outcome = service.attribute(
@@ -61,8 +55,8 @@ def replay(trace: list[TraceEvent], model: AttributionModel) -> ReplayResult:
             previous_battery_percent=(
                 None if event.battery_percent is None else event.battery_percent + drained
             ),
-            grid_intensity_g_per_kwh=reference,
-            unknown_origin_intensity_g_per_kwh=reference,
+            grid_intensity_g_per_kwh=event.recorded_intensity_g_per_kwh or 0.0,
+            unknown_origin_intensity_g_per_kwh=event.unknown_origin_intensity_g_per_kwh,
         )
 
         result.total_gco2 += outcome.gco2
@@ -182,12 +176,6 @@ def main(argv: list[str] | None = None) -> int:
               f"  ({difference / weighted.total_gco2 * 100:+.2f}%)")
     else:
         print(f"  differenza              : {difference:+.3f} g")
-
-    if weighted.approximated_rows:
-        print()
-        print(f"  nota: {weighted.approximated_rows} intervalli a copertura parziale usano "
-              "come riferimento il valore registrato, perche' la provenienza\n"
-              "        dell'energia di origine ignota non e' una colonna del database")
 
     days = sorted(set(weighted.gco2_by_day) | set(fifo.gco2_by_day))
     if len(days) > 1:

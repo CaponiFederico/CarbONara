@@ -153,24 +153,10 @@ class LocalDatabase:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as conn:
             conn.executescript(SCHEMA)
-            self._add_missing_columns(conn)
             conn.commit()
 
-    @staticmethod
-    def _add_missing_columns(conn: sqlite3.Connection) -> None:
-        #CREATE TABLE IF NOT EXISTS non aggiunge colonne a una tabella che gia'
-        #esiste
-        added = {
-            "energy_events": {
-                "unknown_origin_intensity_g_per_kwh": "REAL",
-                "unknown_origin_source": "TEXT",
-            },
-        }
-        for table, columns in added.items():
-            existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-            for name, kind in columns.items():
-                if name not in existing:
-                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+    #Nessuna migrazione di schema TODO rivedere prima di rilasciare: 
+    # il database e' in beta e non ci sono ancora utenti reali
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.path)
