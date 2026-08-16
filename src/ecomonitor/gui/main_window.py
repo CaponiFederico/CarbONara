@@ -96,6 +96,10 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
 
+        self.hide_on_close = True
+        #Lo decide app.py in base alla presenza di un'area di notifica: senza,
+        #nascondersi significherebbe restare vivi e irraggiungibili
+
         self.on_hidden: Callable[[], None] | None = None
         #chiamata quando la finestra viene nascosta chiudendola: cosa
         #notificare lo decide app.py, la finestra non sa nulla della tray
@@ -125,10 +129,12 @@ class MainWindow(QMainWindow):
         SettingsDialog(self).exec()
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        #chiudere la finestra nasconde l'app nella tray invece di terminarla:
-        #il monitoraggio e' continuo e un processo terminato non vede le
-        #ricariche. Chi chiude crede pero' di aver chiuso l'applicazione,
-        #quindi la prima volta va detto (vedi il callback)
+        if not self.hide_on_close:
+            #nessuna area di notifica: chiudere deve chiudere davvero
+            super().closeEvent(event)
+            return
+
+        #chiudere la finestra nasconde l'app nella tray invece di terminarla
         event.ignore()
         self.hide()
         if self.on_hidden is not None:

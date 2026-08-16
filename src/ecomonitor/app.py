@@ -122,12 +122,14 @@ def main() -> None:
     app = QApplication(sys.argv)
     #un QTimer senza parent raccolto dal garbage collector smette di scattare
     sigint_timer = _install_sigint_handler(app)
-    #l'app e' un monitor continuo: chiudere la finestra la nasconde nella tray
-    #invece di terminare il processo, altrimenti ogni chiusura farebbe perdere
-    #di vista le ricariche
-    app.setQuitOnLastWindowClosed(False)
+
+    #Non tutti i desktop hanno un'area di notifica
+    # Dove non c'e', chiudere chiude
+    tray_available = QSystemTrayIcon.isSystemTrayAvailable()
+    app.setQuitOnLastWindowClosed(not tray_available)
 
     window = MainWindow()
+    window.hide_on_close = tray_available
 
     def show_window() -> None:
         window.showNormal()
@@ -146,12 +148,18 @@ def main() -> None:
         return
 
     orchestrator = Orchestrator()
-    tray = create_tray_icon(window, on_quit=app.quit)
+    tray = create_tray_icon(window, on_quit=app.quit) if tray_available else None
+    if tray is None:
+        logger.info(
+            "Nessuna area di notifica su questo desktop: l'applicazione non puo' restare "
+            "in background, quindi chiudere la finestra la termina. Il monitoraggio "
+            "riprende al prossimo avvio"
+        )
 
     def announce_background_mode() -> None:
         #una volta sola nella vita dell'installazione
         config = orchestrator.config_manager.config
-        if config.tray_notice_shown or not tray.supportsMessages():
+        if tray is None or config.tray_notice_shown or not tray.supportsMessages():
             return
         tray.showMessage(
             "EcoMonitor continua a misurare",
@@ -182,7 +190,8 @@ def main() -> None:
     def cleanup() -> None:
         sigint_timer.stop()
         guard.release()
-        tray.hide()  # senza questo l'icona resta nella tray dopo l'uscita
+        if tray is not None:
+            tray.hide()  # senza questo l'icona resta nella tray dopo l'uscita
         worker.stop()
         thread.quit()
         if not thread.wait(3000):

@@ -7,7 +7,8 @@ from datetime import datetime
 #I tick vengono sommati in una riga al minuto
 
 #La finestra di aggregazione si chiude quando:
-# - il tick corrente e' di regime diverso dal precedente (plugged, attribution_source)
+# - il tick corrente e' di regime diverso dal precedente (plugged,
+#   attribution_source, unknown_origin_source)
 # - il tick corrente e' il primo dopo un buco di campionamento (starts_new_row)
 # - la finestra ha superato il tempo massimo (flush_interval_seconds)
 
