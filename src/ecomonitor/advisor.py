@@ -38,7 +38,7 @@ class ReferenceSource(Enum):
 
 
 _REFERENCE_LABELS = {
-    ReferenceSource.FORECAST_MEAN: "la media prevista per le prossime 24 h",
+    ReferenceSource.FORECAST_MEAN: "la media prevista",
     ReferenceSource.OBSERVED: "la media recente",
 }
 
@@ -61,6 +61,15 @@ class ChargeAdvice:
     reference_source: ReferenceSource | None = None
     saving_percent: float | None = None
 
+    reference_horizon_hours: float | None = None
+    #Su quante ore e' calcolato il riferimento
+
+    def _reference_label(self) -> str:
+        label = _REFERENCE_LABELS[self.reference_source]
+        if self.reference_source is ReferenceSource.FORECAST_MEAN and self.reference_horizon_hours:
+            return f"{label} per le prossime {self.reference_horizon_hours:g} h"
+        return label
+
     def _reference_clause(self) -> str:
         #dice quanto vale il momento in assoluto, che la sola previsione non
         #copre: il minimo delle prossime ore puo' essere comunque un pessimo
@@ -73,7 +82,7 @@ class ChargeAdvice:
             or self.reference_source is None
         ):
             return ""
-        label = _REFERENCE_LABELS[self.reference_source]
+        label = self._reference_label()
         delta = (self.current_intensity - self.reference_intensity) / self.reference_intensity
         if abs(delta) < 0.01:
             return f", in linea con {label}"
@@ -90,13 +99,16 @@ class ChargeAdvice:
             return "carica bassa: collega ora, indipendentemente dal mix elettrico"
 
         current = f"{self.current_intensity:.0f}" if self.current_intensity is not None else "—"
-        if self.recommendation is ChargeRecommendation.WAIT and self.best_time is not None:
-            local_time = self.best_time.astimezone().strftime("%H:%M")
-            return (
-                f"conviene aspettare le {local_time}: "
-                f"{self.best_intensity:.0f} invece di {current} gCO2/kWh "
-                f"(-{self.saving_percent:.0f}%)"
-            )
+        if self.recommendation is ChargeRecommendation.WAIT:
+            if self.best_time is not None:
+                local_time = self.best_time.astimezone().strftime("%H:%M")
+                return (
+                    f"conviene aspettare le {local_time}: "
+                    f"{self.best_intensity:.0f} invece di {current} gCO2/kWh "
+                    f"(-{self.saving_percent:.0f}%)"
+                )
+            #previsione su quando andrà meglio
+            return f"conviene aspettare, se puoi ({current} gCO2/kWh{self._reference_clause()})"
         if self.recommendation is ChargeRecommendation.CHARGE_NOW:
             return f"buon momento per caricare ({current} gCO2/kWh{self._reference_clause()})"
         if self.source is AdviceSource.FORECAST and self.best_time is not None:
@@ -118,7 +130,6 @@ class CarbonAwareAdvisor:
         min_saving_ratio: float = 0.10,
         at_minimum_ratio: float = 0.02,
         horizon_hours: float = 12.0,
-        reference_horizon_hours: float = 24.0,
         critical_battery_percent: float = 20.0,
     ) -> None:
         #le due soglie sono rapporti rispetto al riferimento, usate solo nel
@@ -129,9 +140,15 @@ class CarbonAwareAdvisor:
         self.bad_threshold_ratio = bad_threshold_ratio
         self.min_saving_ratio = min_saving_ratio
         self.at_minimum_ratio = at_minimum_ratio
-        self.horizon_hours = horizon_hours
-        self.reference_horizon_hours = reference_horizon_hours
         self.critical_battery_percent = critical_battery_percent
+
+        #una finestra sola per la decisione e per il confronto
+        
+        self.horizon_hours = horizon_hours
+
+    @property
+    def reference_horizon_hours(self) -> float:
+        return self.horizon_hours
 
     def _resolve_reference(
         self,
@@ -218,6 +235,7 @@ class CarbonAwareAdvisor:
                     best_time=best.timestamp,
                     reference_intensity=reference,
                     reference_source=reference_source,
+                    reference_horizon_hours=self.reference_horizon_hours,
                     saving_percent=saving * 100.0,
                 )
             #niente da aspettare. Se poi lo scarto dal minimo previsto e' dentro
@@ -237,6 +255,7 @@ class CarbonAwareAdvisor:
                 best_time=best.timestamp,
                 reference_intensity=reference,
                 reference_source=reference_source,
+                reference_horizon_hours=self.reference_horizon_hours,
                 saving_percent=max(0.0, saving * 100.0),
             )
 
@@ -247,6 +266,7 @@ class CarbonAwareAdvisor:
                 current_intensity=current_intensity,
                 reference_intensity=reference,
                 reference_source=reference_source,
+                reference_horizon_hours=self.reference_horizon_hours,
             )
 
         return ChargeAdvice(

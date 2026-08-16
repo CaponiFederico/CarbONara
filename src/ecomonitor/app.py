@@ -14,7 +14,6 @@ from ecomonitor.orchestrator import Orchestrator
 from ecomonitor.storage.db import default_database_path
 from ecomonitor.storage.lock import DatabaseLock
 
-
 #Orchestrator.tick() fa I/O bloccante verso i driver:
 #sul thread della GUI l'event loop di Qt si blocca e la finestra smette di
 #rispondere. PollingWorker lo sposta su un QThread dedicato e comunica solo via
