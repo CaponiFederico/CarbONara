@@ -46,10 +46,15 @@ GAP_THRESHOLD_SECONDS = 600.0
 #percentuale e' una ricarica avvenuta al buio, da ricostruire
 
 SINGLE_CHARGE_WINDOW_SECONDS = 24 * 3600.0
-#Se la batteria non e' stata osservata per piu' di un giorno, la ricarica
-#avvenuta in quel periodo e' attribuita alla media nazionale
-#Se invece il gap e' minore, la finestra di ricarica e' stimata 
-# a partire dall'ultima osservazione
+#  gap < GAP_THRESHOLD_SECONDS: dentro un ciclo si assume una  ricarica sola
+#  la finestra viene stretta a [ultima osservazione, + carica% / velocita]
+
+#  gap >= GAP_THRESHOLD_SECONDS: le ricariche possono essere piu', in istanti
+#  ignoti, si media sull'intera finestra scoperta
+
+#La media nazionale e' l'ultimo ripiego
+#quando non esiste nessuno storico per quella finestra — non e' il
+#comportamento normale sopra le 24 h.
 
 
 POOL_STALE_AFTER_SECONDS = 7 * 24 * 3600.0
