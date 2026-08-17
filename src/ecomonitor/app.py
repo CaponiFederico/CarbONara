@@ -1,23 +1,29 @@
+from __future__ import annotations
+
 import logging
 import signal
 import sys
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import platformdirs
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QApplication, QStyleFactory, QSystemTrayIcon
 
-from ecomonitor.advisor import ChargeAdvice
 from ecomonitor.config import ConfigManager
 from ecomonitor.gui.icon import app_icon
 from ecomonitor.gui.main_window import MainWindow
 from ecomonitor.gui.single_instance import SingleInstanceGuard
 from ecomonitor.gui.theme import theme_for
 from ecomonitor.gui.tray import create_tray_icon
-from ecomonitor.orchestrator import Orchestrator
 from ecomonitor.storage.db import default_database_path
 from ecomonitor.storage.lock import DatabaseLock
+
+if TYPE_CHECKING:
+    #a runtime li importa il thread di polling
+    from ecomonitor.advisor import ChargeAdvice
+    from ecomonitor.orchestrator import Orchestrator
 
 #Orchestrator.tick() fa I/O bloccante verso i driver:
 #sul thread della GUI l'event loop di Qt si blocca e la finestra smette di
@@ -72,6 +78,14 @@ def _apply_dark_aware_style(app: QApplication) -> None:
     )
 
 
+def _build_orchestrator(config_manager: ConfigManager) -> Orchestrator:
+    #l'import sta qui e non in cima: tira dentro httpx e i sensori, che in cima
+    #si pagherebbero prima che la finestra compaia
+    from ecomonitor.orchestrator import Orchestrator
+
+    return Orchestrator(config_manager=config_manager)
+
+
 class PollingWorker(QObject):
     #costruisce l'Orchestrator ed esegue tick() fuori dal thread della GUI
 
@@ -82,7 +96,7 @@ class PollingWorker(QObject):
         self,
         config_manager: ConfigManager,
         poll_interval_seconds: float,
-        orchestrator_factory: Callable[..., Orchestrator] = Orchestrator,
+        orchestrator_factory: Callable[..., Orchestrator] = _build_orchestrator,
     ) -> None:
         super().__init__()
         #la configurazione arriva gia' letta dal thread della GUI
