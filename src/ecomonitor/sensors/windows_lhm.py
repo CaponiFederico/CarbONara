@@ -1,3 +1,4 @@
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -11,16 +12,25 @@ from ecomonitor.sensors.base import PowerReading, SensorUnavailableError, now_ut
 #Nomi osservati per le GPU integrate: la libreria non distingue integrata e
 #dedicata, un'APU AMD e una Radeon sono entrambe GpuAmd. Euristica
 _INTEGRATED_GPU_NAME_HINTS = (
-    "radeon(tm) graphics",  # APU AMD generiche
     "vega graphics",
     "uhd graphics",
     "iris",
 )
 
+#Le regole sui nomi Radeon 
+_INTEGRATED_GPU_NAME_PATTERNS = (
+    #"AMD Radeon(TM) Graphics"
+    re.compile(r"radeon(\(tm\))?\s+graphics"),
+    re.compile(r"radeon\s+\d{3}m\b"),  # modello a tre cifre + M subito dopo "Radeon"
+    re.compile(r"vega\s+\d+\s+graphics"),  # "Vega 8 Graphics", "Vega 11 Graphics"
+)
+
 
 def _is_integrated_gpu_name(hardware_name: str) -> bool:
     name = hardware_name.lower()
-    return any(hint in name for hint in _INTEGRATED_GPU_NAME_HINTS)
+    if any(hint in name for hint in _INTEGRATED_GPU_NAME_HINTS):
+        return True
+    return any(pattern.search(name) for pattern in _INTEGRATED_GPU_NAME_PATTERNS)
 
 
 @dataclass
@@ -78,6 +88,9 @@ def _classify_hardware(hardware_iterable: Iterable, hardware_type, sensor_type) 
                 _is_integrated_gpu_name(hardware.Name)
             )
             if is_integrated:
+                if hardware.HardwareType == hardware_type.GpuAmd:
+                    continue
+
                 gpu_integrated_w = (gpu_integrated_w or 0.0) + gpu_power
                 if hardware.HardwareType == hardware_type.GpuIntel:
                     gpu_integrated_inside_package_w += gpu_power

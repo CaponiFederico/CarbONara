@@ -167,7 +167,12 @@ def cmd_sensors(args: argparse.Namespace) -> None:
     if last.gpu_integrated_w is not None:
         _line(OK, f"GPU integrata letta ({last.gpu_integrated_w:.2f} W)")
     else:
-        _line(INFO, "GPU integrata non letta (assente, o non esposta su questa piattaforma)")
+        #sulla grafica AMD integrata i sensori Power vengono scartati
+        _line(
+            INFO,
+            "GPU integrata non letta: assente, non esposta, o scartata perche' non "
+            "attendibile (in tal caso il suo consumo resta contato dentro la CPU)",
+        )
 
     if last.gpu_dedicated_w is not None:
         _line(OK, f"GPU dedicata letta ({last.gpu_dedicated_w:.2f} W)")
