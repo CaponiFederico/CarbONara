@@ -1,6 +1,7 @@
 import logging
 import signal
 import sys
+from collections.abc import Callable
 
 import platformdirs
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
@@ -8,6 +9,7 @@ from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QApplication, QStyleFactory, QSystemTrayIcon
 
 from ecomonitor.advisor import ChargeAdvice
+from ecomonitor.config import ConfigManager
 from ecomonitor.gui.icon import app_icon
 from ecomonitor.gui.main_window import MainWindow
 from ecomonitor.gui.single_instance import SingleInstanceGuard
@@ -21,6 +23,11 @@ from ecomonitor.storage.lock import DatabaseLock
 #sul thread della GUI l'event loop di Qt si blocca e la finestra smette di
 #rispondere. PollingWorker lo sposta su un QThread dedicato e comunica solo via
 #segnali
+#
+#Anche costruire l'Orchestrator e' I/O bloccante, e lo e' molto di piu' di un
+#tick: apre i sensori e il database
+#Per questo la
+#costruzione sta dentro run(), cioe' sul thread di polling, e non in main()
 
 logger = logging.getLogger(__name__)
 
@@ -66,18 +73,42 @@ def _apply_dark_aware_style(app: QApplication) -> None:
 
 
 class PollingWorker(QObject):
-    #esegue tick() fuori dal thread della GUI: mai toccare i widget da qui
+    #costruisce l'Orchestrator ed esegue tick() fuori dal thread della GUI
 
     tick_ready = Signal(dict)
+    startup_failed = Signal(str)
 
-    def __init__(self, orchestrator: Orchestrator, poll_interval_seconds: float) -> None:
+    def __init__(
+        self,
+        config_manager: ConfigManager,
+        poll_interval_seconds: float,
+        orchestrator_factory: Callable[..., Orchestrator] = Orchestrator,
+    ) -> None:
         super().__init__()
-        self._orchestrator = orchestrator
+        #la configurazione arriva gia' letta dal thread della GUI
+        self._config_manager = config_manager
+        self._orchestrator_factory = orchestrator_factory
+        self._orchestrator: Orchestrator | None = None
         self._poll_interval_ms = int(poll_interval_seconds * 1000)
         self._running = True
 
+    @property
+    def has_orchestrator(self) -> bool:
+        #letto dal thread della GUI alla chiusura
+        return self._orchestrator is not None
+
     @Slot()
     def run(self) -> None:
+        try:
+            self._orchestrator = self._orchestrator_factory(config_manager=self._config_manager)
+        except Exception:
+            #senza orchestratore si esce senza toccare il database
+            logger.exception("Avvio del monitoraggio non riuscito")
+            self.startup_failed.emit(
+                "avvio non riuscito: nessuna misura in corso — vedi il registro"
+            )
+            return
+
         while self._running:
             try:
                 result = self._orchestrator.tick()
@@ -88,6 +119,9 @@ class PollingWorker(QObject):
                 logger.exception("Tick fallito, si riprova al prossimo intervallo")
 
             self._interruptible_sleep(self._poll_interval_ms)
+
+        #il salvataggio finale sta qui e non in cleanup()
+        self._orchestrator.flush()
 
     def _interruptible_sleep(self, total_ms: int) -> None:
         #a passi piccoli cosi' stop() viene
@@ -142,6 +176,17 @@ class WindowUpdater(QObject):
         self._window.fit_to_content()
         self._window.mark_updated()
 
+    @Slot(str)
+    def on_startup_failed(self, reason: str) -> None:
+        self._window.mark_startup_failed(reason)
+
+
+STOP_TIMEOUT_MS = 3000
+#quanto aspettare il thread di polling alla chiusura
+
+STARTUP_STOP_TIMEOUT_MS = 15_000
+#se si esce mentre l'orchestratore e' ancora in costruzione, quella costruzione
+#non e' interrompibile
 
 SIGINT_POLL_MS = 500
 #ogni quanto restituire il controllo all'interprete perche' possa eseguire un
@@ -212,12 +257,18 @@ def main() -> None:
         )
         return
 
-    #mostrata subito, prima di Orchestrator
+    #Letta qui, perche' la GUI ne ha bisogno per conto suo: costa pochi millisecondi e
+    #costruirla due volte vorrebbe dire due verita' diverse sullo stesso file. 
+    # La GUI non puo' aspettare il thread di polling perche' deve mostrare subito
+    config_manager = ConfigManager()
+    config = config_manager.config
+
+    #mostrata subito, e da qui in poi il thread della GUI non fa piu' niente di
+    #lungo: la finestra risponde mentre i sensori si aprono altrove
     window.show()
     window.raise_()
     window.activateWindow()
 
-    orchestrator = Orchestrator()
     tray = create_tray_icon(window, on_quit=app.quit) if tray_available else None
     if tray is None:
         logger.info(
@@ -228,7 +279,6 @@ def main() -> None:
 
     def announce_background_mode() -> None:
         #una volta sola nella vita dell'installazione
-        config = orchestrator.config_manager.config
         if tray is None or config.tray_notice_shown or not tray.supportsMessages():
             return
         tray.showMessage(
@@ -240,7 +290,7 @@ def main() -> None:
         )
         config.tray_notice_shown = True
         try:
-            orchestrator.config_manager.save()
+            config_manager.save()
         except OSError:
             logger.warning("Impossibile ricordare che l'avviso di background e' stato mostrato")
 
@@ -250,15 +300,16 @@ def main() -> None:
     #accodata invece che diretta
     updater = WindowUpdater(window)
 
-    poll_interval = orchestrator.config_manager.config.poll_interval_seconds
+    poll_interval = config.poll_interval_seconds
     #serve alla barra di stato per sapere quando un campionamento e' in ritardo
     window.set_poll_interval(poll_interval)
 
-    worker = PollingWorker(orchestrator, poll_interval)
+    worker = PollingWorker(config_manager, poll_interval)
     thread = QThread()
     worker.moveToThread(thread)
     thread.started.connect(worker.run)
     worker.tick_ready.connect(updater.on_tick_ready)
+    worker.startup_failed.connect(updater.on_startup_failed)
 
     def cleanup() -> None:
         sigint_timer.stop()
@@ -268,12 +319,16 @@ def main() -> None:
             tray.hide()  # senza questo l'icona resta nella tray dopo l'uscita
         worker.stop()
         thread.quit()
-        if not thread.wait(3000):
+        #il salvataggio finale lo fa il worker in fondo a run()
+        timeout_ms = STOP_TIMEOUT_MS if worker.has_orchestrator else STARTUP_STOP_TIMEOUT_MS
+        if not thread.wait(timeout_ms):
             logger.warning(
-                "Il thread di polling non si è fermato entro 3s alla chiusura — "
-                "probabile tick() bloccato più a lungo del previsto (driver lento?)"
+                "Il thread di polling non si è fermato entro %.0f s alla chiusura — "
+                "probabile tick() o apertura dei sensori bloccati più a lungo del "
+                "previsto (driver lento?): l'ultimo intervallo potrebbe non essere "
+                "stato salvato",
+                timeout_ms / 1000.0,
             )
-        orchestrator.flush()
 
     app.aboutToQuit.connect(cleanup)
     thread.start()

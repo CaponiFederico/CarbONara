@@ -142,6 +142,8 @@ class MainWindow(QMainWindow):
         self._last_tick_at: float | None = None
         self._poll_interval_seconds = 5.0
         self._active_hours: float | None = None
+        #l'orchestratore nasce sul thread di polling
+        self._startup_error: str | None = None
 
         self._status_timer = QTimer(self)  # senza parent verrebbe raccolto e non scatterebbe
         self._status_timer.timeout.connect(self._refresh_status)
@@ -403,6 +405,11 @@ class MainWindow(QMainWindow):
         self.advisor_label.setText(text)
         _set_state(self.advice_banner, recommendation or "")
 
+    def mark_startup_failed(self, reason: str) -> None:
+        #il messaggio resta finche' non arriva un tick
+        self._startup_error = reason
+        self._refresh_status()
+
     def mark_updated(self) -> None:
         #Serve a sapere entro quando aspettarsi il campionamento successivo, e a
         #aggiornare la barra di stato. Non serve a mostrare il dato, che
@@ -414,6 +421,11 @@ class MainWindow(QMainWindow):
 
     def _refresh_status(self) -> None:
         if self._last_tick_at is None:
+            if self._startup_error is not None:
+                _set_state(self.status_dot, "stale")
+                self.status_label.setText(self._startup_error)
+                return
+            #copre sia l'apertura dei sensori sia il primo tick
             _set_state(self.status_dot, "")
             self.status_label.setText("in attesa del primo campionamento…")
             return
