@@ -36,7 +36,11 @@ def _has_elevated_privileges() -> bool | None:
     #None se non determinabile su questa piattaforma
     if platform.system() == "Windows":
         try:
-            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+            #getattr e non ctypes.windll diretto
+            windll = getattr(ctypes, "windll", None)
+            if windll is None:
+                return None
+            return bool(windll.shell32.IsUserAnAdmin())
         except Exception:
             return None
     #getattr e non os.geteuid diretto: su Windows quella funzione non esiste

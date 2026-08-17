@@ -37,8 +37,7 @@ def read_nvidia_gpu_power_w() -> float | None:
 
 
 def read_amd_gpu_power_w() -> float | None:
-    #Somma la potenza di tutte le schede amdgpu via hwmon. None se /sys/class/drm
-    #non esiste o nessuna scheda espone potenza
+    #Somma la potenza delle sole schede amdgpu dedicate via hwmon
     if not DRM_ROOT.exists():
         return None
 
@@ -49,7 +48,11 @@ def read_amd_gpu_power_w() -> float | None:
         if not _CARD_DIR_PATTERN.match(card_dir.name):
             continue  # scarta i connettori, es. "card0-DP-1"
 
-        hwmon_root = card_dir / "device" / "hwmon"
+        device_dir = card_dir / "device"
+        if not _is_discrete_pci_device(device_dir):
+            continue  # probabile integrata, gia' dentro RAPL "package"
+
+        hwmon_root = device_dir / "hwmon"
         if not hwmon_root.exists():
             continue
 
