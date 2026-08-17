@@ -3,9 +3,19 @@ from datetime import date
 
 from ecomonitor.storage.db import LocalDatabase
 
-#gCO2eq/km indicativi per un'auto media europea a benzina: segnaposto, da
-#sostituire con una fonte citabile prima di usarlo in tesi
-GCO2_PER_KM_CAR = 120.0
+#Wh di una ricarica completa di uno smartphone TODO segnaposto
+WH_PER_PHONE_CHARGE = 13.0
+
+
+def format_phone_charges(count: float) -> str:
+    if count >= 10:
+        return f"{count:.0f}"
+    if count >= 1:
+        return f"{count:.1f}"
+    if count > 0 and count < 0.005:
+        #sotto la risoluzione delle due cifre: "0.00" 
+        return "< 0.01"
+    return f"{count:.2f}"
 
 
 @dataclass(frozen=True)
@@ -16,8 +26,8 @@ class DailyReport:
     active_hours: float
 
     @property
-    def equivalent_car_km(self) -> float:
-        return self.operational_gco2 / GCO2_PER_KM_CAR
+    def equivalent_phone_charges(self) -> float:
+        return self.energy_wh / WH_PER_PHONE_CHARGE
 
 
 class ReportingEngine:

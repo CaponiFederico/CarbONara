@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ecomonitor.orchestrator import Orchestrator
+from ecomonitor.reporting import format_phone_charges
 from ecomonitor.storage.db import LocalDatabase, default_database_path
 from ecomonitor.storage.lock import DatabaseLock
 
@@ -130,7 +131,8 @@ def _run(args: argparse.Namespace, parser: argparse.ArgumentParser, db_path: Pat
     print(f"\ntick eseguiti   : {ticks}")
     print(f"oggi            : {report.energy_wh:.2f} Wh, {report.operational_gco2:.2f} gCO2eq")
     print(f"ore attive      : {report.active_hours:.2f} h")
-    print(f"equivalente     : {report.equivalent_car_km:.3f} km in auto")
+    charges = format_phone_charges(report.equivalent_phone_charges)
+    print(f"equivalente     : {charges} ricariche di smartphone")
     return 0
 
 

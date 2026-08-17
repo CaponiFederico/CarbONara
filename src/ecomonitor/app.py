@@ -8,8 +8,10 @@ from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QApplication, QStyleFactory, QSystemTrayIcon
 
 from ecomonitor.advisor import ChargeAdvice
+from ecomonitor.gui.icon import app_icon
 from ecomonitor.gui.main_window import MainWindow
 from ecomonitor.gui.single_instance import SingleInstanceGuard
+from ecomonitor.gui.theme import theme_for
 from ecomonitor.gui.tray import create_tray_icon
 from ecomonitor.orchestrator import Orchestrator
 from ecomonitor.storage.db import default_database_path
@@ -42,10 +44,15 @@ def choose_dark_aware_style(
     return None
 
 
+def _system_prefers_dark(app: QApplication) -> bool:
+    #La preferenza dichiarata dal sistema
+    return app.styleHints().colorScheme() == Qt.ColorScheme.Dark
+
+
 def _apply_dark_aware_style(app: QApplication) -> None:
     palette_window = app.palette().color(QPalette.ColorGroup.Active, QPalette.ColorRole.Window)
     chosen = choose_dark_aware_style(
-        scheme_is_dark=app.styleHints().colorScheme() == Qt.ColorScheme.Dark,
+        scheme_is_dark=_system_prefers_dark(app),
         window_lightness=palette_window.lightness(),
         available=tuple(QStyleFactory.keys()),
     )
@@ -109,12 +116,15 @@ class WindowUpdater(QObject):
     def on_tick_ready(self, result: dict) -> None:
         reading = result["reading"]
         attribution = result["attribution"]
+        power_state = result["power_state"]
         self._window.update_power(reading.total_w, reading.is_estimated)
+        self._window.update_power_state(power_state.is_plugged_in, power_state.battery_percent)
         #i totali arrivano gia' calcolati dal thread di polling: la finestra
         #non deve interrogare SQLite per conto suo
         self._window.update_daily_totals(
             result["today_energy_wh"], result["today_operational_gco2"]
         )
+        self._window.update_active_hours(result["active_hours_today"])
         self._window.update_attribution(
             attribution.intensity_g_per_kwh,
             attribution.source.value,
@@ -125,9 +135,12 @@ class WindowUpdater(QObject):
         )
 
         advice: ChargeAdvice = result["advice"]
-        self._window.update_advisor(advice.message())
+        #la raccomandazione viaggia accanto al testo: il messaggio da solo non
+        #dice alla finestra di che colore dipingere il riquadro
+        self._window.update_advisor(advice.message(), advice.recommendation.value)
 
         self._window.fit_to_content()
+        self._window.mark_updated()
 
 
 SIGINT_POLL_MS = 500
@@ -160,6 +173,8 @@ def main() -> None:
     #prima di costruire qualunque widget: cambiare stile dopo li lascerebbe con
     #la tavolozza vecchia
     _apply_dark_aware_style(app)
+    #anche sulle finestre di dialogo, che non passano da MainWindow
+    app.setWindowIcon(app_icon())
     #un QTimer senza parent raccolto dal garbage collector smette di scattare
     sigint_timer = _install_sigint_handler(app)
 
@@ -168,7 +183,7 @@ def main() -> None:
     tray_available = QSystemTrayIcon.isSystemTrayAvailable()
     app.setQuitOnLastWindowClosed(not tray_available)
 
-    window = MainWindow()
+    window = MainWindow(theme_for(_system_prefers_dark(app)))
     window.hide_on_close = tray_available
 
     def show_window() -> None:
@@ -235,7 +250,11 @@ def main() -> None:
     #accodata invece che diretta
     updater = WindowUpdater(window)
 
-    worker = PollingWorker(orchestrator, orchestrator.config_manager.config.poll_interval_seconds)
+    poll_interval = orchestrator.config_manager.config.poll_interval_seconds
+    #serve alla barra di stato per sapere quando un campionamento e' in ritardo
+    window.set_poll_interval(poll_interval)
+
+    worker = PollingWorker(orchestrator, poll_interval)
     thread = QThread()
     worker.moveToThread(thread)
     thread.started.connect(worker.run)

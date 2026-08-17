@@ -3,7 +3,7 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, Slot
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 #Due processi non devono coesistere sullo stesso database: il secondo avvio deve chiudersi subito, e
@@ -78,7 +78,13 @@ class SingleInstanceGuard(QObject):
             return
         connection = self._server.nextPendingConnection()
         if connection is not None:
-            connection.readyRead.connect(connection.close)
+            connection.readyRead.connect(self._close_connection)
         logger.info("Secondo avvio intercettato: riporto in primo piano la finestra esistente")
         if self._on_second_launch is not None:
             self._on_second_launch()
+
+    @Slot()
+    def _close_connection(self) -> None:
+        connection = self.sender()
+        if isinstance(connection, QLocalSocket):
+            connection.close()

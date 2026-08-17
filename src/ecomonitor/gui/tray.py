@@ -1,19 +1,14 @@
 from collections.abc import Callable
 
-from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import QMainWindow, QMenu, QSystemTrayIcon
+
+from ecomonitor.gui.icon import app_icon
 
 #QSystemTrayIcon nativo, nessuna dipendenza aggiuntiva
 
-def _placeholder_icon() -> QIcon:
-    #icona segnaposto a tinta unita, da sostituire con un asset reale
-    pixmap = QPixmap(32, 32)
-    pixmap.fill(QColor("#2e7d32"))
-    return QIcon(pixmap)
-
 
 def create_tray_icon(window: QMainWindow, on_quit: Callable[[], None]) -> QSystemTrayIcon:
-    tray = QSystemTrayIcon(_placeholder_icon(), parent=window)
+    tray = QSystemTrayIcon(app_icon(), parent=window)
     tray.setToolTip("EcoMonitor")
 
     def show_window() -> None:
