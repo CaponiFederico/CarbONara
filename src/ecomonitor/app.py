@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import os
 import signal
 import sys
 from collections.abc import Callable
+from logging.handlers import RotatingFileHandler
 from typing import TYPE_CHECKING
 
 import platformdirs
@@ -162,6 +164,17 @@ class WindowUpdater(QObject):
 
     @Slot(dict)
     def on_tick_ready(self, result: dict) -> None:
+        #le due tracce delimitano l'aggiornamento della finestra
+        logger.debug("Aggiornamento finestra: inizio")
+        try:
+            self._apply_tick(result)
+        except Exception:
+            #senza questo la finestra resterebbe all'ultimo valore
+            logger.exception("Aggiornamento della finestra non riuscito")
+            return
+        logger.debug("Aggiornamento finestra: fine")
+
+    def _apply_tick(self, result: dict) -> None:
         reading = result["reading"]
         attribution = result["attribution"]
         power_state = result["power_state"]
@@ -225,8 +238,79 @@ def _install_sigint_handler(app: QApplication) -> QTimer:
     return timer
 
 
-def main() -> None:
+LOG_FILE_NAME = "ecomonitor.log"
+LOG_FILE_MAX_BYTES = 2_000_000
+LOG_FILE_BACKUPS = 3
+
+LOG_LEVEL_ENV_VAR = "ECOMONITOR_LOG_LEVEL"
+DEFAULT_FILE_LOG_LEVEL = logging.INFO
+
+#librerie che a DEBUG riempirebbero il file senza dire niente di utile
+NOISY_LOGGERS = ("httpx", "httpcore", "PIL")
+
+
+def file_log_level(requested: str | None) -> int:
+    #Verbosita' del solo file
+    if requested is None or not requested.strip():
+        return DEFAULT_FILE_LOG_LEVEL
+
+    level = logging.getLevelNamesMapping().get(requested.strip().upper())
+    if level is None:
+        #un refuso nella variabile non deve far partire l'app senza registro
+        logger.warning(
+            "%s='%s' non e' un livello valido: uso %s",
+            LOG_LEVEL_ENV_VAR,
+            requested,
+            logging.getLevelName(DEFAULT_FILE_LOG_LEVEL),
+        )
+        return DEFAULT_FILE_LOG_LEVEL
+    return level
+
+
+def _configure_logging() -> None:
+    #Logger di root e' a INFO, cosi' la console resta leggibile anche se la
+    #variabile d'ambiente chiede DEBUG. Il file di log ha il livello 
+    # richiesto, e contiene anche i logger rumorosi che a DEBUG 
+    # inquinerebbero la console
     logging.basicConfig(level=logging.INFO)
+    root = logging.getLogger()
+
+    try:
+        data_path = platformdirs.user_data_path("ecomonitor")
+        data_path.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(
+            data_path / LOG_FILE_NAME,
+            maxBytes=LOG_FILE_MAX_BYTES,
+            backupCount=LOG_FILE_BACKUPS,
+            encoding="utf-8",
+        )
+    except OSError:
+        logger.warning("Impossibile aprire il file di log: resta solo la console")
+        return
+
+    level = file_log_level(os.environ.get(LOG_LEVEL_ENV_VAR))
+    handler.setLevel(level)
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)-8s %(name)s %(message)s")
+    )
+    #il root fa da cancello
+    for existing in root.handlers:
+        existing.setLevel(logging.INFO)
+    root.addHandler(handler)
+    root.setLevel(min(level, logging.INFO))
+
+    for name in NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.INFO)
+
+    logger.info(
+        "Registro su file: %s (livello %s)",
+        data_path / LOG_FILE_NAME,
+        logging.getLevelName(level),
+    )
+
+
+def main() -> None:
+    _configure_logging()
 
     app = QApplication(sys.argv)
     #prima di costruire qualunque widget: cambiare stile dopo li lascerebbe con
@@ -271,8 +355,7 @@ def main() -> None:
         )
         return
 
-    #Letta qui, perche' la GUI ne ha bisogno per conto suo: costa pochi millisecondi e
-    #costruirla due volte vorrebbe dire due verita' diverse sullo stesso file. 
+    #Letta qui, perche' la GUI ne ha bisogno, costa pochi millisecondi
     # La GUI non puo' aspettare il thread di polling perche' deve mostrare subito
     config_manager = ConfigManager()
     config = config_manager.config
@@ -310,7 +393,7 @@ def main() -> None:
 
     window.on_hidden = announce_background_mode
 
-    #creato qui, cioe' nel thread della GUI: e' quello che rende la consegna
+    #creato qui e' quello che rende la consegna
     #accodata invece che diretta
     updater = WindowUpdater(window)
 
