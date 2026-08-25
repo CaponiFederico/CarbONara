@@ -37,7 +37,9 @@ CREATE TABLE IF NOT EXISTS energy_events (
     n_samples INTEGER,
     duration_seconds REAL,
     unknown_origin_intensity_g_per_kwh REAL,
-    unknown_origin_source TEXT
+    unknown_origin_source TEXT,
+    cpu_percent REAL,
+    cpu_wh REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_energy_events_timestamp
@@ -284,14 +286,17 @@ class LocalDatabase:
         duration_seconds: float | None = None,
         unknown_origin_intensity_g_per_kwh: float | None = None,
         unknown_origin_source: str | None = None,
+        cpu_percent: float | None = None,
+        cpu_wh: float | None = None,
     ) -> None:
         with closing(self._connect()) as conn:
             conn.execute(
                 "INSERT INTO energy_events (timestamp, wh, is_plugged, gco2, is_estimated, "
                 "intensity_g_per_kwh, attribution_source, battery_percent, charged_percent, "
                 "discharged_percent, pool_coverage_ratio, battery_assisted, n_samples, "
-                "duration_seconds, unknown_origin_intensity_g_per_kwh, unknown_origin_source) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "duration_seconds, unknown_origin_intensity_g_per_kwh, unknown_origin_source, "
+                "cpu_percent, cpu_wh) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     to_utc_iso(timestamp),
                     wh,
@@ -309,6 +314,8 @@ class LocalDatabase:
                     duration_seconds,
                     unknown_origin_intensity_g_per_kwh,
                     unknown_origin_source,
+                    cpu_percent,
+                    cpu_wh,
                 ),
             )
             conn.commit()
