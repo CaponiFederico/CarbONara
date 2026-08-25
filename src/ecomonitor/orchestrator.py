@@ -78,7 +78,11 @@ class Orchestrator:
         self.config_manager = config_manager or ConfigManager()
         config = self.config_manager.config
 
-        self.backend = backend or get_backend()
+        #il database precede il backend
+        self.db = db or LocalDatabase(default_database_path())
+        self.reporting = ReportingEngine(self.db)
+
+        self.backend = backend or get_backend(self.db)
         #il fattore 12 lascia passare i tick in ritardo per un driver lento
         #senza lasciar passare un coperchio chiuso
         self.integrator = EnergyIntegrator(
@@ -86,9 +90,6 @@ class Orchestrator:
         )
         self.buffer = EnergyEventBuffer(config.db_flush_interval_seconds)
         self._read_power_source = power_source_reader
-
-        self.db = db or LocalDatabase(default_database_path())
-        self.reporting = ReportingEngine(self.db)
 
         self.grid_service = grid_service or GridCarbonIntensityService(
             zone=config.em_zone,
