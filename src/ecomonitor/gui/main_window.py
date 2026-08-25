@@ -1,5 +1,6 @@
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent
@@ -10,60 +11,45 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QPushButton,
+    QSizePolicy,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from ecomonitor.gui.history_page import HistoryPage
 from ecomonitor.gui.icon import app_icon
+from ecomonitor.gui.labels import GRID_SOURCE_LABELS, SOURCE_LABELS
 from ecomonitor.gui.settings_dialog import SettingsDialog
 from ecomonitor.gui.theme import LIGHT, Theme, build_stylesheet
 from ecomonitor.reporting import WH_PER_PHONE_CHARGE, format_phone_charges
 
-#definisce le etichette per le fonti di dati, perche' alcune sono
-#tecniche e poco leggibili. La label viene mostrata nella finestra principale
-
-_SOURCE_LABELS = {
-    "grid_live": "consumo da rete elettrica",
-    "battery_pool": "storico di ricarica della batteria",
-    "battery_pool_partial": "storico di ricarica parziale",
-    "battery_pool_fallback": "stima (nessuno storico di ricarica disponibile)",
-}
-
-_GRID_SOURCE_LABELS = {
-    "live": "dati in tempo reale",
-    "static_fallback": "media statica di ripiego, nessuna chiave API",
-}
-
-
-#Spiegazioni per chi non e' tecnico: compaiono passando il mouse su una riga
-#Descrivono il significato del dato e non del valore
+#le etichette
+_SOURCE_LABELS = SOURCE_LABELS
+_GRID_SOURCE_LABELS = GRID_SOURCE_LABELS
 
 _FIELD_HELP = {
     "power": (
         "Quanta energia stanno usando in questo momento il processore e la scheda "
-        "grafica, in watt. Non è il consumo totale del computer: schermo, ventole "
-        "e disco non sono inclusi."
+        "grafica, in watt."
     ),
     "energy": (
         "Quanta energia hanno consumato processore e scheda grafica da mezzanotte "
-        "a adesso. Un wattora (Wh) è l'energia che consuma un apparecchio da 1 watt "
-        "acceso per un'ora."
+        "ad adesso. Dipende da quanto tempo il computer è stato acceso e attivo."
     ),
     "operational_gco2": (
-        "I grammi di anidride carbonica emessi per produrre l'energia che hai usato "
-        "oggi. Dipendono da quanta ne hai consumata e da quanto era pulita la rete "
-        "elettrica nel momento in cui l'hai consumata."
+        "I grammi di anidride carbonica emessi per produrre l'energia che hai usato. "
+        "Dipendono da quanto pulita è la rete elettrica nel momento del consumo, "
+        "e da quanto hai consumato."
     ),
     "phone_charges": (
         "Quante volte avresti potuto ricaricare del tutto uno smartphone con l'energia "
         f"che il computer ha consumato oggi, contando {WH_PER_PHONE_CHARGE:.0f} wattora "
-        "per ricarica completa. È un confronto fra energie: non dipende da quanto era "
-        "pulita la rete elettrica."
+        "per ricarica completa."
     ),
     "intensity": (
         "Quanto è pulita l'elettricità che stai usando: grammi di CO2 per ogni "
-        "kilowattora prodotto. In Italia va da circa 100 quando c'è molto sole e "
-        "vento, a oltre 400 quando la rete va soprattutto a gas. Più basso è meglio."
+        "kilowattora prodotto."
     ),
     "grid_source": (
         "Da dove arriva il dato sull'elettricità: misurato in tempo reale per la tua "
@@ -72,16 +58,19 @@ _FIELD_HELP = {
     ),
     "advisor": (
         "Se conviene collegare l'alimentatore adesso oppure aspettare un momento in "
-        "cui l'elettricità sarà più pulita. Non compare sui computer fissi, che non "
-        "hanno una batteria da ricaricare."
+        "cui l'elettricità sarà più pulita."
     ),
     "power_state": (
         "Se il computer sta andando a corrente di rete o a batteria, e a che punto "
-        "è la carica. Il consiglio di ricarica ha senso solo a batteria."
+        "è la carica."
     ),
     "settings": (
         "Zona elettrica, chiave di accesso ai dati in tempo reale e modello di "
         "attribuzione. Le modifiche valgono dal prossimo avvio."
+    ),
+    "history": (
+        "I totali di oggi, degli ultimi 7 giorni e degli ultimi 30 giorni, con il "
+        "consumo medio per fascia oraria."
     ),
 }
 
@@ -114,10 +103,12 @@ def _set_state(widget: QWidget, state: str) -> None:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, theme: Theme | None = None) -> None:
+    def __init__(self, theme: Theme | None = None, database_path: Path | None = None) -> None:
         super().__init__()
         self.setWindowTitle("EcoMonitor — impatto del tuo utilizzo attivo")
         self.setWindowIcon(app_icon())
+
+        self._fitted_height: int | None = None
 
         self._theme = theme or LIGHT
         self.setStyleSheet(build_stylesheet(self._theme))
@@ -134,9 +125,18 @@ class MainWindow(QMainWindow):
         layout.addLayout(self._build_details())
         layout.addStretch(1)
 
-        self.setCentralWidget(root)
+        self.dashboard_page = root
+        self.history_page = HistoryPage(database_path=database_path, theme=self._theme)
+        self.history_page.back_requested.connect(self.show_dashboard)
+
+        self._stack = QStackedWidget(self)
+        self._stack.addWidget(self.dashboard_page)
+        self._stack.addWidget(self.history_page)
+
+        self.setCentralWidget(self._stack)
         self._build_status_bar()
         self.setMinimumWidth(_MINIMUM_WIDTH)
+        self._show_page(self.dashboard_page)
 
         #stato della barra di stato, aggiornata anche fra un tick e l'altro
         self._last_tick_at: float | None = None
@@ -318,6 +318,11 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel()
         self.status_label.setObjectName("statusText")
 
+        self.history_button = QPushButton("Storico…")
+        self.history_button.setObjectName("navButton")
+        self.history_button.clicked.connect(self.show_history)
+        self._describe(self.history_button, _FIELD_HELP["history"])
+
         self.settings_button = QPushButton("Impostazioni…")
         self.settings_button.setObjectName("settingsButton")
         self.settings_button.clicked.connect(self.open_settings)
@@ -327,9 +332,41 @@ class MainWindow(QMainWindow):
         bar.setSizeGripEnabled(False)
         bar.addWidget(self.status_dot)
         bar.addWidget(self.status_label, 1)
+        bar.addPermanentWidget(self.history_button)
         bar.addPermanentWidget(self.settings_button)
 
     # -- interazione -------------------------------------------------------
+
+    def _show_page(self, page: QWidget) -> None:
+        for index in range(self._stack.count()):
+            candidate = self._stack.widget(index)
+            policy = candidate.sizePolicy()
+            wanted = (
+                QSizePolicy.Policy.Preferred if candidate is page else QSizePolicy.Policy.Ignored
+            )
+            policy.setHorizontalPolicy(wanted)
+            policy.setVerticalPolicy(wanted)
+            candidate.setSizePolicy(policy)
+
+        self._stack.setCurrentWidget(page)
+
+        if self._user_shrank_the_window():
+            #scegliere una dimensione che non costringa l'utente a ridimensionare la finestra
+            return
+
+        wanted = max(self.minimumHeight(), self.sizeHint().height())
+        screen = self.screen()
+        if screen is not None:
+            #la pagina di storico puo' chiedere piu' dello schermo
+            wanted = min(wanted, screen.availableGeometry().height())
+        self._set_height(wanted)
+
+    def show_dashboard(self) -> None:
+        self._show_page(self.dashboard_page)
+
+    def show_history(self) -> None:
+        self._show_page(self.history_page)
+        self.fit_to_content()
 
     def open_settings(self) -> None:
         SettingsDialog(self).exec()
@@ -351,6 +388,10 @@ class MainWindow(QMainWindow):
     def set_poll_interval(self, seconds: float) -> None:
         #serve solo a sapere entro quando aspettarsi il campionamento successivo
         self._poll_interval_seconds = seconds
+
+    def set_flush_interval(self, seconds: float) -> None:
+        #la pagina di storico legge dal database
+        self.history_page.set_refresh_interval(seconds)
 
     def update_power(self, watts: float, is_estimated: bool) -> None:
         self.power_label.setText(f"{watts:.2f}")
@@ -441,12 +482,23 @@ class MainWindow(QMainWindow):
 
     # -- dimensioni --------------------------------------------------------
 
+    def _user_shrank_the_window(self) -> bool:
+        #Vero se la finestra diversa da quella di default
+        return self._fitted_height is not None and self.height() < self._fitted_height
+
+    def _set_height(self, wanted: int) -> None:
+        self.resize(self.width(), wanted)
+        self._fitted_height = wanted
+
     def fit_to_content(self) -> None:
-        #va chiamato una volta dopo aver aggiornato le etichette di un tick
+        #una volta dopo aver aggiornato le etichette di un tick
+        if self._user_shrank_the_window():
+            return
+
         central = self.centralWidget()
         central_layout = central.layout() if central is not None else None
         if central_layout is not None:
             central_layout.activate()
         needed = self.sizeHint().height()
         if needed > self.height():
-            self.resize(self.width(), needed)
+            self._set_height(needed)
