@@ -7,6 +7,31 @@ from ecomonitor.storage.db import LocalDatabase
 WH_PER_PHONE_CHARGE = 13.0
 
 
+def format_energy(wh: float) -> str:
+    #migliorare la leggibilita' dei numeri: 1.234,56 Wh e' piu' leggibile di 1234.56 Wh
+    if abs(wh) >= 1000.0:
+        return f"{wh / 1000.0:.2f} kWh"
+    if 0 < wh < 0.05:
+        return "< 0.1 Wh"
+    return f"{wh:.1f} Wh"
+
+
+def format_gco2(grams: float) -> str:
+    if abs(grams) >= 1000.0:
+        return f"{grams / 1000.0:.2f} kg"
+    if 0 < grams < 0.5:
+        return "< 1 g"
+    return f"{grams:.0f} g"
+
+
+def format_duration(seconds: float) -> str:
+    if seconds < 90.0:
+        return f"{seconds:.0f} s"
+    if seconds < 5400.0:
+        return f"{seconds / 60.0:.0f} min"
+    return f"{seconds / 3600.0:.1f} h"
+
+
 def format_phone_charges(count: float) -> str:
     if count >= 10:
         return f"{count:.0f}"
