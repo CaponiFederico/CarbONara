@@ -144,6 +144,20 @@ class TraceEvent:
         )
 
 
+@dataclass(frozen=True)
+class EnergySample:
+    #una riga di energy_events ridotta alle colonne che servono agli aggregati
+    #per periodo: le altre qui non si guardano
+
+    timestamp: datetime
+    wh: float
+    gco2: float
+    duration_seconds: float | None
+    is_estimated: bool
+    is_plugged: bool
+    attribution_source: str | None
+
+
 def to_utc_iso(moment: datetime) -> str:
     #le righe vengono confrontate con standard utc 
     return moment.astimezone(UTC).isoformat()
@@ -391,14 +405,71 @@ class LocalDatabase:
             previous = moment
         return total
 
+    def measured_power_samples(
+        self, max_row_seconds: float = 900.0, limit: int = 20000
+    ) -> list[tuple[float, float]]:
+        #Coppie (utilizzo di CPU, potenza media) delle sole righe misuratE, per
+        #calibrare il modello di ripiego su questa macchina.
+        #
+        #Le righe stimate sono escluse 
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT cpu_percent, wh, duration_seconds FROM energy_events "
+                "WHERE is_estimated = 0 AND cpu_percent IS NOT NULL "
+                "AND duration_seconds IS NOT NULL AND duration_seconds > 0 "
+                "AND duration_seconds <= ? AND wh > 0 "
+                "ORDER BY id DESC LIMIT ?",
+                (max_row_seconds, limit),
+            ).fetchall()
+
+        return [(row[0], row[1] / (row[2] / 3600.0)) for row in rows]
+
+    def measured_cpu_samples(
+        self, max_row_seconds: float = 900.0, limit: int = 20000
+    ) -> list[tuple[float, float]]:
+        #Coppie (utilizzo di CPU, potenza del SOLO dominio CPU) dalle righe
+        #misurate
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT cpu_percent, cpu_wh, duration_seconds FROM energy_events "
+                "WHERE is_estimated = 0 AND cpu_percent IS NOT NULL "
+                "AND cpu_wh IS NOT NULL AND cpu_wh > 0 "
+                "AND duration_seconds IS NOT NULL AND duration_seconds > 0 "
+                "AND duration_seconds <= ? "
+                "ORDER BY id DESC LIMIT ?",
+                (max_row_seconds, limit),
+            ).fetchall()
+
+        return [(row[0], row[1] / (row[2] / 3600.0)) for row in rows]
+
+    def energy_samples_between(self, start: datetime, end: datetime) -> list[EnergySample]:
+        #Le righe grezze di un intervallo, in ordine di tempo
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT timestamp, wh, gco2, duration_seconds, is_estimated, is_plugged, "
+                "attribution_source FROM energy_events "
+                "WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp",
+                (to_utc_iso(start), to_utc_iso(end)),
+            ).fetchall()
+
+        return [
+            EnergySample(
+                timestamp=datetime.fromisoformat(row[0]),
+                wh=row[1],
+                gco2=row[2],
+                duration_seconds=row[3],
+                is_estimated=bool(row[4]),
+                is_plugged=bool(row[5]),
+                attribution_source=row[6],
+            )
+            for row in rows
+        ]
+
     def iter_attribution_trace(
         self, start: datetime | None = None, end: datetime | None = None
     ) -> list[TraceEvent]:
         #Traccia ordinata con cui ricalcolare l'attribuzione offline, unendo
-        #energy_events e charge_events. I Delta% di scarica sono una colonna
-        #perche' non sono ricavabili a posteriori: la differenza fra due
-        #battery_percent consecutivi e' ambigua attraverso una sospensione o
-        #una riga mancante
+        #energy_events e charge_events
         conditions = []
         params: list[str] = []
         if start is not None:
