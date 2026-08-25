@@ -390,6 +390,14 @@ class Orchestrator:
                 battery_assisted=result.battery_assisted,
                 unknown_origin_intensity_g_per_kwh=self._unknown_origin_intensity,
                 unknown_origin_source=self._unknown_origin_source,
+                #registrato anche quando la potenza e' misurata davvero: e'
+                #l'ascissa con cui si calibrera' il ripiego
+                cpu_percent=reading.cpu_percent,
+                #la durata che ha prodotto questi wh, per la riga aggregata
+                interval_seconds=self.integrator.last_interval_seconds,
+                #il solo dominio CPU: e' quello che il ripiego deve stimare
+                #quando la GPU riesce a misurarla
+                cpu_wh=self.integrator.last_package_wh,
                 starts_new_row=self.integrator.skipped_gap_seconds > 0,
             )
         )
