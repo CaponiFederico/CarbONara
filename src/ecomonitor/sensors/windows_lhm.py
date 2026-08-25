@@ -2,7 +2,14 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from ecomonitor.sensors.base import PowerReading, SensorUnavailableError, now_utc
+from ecomonitor.sensors.base import (
+    PowerReading,
+    SensorUnavailableError,
+    now_utc,
+    sample_cpu_percent,
+)
+from ecomonitor.sensors.calibration import PowerCalibration
+from ecomonitor.sensors.fallback_model import DEFAULT_TDP_W
 
 #Backend Windows via il pacchetto HardwareMonitor (PyPI), che include gia' la
 #DLL di LibreHardwareMonitor e il wrapper pythonnet
@@ -109,27 +116,30 @@ def _classify_hardware(hardware_iterable: Iterable, hardware_type, sensor_type) 
     return _ClassifiedPower(package_w, dram_w, gpu_integrated_w, gpu_dedicated_w, found_package)
 
 
+def _open_lhm():
+    #Apertura condivisa fra il backend completo e quello parziale
+    try:
+        from HardwareMonitor.Hardware import HardwareType, SensorType
+        from HardwareMonitor.Util import OpenComputer
+    except ImportError as exc:
+        raise SensorUnavailableError(
+            "Pacchetto HardwareMonitor non installato — "
+            "eseguire: pip install -e \".[windows]\""
+        ) from exc
+
+    try:
+        computer = OpenComputer(cpu=True, gpu=True, memory=True)
+    except Exception as exc:  # pythonnet propaga eccezioni .NET generiche
+        raise SensorUnavailableError(
+            "Impossibile aprire LibreHardwareMonitor"
+        ) from exc
+
+    return computer, HardwareType, SensorType
+
+
 class WindowsLhmBackend:
     def __init__(self) -> None:
-        try:
-            from HardwareMonitor.Hardware import HardwareType, SensorType
-            from HardwareMonitor.Util import OpenComputer
-        except ImportError as exc:
-            raise SensorUnavailableError(
-                "Pacchetto HardwareMonitor non installato — "
-                "eseguire: pip install -e \".[windows]\""
-            ) from exc
-
-        self._HardwareType = HardwareType
-        self._SensorType = SensorType
-
-        try:
-            self._computer = OpenComputer(cpu=True, gpu=True, memory=True)
-        except Exception as exc:  # pythonnet propaga eccezioni .NET generiche
-            raise SensorUnavailableError(
-                "Impossibile aprire LibreHardwareMonitor — servono privilegi di "
-                "amministratore (riavviare il processo come admin)"
-            ) from exc
+        self._computer, self._HardwareType, self._SensorType = _open_lhm()
 
         if not self._has_cpu_package_sensor():
             self._computer.Close()
@@ -175,6 +185,70 @@ class WindowsLhmBackend:
             gpu_dedicated_w=result.gpu_dedicated_w,
             timestamp=now_utc(),
             is_estimated=False,
+            #registrato accanto alla potenza misurata: e' l'ascissa su cui si
+            #calibra il ripiego per quando questi sensori non saranno leggibili
+            cpu_percent=sample_cpu_percent(),
+        )
+
+    def close(self) -> None:
+        self._computer.Close()
+
+
+class WindowsPartialLhmBackend:
+    #GPU dedicata MISURATA, CPU stimata
+
+    def __init__(
+        self,
+        tdp_w: float = DEFAULT_TDP_W,
+        cpu_calibration: PowerCalibration | None = None,
+    ) -> None:
+        self._computer, self._HardwareType, self._SensorType = _open_lhm()
+        self.tdp_w = tdp_w
+        #Se c'e', il termine CPU viene dallo storico di questa macchina invece
+        #che da un TDP generico
+        self.cpu_calibration = cpu_calibration
+
+        if not self._dedicated_gpu_power():
+            self._computer.Close()
+            raise SensorUnavailableError(
+                "Nessuna GPU dedicata con potenza leggibile: senza quella questo "
+                "backend non aggiunge niente alla stima generica"
+            )
+
+        sample_cpu_percent()  # la prima chiamata vale sempre 0.0
+
+    def _dedicated_gpu_power(self) -> float | None:
+        try:
+            for hardware in self._computer.Hardware:
+                hardware.Update()
+            result = _classify_hardware(
+                self._computer.Hardware, self._HardwareType, self._SensorType
+            )
+        except Exception:
+            return None
+        return result.gpu_dedicated_w
+
+    def read(self) -> PowerReading:
+        for hardware in self._computer.Hardware:
+            hardware.Update()
+
+        result = _classify_hardware(self._computer.Hardware, self._HardwareType, self._SensorType)
+        cpu_percent = sample_cpu_percent() or 0.0
+
+        if self.cpu_calibration is not None:
+            package_w = self.cpu_calibration.predict(cpu_percent)
+        else:
+            package_w = self.tdp_w * (cpu_percent / 100.0)
+
+        return PowerReading(
+            #stimato: e' il dominio che senza privilegi non si legge
+            package_w=package_w,
+            dram_w=result.dram_w,
+            gpu_integrated_w=None,
+            gpu_dedicated_w=result.gpu_dedicated_w,
+            timestamp=now_utc(),
+            is_estimated=True,
+            cpu_percent=cpu_percent,
         )
 
     def close(self) -> None:
