@@ -336,9 +336,16 @@ class LocalDatabase:
             pool_coverage_ratio=row.pool_coverage_ratio,
             battery_assisted=row.battery_assisted,
             n_samples=row.n_samples,
-            duration_seconds=(row.timestamp - row.started_at).total_seconds(),
+            #somma degli intervalli integrati
+            duration_seconds=(
+                row.covered_seconds
+                if row.covered_seconds > 0
+                else (row.timestamp - row.started_at).total_seconds()
+            ),
             unknown_origin_intensity_g_per_kwh=row.unknown_origin_intensity_g_per_kwh,
             unknown_origin_source=row.unknown_origin_source,
+            cpu_percent=row.cpu_percent,
+            cpu_wh=row.cpu_wh,
         )
 
     def sum_energy_events_for_day(self, day: date) -> dict:
