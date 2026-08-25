@@ -326,7 +326,11 @@ def main() -> None:
     tray_available = QSystemTrayIcon.isSystemTrayAvailable()
     app.setQuitOnLastWindowClosed(not tray_available)
 
-    window = MainWindow(theme_for(_system_prefers_dark(app)))
+    #lo stesso file su cui scrive l'orchestratore: la pagina di storico lo
+    #rilegge per conto suo
+    window = MainWindow(
+        theme_for(_system_prefers_dark(app)), database_path=default_database_path()
+    )
     window.hide_on_close = tray_available
 
     def show_window() -> None:
@@ -400,6 +404,8 @@ def main() -> None:
     poll_interval = config.poll_interval_seconds
     #serve alla barra di stato per sapere quando un campionamento e' in ritardo
     window.set_poll_interval(poll_interval)
+    #la pagina di storico si rilegge al ritmo con cui il database viene scritto
+    window.set_flush_interval(config.db_flush_interval_seconds)
 
     worker = PollingWorker(config_manager, poll_interval)
     thread = QThread()
