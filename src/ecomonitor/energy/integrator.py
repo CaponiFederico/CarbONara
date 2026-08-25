@@ -30,11 +30,15 @@ class EnergyIntegrator:
         #Durata dell'intervallo effettivamente integrato dall'ultima chiamata
         #0.0 se la lettura e' stata scartata
 
+        self.last_package_wh: float = 0.0
+        #Wh dell'ultimo intervallo attribuibile al solo dominio CPU
+
     def add_reading(self, reading: PowerReading) -> float:
         #Ritorna i Wh consumati dall'ultima lettura (0.0 alla prima: non c'e'
         #ancora un intervallo)
         self.skipped_gap_seconds = 0.0
         self.last_interval_seconds = 0.0
+        self.last_package_wh = 0.0
 
         previous = self._last_reading
         delta_seconds = (
@@ -75,6 +79,9 @@ class EnergyIntegrator:
         avg_w = (reading.total_w + previous.total_w) / 2.0
         delta_wh = avg_w * (delta_seconds / 3600.0)
 
+        avg_package_w = (reading.package_w + previous.package_w) / 2.0
+        self.last_package_wh = avg_package_w * (delta_seconds / 3600.0)
+
         self.cumulative_wh += delta_wh
         self.last_interval_seconds = delta_seconds
         self._last_reading = reading
@@ -94,3 +101,4 @@ class EnergyIntegrator:
         self.total_skipped_seconds = 0.0
         self.rejected_readings = 0
         self.last_interval_seconds = 0.0
+        self.last_package_wh = 0.0
