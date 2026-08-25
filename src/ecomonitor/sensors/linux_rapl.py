@@ -2,7 +2,12 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from ecomonitor.sensors.base import PowerReading, SensorUnavailableError, now_utc
+from ecomonitor.sensors.base import (
+    PowerReading,
+    SensorUnavailableError,
+    now_utc,
+    sample_cpu_percent,
+)
 from ecomonitor.sensors.linux_gpu import (
     IntelArcGpuReader,
     read_amd_gpu_power_w,
@@ -144,4 +149,7 @@ class LinuxRaplBackend:
             gpu_dedicated_w=gpu_dedicated_w,
             timestamp=now_utc(),
             is_estimated=False,
+            #registrato accanto alla potenza misurata: e' l'ascissa su cui si
+            #calibra il ripiego per quando questi sensori non saranno leggibili
+            cpu_percent=sample_cpu_percent(),
         )

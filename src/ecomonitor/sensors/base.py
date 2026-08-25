@@ -2,22 +2,24 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 
+import psutil
+
 
 @dataclass(frozen=True)
 class PowerReading:
     #Lettura istantanea di potenza. Watt, None se il dominio non e' disponibile
-    #su questo hardware. Lo scope e' CPU+GPU: schermo, ventole, disco e chipset
-    #non sono misurabili con questi sensori e restano fuori dal conteggio
+    #Lo scope e' CPU+GPU
 
     package_w: float
     dram_w: float | None
     gpu_integrated_w: float | None
-    #GPU integrata e dedicata sono campi separati e non un unico gpu_w: su una
-    #macchina con entrambe attive sommarle confonderebbe due dispositivi
-    #fisicamente distinti, con dinamiche di utilizzo diverse
+    #GPU integrata e dedicata sono campi separati e non un unico gpu_w
     gpu_dedicated_w: float | None
     timestamp: datetime
-    is_estimated: bool  # True se stima di ripiego (TDP), non sensore reale
+    is_estimated: bool  # True se stima di ripiego, non sensore reale
+
+    cpu_percent: float | None = None
+    #Utilizzo di CPU dell'istante
 
     @property
     def total_w(self) -> float:
@@ -36,11 +38,19 @@ class SensorUnavailableError(RuntimeError):
 
 
 class SensorBackend(Protocol):
-    #Un backend implementa read(). Deve essere veloce (qualche decina di ms al
-    #massimo): viene chiamato a ogni tick di polling
+    #Un backend implementa read()  viene chiamato a ogni tick di polling
 
     def read(self) -> PowerReading: ...
 
 
 def now_utc() -> datetime:
     return datetime.now(UTC)
+
+
+def sample_cpu_percent() -> float | None:
+    #Va chiamata una volta per tick, e la chiama il backend attivo.
+    #Ritorna None se non e' disponibile il sensore di CPU
+    try:
+        return float(psutil.cpu_percent(interval=None))
+    except Exception:  # psutil puo' fallire
+        return None
