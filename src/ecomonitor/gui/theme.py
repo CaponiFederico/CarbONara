@@ -103,7 +103,7 @@ QLabel#statusDot { border-radius: 4px; background: $text_muted; }
 QLabel#statusDot[state="live"] { background: $success; }
 QLabel#statusDot[state="stale"] { background: $danger; }
 
-QPushButton#settingsButton {
+QPushButton#settingsButton, QPushButton#navButton {
     font-size: 8pt;
     padding: 3px 10px;
     border: 1px solid $border;
@@ -111,7 +111,33 @@ QPushButton#settingsButton {
     background: $card;
     color: $text;
 }
-QPushButton#settingsButton:hover { border-color: $text_muted; }
+QPushButton#settingsButton:hover, QPushButton#navButton:hover { border-color: $text_muted; }
+
+/* -- pagina di storico -- */
+
+QFrame#historyRoot { background: $background; }
+
+QPushButton#periodButton {
+    font-size: 8pt;
+    padding: 4px 14px;
+    border: 1px solid $border;
+    border-radius: 6px;
+    background: $card;
+    color: $text_muted;
+}
+QPushButton#periodButton:hover { border-color: $text_muted; }
+QPushButton#periodButton:checked {
+    background: $accent_soft;
+    border-color: $accent;
+    color: $accent;
+    font-weight: 500;
+}
+
+QLabel#pageSubtitle { font-size: 8pt; color: $text_muted; }
+QLabel#sectionTitle { font-size: 9pt; font-weight: 500; color: $text; }
+QLabel#sectionNote { font-size: 8pt; color: $text_muted; }
+QLabel#legendText { font-size: 8pt; color: $text_muted; }
+QLabel#emptyState { font-size: 9pt; color: $text_muted; }
 """
 )
 
