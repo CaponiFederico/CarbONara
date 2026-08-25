@@ -33,6 +33,11 @@ class EnergySample:
     battery_assisted: bool
     unknown_origin_intensity_g_per_kwh: float
     unknown_origin_source: str
+    cpu_percent: float | None = None
+    cpu_wh: float = 0.0
+    #quota del dominio CPU, per calibrare quel termine separatamente dalla GPU
+    interval_seconds: float = 0.0
+    #Durata dell'intervallo che ha prodotto questo wh
     starts_new_row: bool = False
     #True quando il tick segue una finestra non osservata: il pending va chiuso
     #prima, cosi' nessuna riga attraversa il buco
@@ -58,6 +63,12 @@ class BufferedEnergyRow:
     unknown_origin_source: str
     n_samples: int
     started_at: datetime
+    cpu_percent: float | None = None
+    #media dei tick della finestra: la calibrazione deve leggere l'utilizzo
+    #dello stesso minuto a cui si riferisce la potenza
+    covered_seconds: float = 0.0
+    #tempo davvero coperto dall'energia della riga, somma degli intervalli
+    cpu_wh: float = 0.0
 
 
 class EnergyEventBuffer:
@@ -74,6 +85,10 @@ class EnergyEventBuffer:
         self._requested = 0.0
         self._estimated = False
         self._assisted = False
+        self._cpu_sum = 0.0
+        self._cpu_n = 0
+        self._seconds = 0.0
+        self._cpu_wh = 0.0
 
     # -- stato in sospeso --------------------------------------------------
 
@@ -136,6 +151,9 @@ class EnergyEventBuffer:
             unknown_origin_source=self._last.unknown_origin_source,
             n_samples=self._n,
             started_at=self._started_at,
+            cpu_percent=(self._cpu_sum / self._cpu_n) if self._cpu_n else None,
+            covered_seconds=self._seconds,
+            cpu_wh=self._cpu_wh,
         )
         self._reset()
         return row
@@ -174,6 +192,11 @@ class EnergyEventBuffer:
         #finestra in parte stimata sarebbe l'errore nella direzione sbagliata
         self._estimated = self._estimated or sample.is_estimated
         self._assisted = self._assisted or sample.battery_assisted
+        if sample.cpu_percent is not None:
+            self._cpu_sum += sample.cpu_percent
+            self._cpu_n += 1
+        self._seconds += sample.interval_seconds
+        self._cpu_wh += sample.cpu_wh
 
     def _reset(self) -> None:
         self._started_at = None
@@ -187,3 +210,7 @@ class EnergyEventBuffer:
         self._requested = 0.0
         self._estimated = False
         self._assisted = False
+        self._cpu_sum = 0.0
+        self._cpu_n = 0
+        self._seconds = 0.0
+        self._cpu_wh = 0.0
