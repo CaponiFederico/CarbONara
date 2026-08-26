@@ -1,6 +1,6 @@
 import logging
 
-from ecomonitor.sensors.base import PowerReading, now_utc, sample_cpu_percent
+from ecomonitor.sensors.base import NATIVE_MODE, PowerReading, now_utc, sample_cpu_percent
 from ecomonitor.sensors.calibration import PowerCalibration
 
 DEFAULT_TDP_W = 15.0  # TDP tipico di un ultrabook
@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class FallbackModelBackend:
+    mode = NATIVE_MODE
     #Ripiego di ultima istanza: TDP costante scalato sull'utilizzo di CPU
 
     def __init__(self, tdp_w: float = DEFAULT_TDP_W) -> None:
@@ -31,6 +32,7 @@ class FallbackModelBackend:
 
 
 class CalibratedFallbackBackend:
+    mode = NATIVE_MODE
     #Ripiego calibrato: P = riposo + pendenza * utilizzo, con i coefficienti
     #ricavati dalle righe misurate di questa macchina
 

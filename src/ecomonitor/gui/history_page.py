@@ -91,6 +91,9 @@ AUTO_REFRESH_PERIODS = frozenset({Period.TODAY})
 #Scarto relativo sotto cui il rumore del modello di ripiego non viene considerato significativo
 _INTENSITY_NOISE_RATIO = 0.01
 
+#Sopra questa quota di energia stimata la barra cambia colore
+_ESTIMATED_TONE_THRESHOLD = 0.10
+
 _EMPTY_TEXT = (
     "Nessun dato salvato per questo periodo.\n"
     "I numeri compaiono dopo il primo salvataggio su database, "
@@ -262,15 +265,19 @@ class HistoryPage(QWidget):
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(10)
 
+        #Assegnati uno per uno
         cards = [
-            ("energia", _HELP["energy"], "energy_label"),
-            ("CO2eq", _HELP["gco2"], "gco2_label"),
-            ("potenza media", _HELP["mean_power"], "mean_power_label"),
-            ("copertura", _HELP["coverage"], "coverage_label"),
+            self._metric_card("energia", _HELP["energy"]),
+            self._metric_card("CO2eq", _HELP["gco2"]),
+            self._metric_card("potenza media", _HELP["mean_power"]),
+            self._metric_card("copertura", _HELP["coverage"]),
         ]
-        for index, (caption, help_text, attribute) in enumerate(cards):
-            card, value = self._metric_card(caption, help_text)
-            setattr(self, attribute, value)
+        self.energy_label = cards[0][1]
+        self.gco2_label = cards[1][1]
+        self.mean_power_label = cards[2][1]
+        self.coverage_label = cards[3][1]
+
+        for index, (card, _value) in enumerate(cards):
             grid.addWidget(card, index // 2, index % 2)
 
         grid.setColumnStretch(0, 1)
@@ -453,7 +460,13 @@ class HistoryPage(QWidget):
                     label=f"{slot.hour:02d}",
                     value=slot.mean_w,
                     caption=slot.caption,
-                    tone="accent",
+                    #stesso arancione della quota stimata nella barra di
+                    #composizione
+                    tone=(
+                        "warning"
+                        if slot.estimated_share > _ESTIMATED_TONE_THRESHOLD
+                        else "accent"
+                    ),
                 )
                 for slot in summary.hours
             ],
@@ -462,7 +475,13 @@ class HistoryPage(QWidget):
 
         counted = sum(1 for slot in summary.hours if slot.has_value)
         skipped = sum(slot.days_partial for slot in summary.hours)
+        stimate = sum(
+            1 for slot in summary.hours
+            if slot.has_value and slot.estimated_share > _ESTIMATED_TONE_THRESHOLD
+        )
         parts = [f"{counted} fasce su 24 hanno almeno un giorno osservato per intero"]
+        if stimate:
+            parts.append(f"{stimate} in arancione perché in parte stimate")
         if skipped:
             parts.append(f"{skipped} osservazioni orarie escluse perché coperte solo in parte")
         equivalent = format_phone_charges(summary.energy_wh / WH_PER_PHONE_CHARGE)

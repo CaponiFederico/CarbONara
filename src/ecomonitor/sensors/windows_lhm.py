@@ -3,6 +3,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from ecomonitor.sensors.base import (
+    NATIVE_MODE,
     PowerReading,
     SensorUnavailableError,
     now_utc,
@@ -138,6 +139,7 @@ def _open_lhm():
 
 
 class WindowsLhmBackend:
+    mode = NATIVE_MODE
     def __init__(self) -> None:
         self._computer, self._HardwareType, self._SensorType = _open_lhm()
 
@@ -195,6 +197,7 @@ class WindowsLhmBackend:
 
 
 class WindowsPartialLhmBackend:
+    mode = NATIVE_MODE
     #GPU dedicata MISURATA, CPU stimata
 
     def __init__(

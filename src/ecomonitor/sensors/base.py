@@ -31,6 +31,23 @@ class PowerReading:
         )
 
 
+@dataclass(frozen=True)
+class MeasurementMode:
+    kind: str  # native | partial | calibrated | generic
+    detail: str  # cosa e' misurato e cosa e' stimato, in una riga
+    advice: str | None = None  # azione utile, None quando non c'e' niente da fare
+
+    @property
+    def is_complete(self) -> bool:
+        return self.kind == "native"
+
+
+NATIVE_MODE = MeasurementMode(
+    kind="native",
+    detail="misura diretta dai sensori hardware",
+)
+
+
 class SensorUnavailableError(RuntimeError):
     #Il backend non riesce ad accedere al sensore hardware: permessi mancanti,
     #driver assente, piattaforma non supportata
@@ -38,6 +55,7 @@ class SensorUnavailableError(RuntimeError):
 
 
 class SensorBackend(Protocol):
+    mode: MeasurementMode
     #Un backend implementa read()  viene chiamato a ogni tick di polling
 
     def read(self) -> PowerReading: ...

@@ -94,6 +94,7 @@ QLabel#adviceDetail { font-size: 8pt; }
 
 QLabel#detailKey { font-size: 8pt; color: $text_muted; }
 QLabel#detailValue { font-size: 8pt; color: $text; }
+QLabel#detailValue[state="estimated"] { color: $warning; }
 
 QStatusBar { background: $background; border-top: 1px solid $border; }
 QStatusBar::item { border: none; }

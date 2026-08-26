@@ -14,7 +14,7 @@ from ecomonitor.config import ConfigManager
 from ecomonitor.energy.integrator import EnergyIntegrator
 from ecomonitor.power_context import PowerSourceState, read_power_source_state
 from ecomonitor.reporting import ReportingEngine
-from ecomonitor.sensors.base import SensorBackend, now_utc
+from ecomonitor.sensors.base import NATIVE_MODE, SensorBackend, now_utc
 from ecomonitor.sensors.factory import get_backend
 from ecomonitor.storage.db import LocalDatabase, default_database_path
 from ecomonitor.storage.event_buffer import EnergyEventBuffer, EnergySample
@@ -446,6 +446,8 @@ class Orchestrator:
             "today_energy_wh": today_wh,
             "today_operational_gco2": today_gco2,
             "active_hours_today": self.active_hours_today,
+            #che cosa e' misurato davvero
+            "measurement_mode": getattr(self.backend, "mode", NATIVE_MODE),
             "grid_intensity_source": self.grid_service.last_value_source,
             "grid_zone": self.grid_service.zone,
             #da dove viene il riferimento applicato all'energia di origine

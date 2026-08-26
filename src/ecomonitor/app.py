@@ -200,6 +200,7 @@ class WindowUpdater(QObject):
         #dice alla finestra di che colore dipingere il riquadro
         self._window.update_advisor(advice.message(), advice.recommendation.value)
 
+        self._window.update_measurement_mode(result["measurement_mode"])
         self._window.fit_to_content()
         self._window.mark_updated()
 

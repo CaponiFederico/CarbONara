@@ -25,6 +25,16 @@ MIN_R_SQUARED = 0.5
 #Oltre questo una riga media su condizioni troppo diverse
 MAX_ROW_SECONDS = 900.0
 
+#Larghezza delle fasce della curva empirica, in punti percentuali di CPU
+BIN_WIDTH = 5.0
+
+#Quanti campioni deve avere una fascia perche' la sua media sia un punto e non
+#un caso singolo
+MIN_SAMPLES_PER_BIN = 8
+
+#Quante fasce popolate servono perche' la curva descriva qualcosa
+MIN_BINS = 4
+
 
 @dataclass(frozen=True)
 class PowerCalibration:
@@ -42,14 +52,41 @@ class PowerCalibration:
     kind: str = "linear"
     reason: str = ""
 
+    #Punti (utilizzo, watt) della curva empirica, usati quando kind == "curve".
+    points: tuple[tuple[float, float], ...] = ()
+
     def predict(self, cpu_percent: float) -> float:
+        if self.kind == "curve" and self.points:
+            return max(0.0, self._interpolate(cpu_percent))
         return max(0.0, self.idle_w + self.slope_w * (cpu_percent / 100.0))
+
+    def _interpolate(self, cpu_percent: float) -> float:
+        #Fuori dagli estremi si tiene il valore dell'estremo invece di
+        #prolungare la pendenza
+        if cpu_percent <= self.points[0][0]:
+            return self.points[0][1]
+        if cpu_percent >= self.points[-1][0]:
+            return self.points[-1][1]
+
+        for (x0, y0), (x1, y1) in zip(self.points, self.points[1:], strict=False):
+            if x0 <= cpu_percent <= x1:
+                if x1 == x0:
+                    return y0
+                return y0 + (y1 - y0) * (cpu_percent - x0) / (x1 - x0)
+        return self.points[-1][1]
 
     @property
     def has_slope(self) -> bool:
         return self.slope_w > 0.0
 
     def describe(self) -> str:
+        if self.kind == "curve":
+            return (
+                f"curva empirica su {len(self.points)} fasce, da "
+                f"{self.points[0][1]:.1f} W a {self.points[-1][1]:.1f} W "
+                f"(su {self.n_samples} righe misurate)"
+            )
+
         if self.kind == "level":
             base = f"livello medio {self.idle_w:.1f} W (su {self.n_samples} righe misurate"
             if self.reason:
@@ -77,6 +114,43 @@ def _level_only(watts: list[float], spread: float, reason: str) -> PowerCalibrat
     return calibration
 
 
+def fit_curve(usable: list[tuple[float, float]]) -> PowerCalibration | None:
+    #Curva empirica: la potenza media misurata in ciascuna fascia di utilizzo
+    grouped: dict[int, list[float]] = {}
+    for cpu, watts in usable:
+        grouped.setdefault(int(cpu // BIN_WIDTH), []).append(watts)
+
+    points: list[tuple[float, float]] = []
+    for index in sorted(grouped):
+        values = grouped[index]
+        if len(values) < MIN_SAMPLES_PER_BIN:
+            continue  # una fascia con pochi campioni e' un caso, non una media
+        centre = index * BIN_WIDTH + BIN_WIDTH / 2.0
+        points.append((centre, sum(values) / len(values)))
+
+    if len(points) < MIN_BINS:
+        return None
+
+    #La potenza non puo' calare quando il lavoro sale
+    highest = points[0][1]
+    monotone: list[tuple[float, float]] = []
+    for centre, watts in points:
+        highest = max(highest, watts)
+        monotone.append((centre, highest))
+
+    calibration = PowerCalibration(
+        idle_w=monotone[0][1],
+        slope_w=0.0,
+        n_samples=len(usable),
+        cpu_spread=max(cpu for cpu, _ in usable) - min(cpu for cpu, _ in usable),
+        r_squared=None,
+        kind="curve",
+        points=tuple(monotone),
+    )
+    logger.info("Calibrazione del ripiego: %s", calibration.describe())
+    return calibration
+
+
 def fit_calibration(samples: list[tuple[float, float]]) -> PowerCalibration | None:
     #samples: coppie (utilizzo_cpu_percento, potenza_media_w) da righe misurate.
     #None quando i dati non bastano a sostenere un modello
@@ -94,6 +168,13 @@ def fit_calibration(samples: list[tuple[float, float]]) -> PowerCalibration | No
     cpus = [cpu for cpu, _ in usable]
     watts = [w for _, w in usable]
     spread = max(cpus) - min(cpus)
+
+    #La curva viene prima della retta
+    #Si ripiega sulla retta
+    #solo quando le fasce popolate non bastano a sostenerla
+    curve = fit_curve(usable)
+    if curve is not None:
+        return curve
 
     n = float(len(usable))
     mean_cpu = sum(cpus) / n

@@ -60,6 +60,7 @@ class _HourBucket:
     #accumulatore di una singola coppia (giorno, ora)
     wh: float = 0.0
     seconds: float = 0.0
+    estimated_wh: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,10 @@ class HourSlot:
     mean_w: float | None
     days_counted: int
     days_partial: int
+
+    #Quanta dell'energia che forma questa barra viene dal modello invece che da
+    #un sensore
+    estimated_share: float = 0.0
 
     @property
     def has_value(self) -> bool:
@@ -88,9 +93,14 @@ class HourSlot:
         partial_note = (
             f", {self.days_partial} scartato perche' parziale" if self.days_partial else ""
         )
+        estimated_note = (
+            f", {self.estimated_share * 100:.0f}% stimato"
+            if self.estimated_share > 0
+            else ""
+        )
         return (
             f"{self.hour:02d}:00 — {self.mean_w:.1f} W medi su "
-            f"{self.days_counted} {days_word}{partial_note}"
+            f"{self.days_counted} {days_word}{partial_note}{estimated_note}"
         )
 
 
@@ -249,12 +259,17 @@ def _hour_slots(buckets: dict[tuple[date, int], _HourBucket]) -> tuple[HourSlot,
             per_day = [bucket.wh / (bucket.seconds / SECONDS_IN_HOUR) for bucket in complete]
             mean_w = sum(per_day) / len(per_day)
 
+        #quota pesata sull'energia dei soli giorni che formano la barra
+        totale = sum(bucket.wh for bucket in complete)
+        stimata = sum(bucket.estimated_wh for bucket in complete)
+
         slots.append(
             HourSlot(
                 hour=hour,
                 mean_w=mean_w,
                 days_counted=len(complete),
                 days_partial=partial,
+                estimated_share=(stimata / totale) if totale > 0 else 0.0,
             )
         )
     return tuple(slots)
@@ -283,6 +298,8 @@ def build_range_summary(
         bucket = buckets.setdefault((local.date(), local.hour), _HourBucket())
         bucket.wh += sample.wh
         bucket.seconds += seconds
+        if sample.is_estimated:
+            bucket.estimated_wh += sample.wh
 
         energy_wh += sample.wh
         operational_gco2 += sample.gco2

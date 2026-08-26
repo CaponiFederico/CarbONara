@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ecomonitor.sensors.base import (
+    NATIVE_MODE,
     PowerReading,
     SensorUnavailableError,
     now_utc,
@@ -82,6 +83,7 @@ def _discover_domains() -> dict[str, _RaplDomain]:
 
 
 class LinuxRaplBackend:
+    mode = NATIVE_MODE
     def __init__(self) -> None:
         #_discover_domains() trova i file anche senza root 
         try:

@@ -68,6 +68,12 @@ _FIELD_HELP = {
         "Zona elettrica, chiave di accesso ai dati in tempo reale e modello di "
         "attribuzione. Le modifiche valgono dal prossimo avvio."
     ),
+    "measurement": (
+        "Che cosa l'app sta misurando davvero e che cosa sta stimando. "
+        "I sensori della CPU richiedono privilegi di amministratore: senza, il "
+        "consumo del processore viene stimato, e la stima diventa molto più "
+        "precisa dopo che l'app ha potuto misurare almeno una volta."
+    ),
     "history": (
         "I totali di oggi, degli ultimi 7 giorni e degli ultimi 30 giorni, con il "
         "consumo medio per fascia oraria."
@@ -289,6 +295,9 @@ class MainWindow(QMainWindow):
         self.grid_source_label = self._add_detail_row(
             grid, 1, "Dati rete elettrica:", _FIELD_HELP["grid_source"]
         )
+        self.measurement_label = self._add_detail_row(
+            grid, 2, "Misura:", _FIELD_HELP["measurement"]
+        )
         return grid
 
     def _add_detail_row(
@@ -340,12 +349,15 @@ class MainWindow(QMainWindow):
     def _show_page(self, page: QWidget) -> None:
         for index in range(self._stack.count()):
             candidate = self._stack.widget(index)
+            if candidate is None:
+                continue  # indice fuori posto: QStackedWidget puo' restituire None
             policy = candidate.sizePolicy()
-            wanted = (
+            #nome diverso dall'altezza calcolata sotto
+            wanted_policy = (
                 QSizePolicy.Policy.Preferred if candidate is page else QSizePolicy.Policy.Ignored
             )
-            policy.setHorizontalPolicy(wanted)
-            policy.setVerticalPolicy(wanted)
+            policy.setHorizontalPolicy(wanted_policy)
+            policy.setVerticalPolicy(wanted_policy)
             candidate.setSizePolicy(policy)
 
         self._stack.setCurrentWidget(page)
@@ -440,6 +452,13 @@ class MainWindow(QMainWindow):
             zone_suffix = f" — zona {zone}" if zone else ""
             grid_label = _GRID_SOURCE_LABELS.get(grid_source, grid_source)
             self.grid_source_label.setText(f"{grid_label}{zone_suffix}")
+
+    def update_measurement_mode(self, mode) -> None:
+        if mode.is_complete or not mode.advice:
+            self.measurement_label.setText(mode.detail)
+        else:
+            self.measurement_label.setText(f"{mode.detail} — {mode.advice}")
+        _set_state(self.measurement_label, "" if mode.is_complete else "estimated")
 
     def update_advisor(self, text: str, recommendation: str | None = None) -> None:
         #recommendation e' il valore di ChargeRecommendation

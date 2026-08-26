@@ -1,67 +1,65 @@
 # Confronto dei modelli di stima contro la misura reale
 
-# con 2 processi in parallelo: uno elevato che scrive nel database, 
-# uno normale che legge e confronta
+# Valuta i tre livelli di ripiego sulle righe gia' misurate del database:
 
-#     # terminale elevato
-#     python -m ecomonitor.app
+#     ripiego generico   TDP costante per utilizzo di CPU
+#     backend parziale   GPU dedicata misurata + CPU da TDP generico
+#     CPU calibrata      GPU dedicata misurata + modello tarato su questa macchina
 
-#     # terminale normale
-#     python scripts/compare_fallback_models.py --seconds 120
+#     python scripts/compare_fallback_models.py
 
-# Confrontare due sessioni consecutive misurerebbe la differenza di carico fra
-# l'una e l'altra, non la differenza fra i modelli
-
-# I modelli sono valutati sullo stesso campione di utilizzo di CPU
 
 import argparse
-import ctypes
-import math
-import sqlite3
+import random
+import statistics
 import sys
-import time
-from contextlib import closing
-from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from ecomonitor.sensors.base import SensorUnavailableError, sample_cpu_percent
-from ecomonitor.sensors.calibration import cpu_calibration_from_database
+from ecomonitor.sensors.calibration import fit_calibration
 from ecomonitor.sensors.fallback_model import DEFAULT_TDP_W
-from ecomonitor.storage.db import LocalDatabase, default_database_path, to_utc_iso
+from ecomonitor.storage.db import LocalDatabase, default_database_path
 
+BANDS = ((0, 5), (5, 10), (10, 20), (20, 30), (30, 45), (45, 70), (70, 101))
 
-def is_elevated() -> bool | None:
-    windll = getattr(ctypes, "windll", None)
-    if windll is None:
-        return None
-    try:
-        return bool(windll.shell32.IsUserAnAdmin())
-    except Exception:
-        return None
+def load_rows(db: LocalDatabase, max_row_seconds: float) -> list[tuple[float, float, float]]:
+    #(utilizzo di CPU, potenza del dominio CPU, potenza totale) 
+    import sqlite3
+    from contextlib import closing
 
-
-def measured_truth(path: Path, start: datetime, end: datetime) -> tuple[float, float, int]:
-    #Le righe che il processo elevato ha scritto nella finestra
-    with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as conn:
-        rows = conn.execute(
-            "SELECT wh, cpu_wh, duration_seconds FROM energy_events "
-            "WHERE is_estimated = 0 AND duration_seconds > 0 "
-            "AND timestamp >= ? AND timestamp < ?",
-            (to_utc_iso(start - timedelta(minutes=2)), to_utc_iso(end)),
+    with closing(sqlite3.connect(f"file:{db.path}?mode=ro", uri=True)) as conn:
+        raw = conn.execute(
+            "SELECT cpu_percent, cpu_wh, wh, duration_seconds FROM energy_events "
+            "WHERE is_estimated = 0 AND cpu_percent IS NOT NULL "
+            "AND cpu_wh IS NOT NULL AND cpu_wh > 0 "
+            "AND duration_seconds IS NOT NULL AND duration_seconds > 0 "
+            "AND duration_seconds <= ?",
+            (max_row_seconds,),
         ).fetchall()
 
-    if not rows:
-        return 0.0, 0.0, 0
+    rows = []
+    for cpu, cpu_wh, wh, seconds in raw:
+        hours = seconds / 3600.0
+        cpu_w, total_w = cpu_wh / hours, wh / hours
+        if 0.0 <= cpu <= 100.0 and total_w > 0 and cpu_w <= total_w:
+            rows.append((cpu, cpu_w, total_w))
+    return rows
 
-    total_w = sum(wh / (sec / 3600.0) for wh, _, sec in rows) / len(rows)
-    with_cpu = [(c, s) for _, c, s in rows if c]
-    cpu_w = (
-        sum(c / (s / 3600.0) for c, s in with_cpu) / len(with_cpu) if with_cpu else 0.0
-    )
-    return total_w, cpu_w, len(rows)
 
+def errors(rows, predict) -> list[float]:
+    #errore percentuale riga per riga
+    out = []
+    for cpu, cpu_w, total_w in rows:
+        gpu_w = total_w - cpu_w
+        out.append(abs(predict(cpu, gpu_w) - total_w) / total_w * 100.0)
+    return out
+
+def generic(cpu, _gpu_w):
+    return DEFAULT_TDP_W * (cpu / 100.0)
+
+def partial(cpu, gpu_w):
+    return gpu_w + DEFAULT_TDP_W * (cpu / 100.0)
 
 def main(argv: list[str] | None = None) -> int:
     #descrizione esplicita e non __doc__: l'intestazione di questo file e' fatta
@@ -69,101 +67,83 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Confronto dei modelli di stima contro la misura reale"
     )
-    parser.add_argument("--seconds", type=float, default=120.0,
-                        help="durata del campionamento (default 120)")
-    parser.add_argument("--interval", type=float, default=5.0,
-                        help="secondi fra un campione e l'altro (default 5)")
     parser.add_argument("--db", default=None, help="database da leggere")
+    parser.add_argument("--repeats", type=int, default=20,
+                        help="quante divisioni casuali (default 20)")
+    parser.add_argument("--train", type=float, default=0.7,
+                        help="quota di righe per la calibrazione (default 0.7)")
+    parser.add_argument("--max-row-seconds", type=float, default=900.0,
+                        help="scarta le righe che coprono piu' di tanti secondi")
     args = parser.parse_args(argv)
 
     path = Path(args.db) if args.db else default_database_path()
-    elevated = is_elevated()
+    rows = load_rows(LocalDatabase(path), args.max_row_seconds)
 
-    print(f"database        : {path}")
-    print(f"processo elevato: {elevated}")
-    if elevated:
-        print("\nATTENZIONE: elevato. Non usa i modelli di ripiego di")
-        print("un utente senza privilegi, il confronto non misura quello che dovrebbe")
+    print(f"database : {path}")
+    print(f"righe    : {len(rows)} misurate, con utilizzo di CPU e dominio CPU")
+    if len(rows) < 40:
+        print("\nTroppo poche per un confronto: serve almeno una sessione elevata")
+        print("di qualche decina di minuti con carico vario.")
         return 1
 
-    db = LocalDatabase(path)
+    cpus = [c for c, _, _ in rows]
+    print(f"utilizzo : da {min(cpus):.1f}% a {max(cpus):.1f}%\n")
 
-    calibration = cpu_calibration_from_database(db)
-    print("\n=== calibrazione del dominio CPU ===")
-    if calibration is None:
-        print("  non disponibile: servono righe misurate con cpu_percent e cpu_wh")
-    else:
-        print(f"  {calibration.describe()}")
-        print(f"  modello    : {calibration.kind}")
-        print(f"  escursione : {calibration.cpu_spread:.1f} punti percentuali")
+    rng = random.Random(20260826)
+    scores: dict[str, list[float]] = {"generico": [], "parziale": [], "calibrato": []}
+    worst: dict[str, list[float]] = {k: [] for k in scores}
+    skipped = 0
 
-    #Un solo backend aperto per le misurazioni dei vari modelli, sia gpu che cpu 
-    try:
-        from ecomonitor.sensors.windows_lhm import WindowsPartialLhmBackend
+    for _ in range(args.repeats):
+        shuffled = rows[:]
+        rng.shuffle(shuffled)
+        cut = int(len(shuffled) * args.train)
+        train, test = shuffled[:cut], shuffled[cut:]
 
-        backend = WindowsPartialLhmBackend(cpu_calibration=calibration)
-    except (ImportError, SensorUnavailableError) as exc:
-        print(f"\nBackend parziale non disponibile: {exc}")
-        print("Non esiste un GPU dedicata leggibile")
-        return 1
-
-    print(f"\ncampionamento di {args.seconds:.0f} s ogni {args.interval:.0f} s...")
-    start = datetime.now().astimezone()
-
-    generic, partial, calibrated, cpus, gpus = [], [], [], [], []
-    deadline = time.monotonic() + args.seconds
-    sample_cpu_percent()  # la prima chiamata vale sempre 0.0
-    while time.monotonic() < deadline:
-        reading = backend.read()
-        cpu = reading.cpu_percent or 0.0
-        gpu = reading.gpu_dedicated_w or 0.0
-
-        cpus.append(cpu)
-        gpus.append(gpu)
-        generic.append(DEFAULT_TDP_W * (cpu / 100.0))
-        partial.append(gpu + DEFAULT_TDP_W * (cpu / 100.0))
-        calibrated.append(gpu + calibration.predict(cpu) if calibration else float("nan"))
-        time.sleep(args.interval)
-
-    end = datetime.now().astimezone()
-    backend.close()
-
-    true_total, true_cpu, n_rows = measured_truth(path, start, end)
-
-    def mean(values):
-        return sum(values) / len(values) if values else 0.0
-
-    print(f"\n=== condizioni ({len(cpus)} campioni) ===")
-    print(f"  utilizzo CPU medio : {mean(cpus):.1f}%")
-    print(f"  GPU misurata       : {mean(gpus):.1f} W")
-
-    if n_rows == 0:
-        print("\nNessuna riga misurata nella finestra")
-        return 1
-
-    print(f"\n=== verita' ({n_rows} righe misurate) ===")
-    print(f"  totale             : {true_total:.1f} W")
-    print(f"  di cui CPU         : {true_cpu:.1f} W")
-
-    print("\n=== confronto ===")
-    print(f"{'livello':<34} {'stima':>9} {'errore':>9}")
-    print("-" * 55)
-    for label, values in (
-        ("ripiego generico", generic),
-        ("backend parziale", partial),
-        ("CPU calibrata", calibrated),
-    ):
-        value = mean(values)
-        if math.isnan(value):  # calibrazione assente
-            print(f"{label:<34} {'n/d':>9} {'n/d':>9}")
+        model = fit_calibration([(c, w) for c, w, _ in train])
+        if model is None:
+            skipped += 1
             continue
-        error = (value - true_total) / true_total * 100.0
-        print(f"{label:<34} {value:>7.1f} W {error:>+8.0f}%")
 
-    if calibration is not None and true_cpu > 0:
-        cpu_est = calibration.predict(mean(cpus))
-        print(f"\n  termine CPU stimato: {cpu_est:.1f} W contro {true_cpu:.1f} W veri "
-              f"({(cpu_est - true_cpu) / true_cpu * 100:+.0f}%)")
+        for name, predict in (
+            ("generico", generic),
+            ("parziale", partial),
+            ("calibrato", lambda cpu, gpu_w, m=model: gpu_w + m.predict(cpu)),
+        ):
+            errs = errors(test, predict)
+            scores[name].append(statistics.median(errs))
+            worst[name].append(max(errs))
+
+    if not scores["calibrato"]:
+        print("Nessuna divisione ha prodotto una calibrazione sostenibile.")
+        return 1
+
+    print(f"=== errore sul totale, su righe mai viste dal modello "
+          f"({args.repeats - skipped} divisioni {args.train:.0%}/{1 - args.train:.0%}) ===")
+    print(f"{'modello':>12} {'mediano':>10} {'peggiore':>10}")
+    print("-" * 34)
+    for name in ("generico", "parziale", "calibrato"):
+        print(f"{name:>12} {statistics.fmean(scores[name]):>9.1f}% "
+              f"{statistics.fmean(worst[name]):>9.1f}%")
+
+    whole = fit_calibration([(c, w) for c, w, _ in rows])
+    print(f"\n=== modello calibrato su tutte le righe ===\n  {whole.describe()}")
+
+    print("\n=== errore mediano per fascia di utilizzo ===")
+    print(f"{'fascia':>10} {'righe':>7} {'generico':>10} {'parziale':>10} {'calibrato':>11}")
+    print("-" * 52)
+    for lo, hi in BANDS:
+        band = [r for r in rows if lo <= r[0] < hi]
+        if not band:
+            continue
+        values = []
+        for predict in (generic, partial, lambda cpu, gpu_w: gpu_w + whole.predict(cpu)):
+            values.append(statistics.median(errors(band, predict)))
+        print(f"{f'{lo}-{hi}%':>10} {len(band):>7} {values[0]:>9.0f}% "
+              f"{values[1]:>9.0f}% {values[2]:>10.0f}%")
+
+    print("\nNOTA: l'ultima tabella e' calcolata su un modello tarato anche su quelle")
+    print("righe, quindi e' ottimistica. Il numero difendibile e' quello in alto.")
     return 0
 
 
