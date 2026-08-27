@@ -147,6 +147,58 @@ class HourSlot:
 
 
 @dataclass(frozen=True)
+class GridHourSlot:
+    #L'intensita' media della rete in una fascia oraria
+
+    hour: int
+    mean_g_per_kwh: float | None
+    samples: int
+    #quanti campioni della fascia sono letture vive e quanti ricostruiti
+    observed_samples: int = 0
+
+    @property
+    def has_value(self) -> bool:
+        return self.mean_g_per_kwh is not None
+
+    @property
+    def caption(self) -> str:
+        if self.mean_g_per_kwh is None:
+            return f"{self.hour:02d}:00 — intensita' della rete mai osservata"
+
+        origin = "osservata" if self.observed_samples else "ricostruita"
+        if self.observed_samples and self.observed_samples < self.samples:
+            origin = "osservata in parte"
+        return (
+            f"{self.hour:02d}:00 — {self.mean_g_per_kwh:.0f} gCO2/kWh medi "
+            f"su {self.samples} campioni, {origin}"
+        )
+
+
+def _grid_hour_slots(samples: list[GridSample]) -> tuple[GridHourSlot, ...]:
+    #Media semplice dei campioni della fascia
+    totals: dict[int, list[float]] = {}
+    observed: dict[int, int] = {}
+    for sample in samples:
+        hour = sample.timestamp.astimezone().hour
+        totals.setdefault(hour, []).append(sample.g_per_kwh)
+        if sample.source == LIVE_SAMPLE_SOURCE:
+            observed[hour] = observed.get(hour, 0) + 1
+
+    slots = []
+    for hour in range(HOURS_IN_DAY):
+        values = totals.get(hour, [])
+        slots.append(
+            GridHourSlot(
+                hour=hour,
+                mean_g_per_kwh=(sum(values) / len(values)) if values else None,
+                samples=len(values),
+                observed_samples=observed.get(hour, 0),
+            )
+        )
+    return tuple(slots)
+
+
+@dataclass(frozen=True)
 class AvoidedEmissions:
     #Emissioni evitate, o in piu'
 
@@ -274,6 +326,7 @@ class RangeSummary:
     source_gco2: dict[str, float] = field(default_factory=dict)
     avoided: AvoidedEmissions = field(default_factory=AvoidedEmissions)
     hours: tuple[HourSlot, ...] = ()
+    grid_hours: tuple[GridHourSlot, ...] = ()
     days_with_data: int = 0
 
     # -- presenza di dati --------------------------------------------------
@@ -559,5 +612,6 @@ def build_range_summary(
         source_gco2=source_gco2,
         avoided=avoided,
         hours=_hour_slots(buckets),
+        grid_hours=_grid_hour_slots(grid_samples),
         days_with_data=len({day for day, _ in buckets}),
     )

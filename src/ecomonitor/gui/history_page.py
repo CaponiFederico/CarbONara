@@ -68,6 +68,10 @@ _HELP = {
         "Il consumo medio in ciascuna fascia oraria della giornata."
         " Le fasce senza valore non sono state osservate abbastanza a lungo."
     ),
+    "grid_profile": (
+        "L'intensità media della rete in ciascuna fascia oraria del periodo. "
+        "Le fasce più basse sono quelle in cui conviene consumare."
+    ),
     "quality": (
         "Quanta dell'energia del periodo viene da un contatore hardware e quanta "
         "dal modello di ripiego."
@@ -180,6 +184,7 @@ class HistoryPage(QWidget):
         layout.addWidget(self._subtitle)
         layout.addLayout(self._build_metrics())
         layout.addWidget(self._build_profile())
+        layout.addWidget(self._build_grid_profile())
         layout.addWidget(self._build_quality())
         layout.addWidget(self._build_provenance())
         layout.addStretch(1)
@@ -316,6 +321,20 @@ class HistoryPage(QWidget):
         layout.addWidget(self.profile_note)
         return frame
 
+    def _build_grid_profile(self) -> QFrame:
+        frame, layout = self._section(
+            "Intensità della rete per fascia oraria", _HELP["grid_profile"]
+        )
+
+        self.grid_profile_chart = BarChart("gCO2/kWh", theme=self._theme)
+        layout.addWidget(self.grid_profile_chart)
+
+        self.grid_profile_note = QLabel()
+        self.grid_profile_note.setObjectName("sectionNote")
+        self.grid_profile_note.setWordWrap(True)
+        layout.addWidget(self.grid_profile_note)
+        return frame
+
     def _build_quality(self) -> QFrame:
         frame, layout = self._section("Misura reale e stima", _HELP["quality"])
 
@@ -434,6 +453,8 @@ class HistoryPage(QWidget):
             label.setText("—")
         self.profile_chart.set_bars([], label_every=6)
         self.profile_note.setText(text)
+        self.grid_profile_chart.set_bars([], label_every=6)
+        self.grid_profile_note.setText("")
         self.quality_bar.set_segments([])
         self.quality_legend.setText("")
         self.bias_label.setText("")
@@ -462,6 +483,7 @@ class HistoryPage(QWidget):
         self.coverage_label.setText(f"{percent} · {format_duration(summary.observed_seconds)}")
 
         self._render_profile(summary)
+        self._render_grid_profile(summary)
         self._render_quality(summary)
         self._render_avoided(summary)
         self._render_provenance(summary)
@@ -496,6 +518,54 @@ class HistoryPage(QWidget):
         equivalent = format_phone_charges(summary.energy_wh / WH_PER_PHONE_CHARGE)
         parts.append(f"nel periodo, {equivalent} ricariche di smartphone")
         self.profile_note.setText(" · ".join(parts) + ".")
+
+    def _render_grid_profile(self, summary: RangeSummary) -> None:
+        known = [slot for slot in summary.grid_hours if slot.has_value]
+        self.grid_profile_chart.set_bars(
+            [
+                Bar(
+                    label=f"{slot.hour:02d}",
+                    value=slot.mean_g_per_kwh,
+                    caption=slot.caption,
+                    #piu' pulita del solito la fascia va in verde, piu' sporca in
+                    #rosso
+                    tone=self._grid_tone(slot, known),
+                )
+                for slot in summary.grid_hours
+            ],
+            label_every=3,
+        )
+        self.grid_profile_note.setText(self._grid_profile_note(known))
+
+    @staticmethod
+    def _grid_tone(slot, known: list) -> str:
+        if not slot.has_value or len(known) < 2:
+            return "muted"
+        values = sorted(other.mean_g_per_kwh for other in known)
+        #la fascia si giudica rispetto alle altre dello stesso periodo
+        low = values[len(values) // 3]
+        high = values[2 * len(values) // 3]
+        if slot.mean_g_per_kwh <= low:
+            return "success"
+        if slot.mean_g_per_kwh >= high:
+            return "danger"
+        return "accent"
+
+    @staticmethod
+    def _grid_profile_note(known: list) -> str:
+        if not known:
+            return "Nessun campione di rete nel periodo."
+        if len(known) < 2:
+            return "Una sola fascia oraria con campioni: troppo poco per confrontarle."
+
+        best = min(known, key=lambda slot: slot.mean_g_per_kwh)
+        worst = max(known, key=lambda slot: slot.mean_g_per_kwh)
+        ratio = worst.mean_g_per_kwh / best.mean_g_per_kwh if best.mean_g_per_kwh else 0.0
+        return (
+            f"La fascia più pulita è le {best.hour:02d}:00 con "
+            f"{best.mean_g_per_kwh:.0f} gCO2/kWh, la più sporca le {worst.hour:02d}:00 con "
+            f"{worst.mean_g_per_kwh:.0f}: un fattore {ratio:.1f} dentro la stessa giornata."
+        )
 
     def _render_quality(self, summary: RangeSummary) -> None:
         self.quality_bar.set_segments(
