@@ -266,6 +266,9 @@ class RangeSummary:
     #quanta parte del periodo i campioni di rete coprono davvero
     grid_coverage_ratio: float = 0.0
     grid_covered_seconds: float = 0.0
+    #la copertura divisa per provenienza
+    grid_observed_seconds: float = 0.0
+    grid_reconstructed_seconds: float = 0.0
     grid_samples: int = 0
     source_wh: dict[str, float] = field(default_factory=dict)
     source_gco2: dict[str, float] = field(default_factory=dict)
@@ -549,6 +552,8 @@ def build_range_summary(
         grid_mean_intensity=grid.mean_g_per_kwh,
         grid_coverage_ratio=grid.coverage_ratio,
         grid_covered_seconds=grid.covered_seconds,
+        grid_observed_seconds=grid.observed_seconds,
+        grid_reconstructed_seconds=grid.reconstructed_seconds,
         grid_samples=grid.samples,
         source_wh=source_wh,
         source_gco2=source_gco2,

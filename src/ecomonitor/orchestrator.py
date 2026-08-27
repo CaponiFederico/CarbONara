@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 
 from ecomonitor.advisor import CarbonAwareAdvisor, ChargeAdvice, RollingAverage
 from ecomonitor.carbon.attribution import CarbonAttributionService
+from ecomonitor.carbon.backfill import backfill_grid_history
 from ecomonitor.carbon.battery_pool import (
     MIN_SIGNIFICANT_DELTA_PERCENT,
     AttributionModel,
@@ -22,6 +23,8 @@ from ecomonitor.storage.event_buffer import EnergyEventBuffer, EnergySample
 #legge i sensori e integra W -> Wh, legge lo stato di
 #alimentazione, campiona l'intensita' di rete con la sua cadenza, delega
 #l'attribuzione, persiste consumo, eventuale ricarica e stato del pool.
+GRID_BACKFILL_DAYS = 30
+
 #Non importa Qt: la catena sensore -> carbonio -> database resta verificabile
 #senza GUI, senza hardware e senza rete
 
@@ -159,6 +162,11 @@ class Orchestrator:
         self._written_gco2 = 0.0
         self._last_totals_resync_at: datetime | None = None
         self._resync_totals(self._active_day)
+
+    def backfill_grid_history(self, days: int = GRID_BACKFILL_DAYS):
+        #Colma le ore in cui l'app non girava con lo storico orario dell'API
+        end = now_utc()
+        return backfill_grid_history(self.db, self.grid_service, end - timedelta(days=days), end)
 
     @property
     def active_hours_today(self) -> float:

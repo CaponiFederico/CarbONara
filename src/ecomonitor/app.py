@@ -108,6 +108,15 @@ class PollingWorker(QObject):
         self._poll_interval_ms = int(poll_interval_seconds * 1000)
         self._running = True
 
+    def _backfill_grid_history(self) -> None:
+        #Un errore non deve fermare il monitoraggio
+        if self._orchestrator is None:
+            return
+        try:
+            self._orchestrator.backfill_grid_history()
+        except Exception:
+            logger.exception("Riempimento dello storico di rete non riuscito")
+
     @property
     def has_orchestrator(self) -> bool:
         #letto dal thread della GUI alla chiusura
@@ -125,10 +134,16 @@ class PollingWorker(QObject):
             )
             return
 
+        #dopo il primo tick
+        first_tick_done = False
+
         while self._running:
             try:
                 result = self._orchestrator.tick()
                 self.tick_ready.emit(result)
+                if not first_tick_done:
+                    first_tick_done = True
+                    self._backfill_grid_history()
             except Exception:
                 #un tick fallito (sensore momentaneamente non leggibile, disco
                 #occupato) non deve bloccare l'app: si riprova al prossimo intervallo

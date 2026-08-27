@@ -197,6 +197,16 @@ class GridCarbonIntensityService:
         self._cached_forecast, self._forecast_cached_at = forecast, now
         return forecast
 
+    def get_past_points(self, start: datetime, end: datetime) -> list[IntensityPoint]:
+        #I punti orari della finestra
+        if self._live is None or end <= start:
+            return []
+        try:
+            return self._live.get_past_range(self.zone, start, end)
+        except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
+            logger.warning("Storico ElectricityMaps non disponibile (%s)", exc)
+            return []
+
     def get_mean_intensity_between(self, start: datetime, end: datetime) -> float | None:
         #Media dell'intensita' nella finestra [start, end], per ricostruire
         #l'intensita' di una ricarica avvenuta ad app chiusa

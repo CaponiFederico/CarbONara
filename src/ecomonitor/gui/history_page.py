@@ -560,7 +560,7 @@ class HistoryPage(QWidget):
             if summary.grid_mean_intensity is None:
                 return "Nessun campione di rete nel periodo con cui confrontarla."
             return (
-                f"La rete è stata osservata {format_duration(summary.grid_covered_seconds)} "
+                f"La rete è nota per {self._grid_coverage_words(summary)} "
                 f"su {format_duration(summary.elapsed_seconds)} del periodo "
                 f"({summary.grid_coverage_ratio * 100:.0f}%): troppo poco per dire se hai "
                 f"consumato meglio o peggio della sua media."
@@ -568,20 +568,32 @@ class HistoryPage(QWidget):
 
         grid_applied = summary.applied_grid_intensity or 0.0
         mean = summary.grid_mean_intensity or 0.0
-        observed = f"{format_duration(summary.grid_covered_seconds)} osservate"
+        observed = self._grid_coverage_words(summary)
         if abs(delta) <= _INTENSITY_NOISE_RATIO * (mean or 0.1):
             #sotto questo scarto i due valori sono lo stesso numero con arrotondamenti 
             return (
                 f"Sull'energia presa dalla rete hai pagato {grid_applied:.0f}, in linea con "
-                f"i {mean:.0f} medi della rete nelle {observed}."
+                f"i {mean:.0f} medi della rete su {observed}."
             ) + self._load_shift_note(summary)
 
         verdict = "più pulita" if delta < 0 else "più sporca"
         return (
             f"Sull'energia presa dalla rete hai pagato {grid_applied:.0f} contro {mean:.0f} "
-            f"medi della rete nelle {observed}: hai consumato quando era {verdict} "
+            f"medi della rete su {observed}: hai consumato quando era {verdict} "
             f"({delta:+.0f})."
         ) + self._load_shift_note(summary)
+
+    def _grid_coverage_words(self, summary: RangeSummary) -> str:
+        observed = summary.grid_observed_seconds
+        reconstructed = summary.grid_reconstructed_seconds
+        if reconstructed <= 0:
+            return f"{format_duration(observed)} osservate"
+        if observed <= 0:
+            return f"{format_duration(reconstructed)} ricostruite"
+        return (
+            f"{format_duration(observed)} osservate e "
+            f"{format_duration(reconstructed)} ricostruite"
+        )
 
     def _load_shift_note(self, summary: RangeSummary) -> str:
         #Lo stesso scarto in grammi
