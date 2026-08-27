@@ -158,6 +158,31 @@ class EnergySample:
     attribution_source: str | None
 
 
+#Un campione letto davvero dalla rete
+LIVE_SAMPLE_SOURCE = "live"
+@dataclass(frozen=True)
+class GridSample:
+    #un campione di grid_intensity_samples
+    timestamp: datetime
+    g_per_kwh: float
+    source: str
+
+
+@dataclass(frozen=True)
+class GridIntensityWindow:
+    #I campioni di rete di una finestra
+    mean_g_per_kwh: float | None
+    samples: int
+    covered_seconds: float
+    window_seconds: float
+
+    @property
+    def coverage_ratio(self) -> float:
+        if self.window_seconds <= 0:
+            return 0.0
+        return min(1.0, self.covered_seconds / self.window_seconds)
+
+
 def to_utc_iso(moment: datetime) -> str:
     #le righe vengono confrontate con standard utc 
     return moment.astimezone(UTC).isoformat()
@@ -266,6 +291,35 @@ def _rebuild_table(
         conn.execute("ROLLBACK")
         raise
     conn.execute("COMMIT")
+
+
+def grid_window_from_samples(
+    rows: list[GridSample],
+    end: datetime,
+    max_gap_seconds: float,
+    start: datetime | None = None,
+) -> GridIntensityWindow:
+    #La stessa matematica senza il database, cosi' chi ha gia' letto i campioni
+    #non li rilegge per avere anche il profilo orario
+    if start is None:
+        start = rows[0].timestamp if rows else end
+
+    weighted = covered = 0.0
+    for index, sample in enumerate(rows):
+        #l'ultimo campione copre fino alla fine della finestra
+        ends = rows[index + 1].timestamp if index + 1 < len(rows) else end
+        seconds = min((ends - sample.timestamp).total_seconds(), max_gap_seconds)
+        if seconds <= 0:
+            continue
+        weighted += sample.g_per_kwh * seconds
+        covered += seconds
+
+    return GridIntensityWindow(
+        mean_g_per_kwh=(weighted / covered) if covered > 0 else None,
+        samples=len(rows),
+        covered_seconds=covered,
+        window_seconds=max(0.0, (end - start).total_seconds()),
+    )
 
 
 class LocalDatabase:
@@ -653,6 +707,39 @@ class LocalDatabase:
         with closing(self._connect()) as conn:
             row = conn.execute(query, params).fetchone()
         return row[0] if row[1] > 0 else None
+
+    def grid_intensity_samples_between(
+        self, start: datetime, end: datetime, zone: str | None = None
+    ) -> list[GridSample]:
+        #I campioni grezzi di una finestra, in ordine di tempo
+        query = (
+            "SELECT timestamp, g_per_kwh, source FROM grid_intensity_samples "
+            "WHERE timestamp > ? AND timestamp < ?"
+        )
+        params: list = [to_utc_iso(start), to_utc_iso(end)]
+        if zone is not None:
+            query += " AND zone = ?"
+            params.append(zone)
+        query += " ORDER BY timestamp"
+        with closing(self._connect()) as conn:
+            rows = conn.execute(query, params).fetchall()
+
+        return [
+            GridSample(timestamp=datetime.fromisoformat(row[0]), g_per_kwh=row[1], source=row[2])
+            for row in rows
+        ]
+
+    def grid_intensity_window(
+        self,
+        start: datetime,
+        end: datetime,
+        max_gap_seconds: float,
+        zone: str | None = None,
+    ) -> GridIntensityWindow:
+        #Media pesata sul tempo dei campioni fra start ed end
+        rows = self.grid_intensity_samples_between(start, end, zone)
+        return grid_window_from_samples(rows, end, max_gap_seconds)
+
 
     def recent_grid_intensities(self, limit: int = 288, zone: str | None = None) -> list[float]:
         #Ritorna gli ultimi campioni di intensita' osservati, ordinati 
