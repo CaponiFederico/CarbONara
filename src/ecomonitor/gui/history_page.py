@@ -27,7 +27,9 @@ from ecomonitor.gui.charts import Bar, BarChart, CompositionBar, Segment
 from ecomonitor.gui.labels import short_source_label
 from ecomonitor.gui.theme import LIGHT, Theme
 from ecomonitor.history import (
+    MIN_AVOIDED_ROWS,
     MIN_COMPARABLE_SECONDS,
+    AvoidedEmissions,
     Period,
     RangeSummary,
     build_range_summary,
@@ -75,6 +77,10 @@ _HELP = {
     ),
     "intensity": (
         "L'intensità media effettivamente pagata, pesata sull'energia."
+    ),
+    "avoided": (
+        "Quanto è costata l'energia presa dalla batteria rispetto a quanto sarebbe "
+        "costata tirandola dalla presa nello stesso istante."
     ),
     "provenance": (
         "Da dove viene l'attribuzione di CO2 dell'energia del periodo."
@@ -332,6 +338,12 @@ class HistoryPage(QWidget):
         self.intensity_label.setWordWrap(True)
         self._describe(self.intensity_label, _HELP["intensity"])
         layout.addWidget(self.intensity_label)
+
+        self.avoided_label = QLabel()
+        self.avoided_label.setObjectName("sectionNote")
+        self.avoided_label.setWordWrap(True)
+        self._describe(self.avoided_label, _HELP["avoided"])
+        layout.addWidget(self.avoided_label)
         return frame
 
     def _build_provenance(self) -> QFrame:
@@ -426,6 +438,7 @@ class HistoryPage(QWidget):
         self.quality_legend.setText("")
         self.bias_label.setText("")
         self.intensity_label.setText("")
+        self.avoided_label.setText("")
         self.provenance_bar.set_segments([])
         self.provenance_legend.setText("")
 
@@ -450,6 +463,7 @@ class HistoryPage(QWidget):
 
         self._render_profile(summary)
         self._render_quality(summary)
+        self._render_avoided(summary)
         self._render_provenance(summary)
 
     def _render_profile(self, summary: RangeSummary) -> None:
@@ -596,6 +610,77 @@ class HistoryPage(QWidget):
         if not excluded:
             return ""
         return f" Fuori dal confronto: {' e '.join(excluded)}."
+
+    def _render_avoided(self, summary: RangeSummary) -> None:
+        #Il saldo fra quello che l'energia da batteria e' costata e quello che
+        #sarebbe costata dalla presa nello stesso istante
+        avoided = summary.avoided
+        if not avoided.has_battery:
+            #su una macchina sempre collegata il numero non esiste
+            self.avoided_label.setText("")
+            return
+
+        self.avoided_label.setText(
+            self._avoided_verdict(avoided) + self._avoided_excluded(avoided)
+        )
+
+    def _avoided_verdict(self, avoided: AvoidedEmissions) -> str:
+        if avoided.rows == 0:
+            return (
+                f"Nel periodo ci sono {format_energy(avoided.battery_wh)} presi dalla "
+                f"batteria, ma nessuna riga ha accanto una lettura della rete con cui "
+                f"confrontarli."
+            )
+        if avoided.rows < MIN_AVOIDED_ROWS:
+            return (
+                f"Solo {avoided.rows} righe a batteria hanno accanto una lettura della "
+                f"rete, ne servono {MIN_AVOIDED_ROWS}: saldo non calcolato."
+            )
+        if not avoided.is_publishable:
+            return (
+                f"Solo il {avoided.matched_share * 100:.0f}% dell'energia presa dalla "
+                f"batteria ha accanto una lettura della rete: il saldo descriverebbe un "
+                f"ritaglio del consumo a batteria."
+            )
+
+        balance = avoided.balance_gco2
+        energy = format_energy(avoided.wh)
+        if abs(balance) < 1.0:
+            return (
+                f"I {energy} presi dalla batteria sono costati quanto sarebbero costati "
+                f"dalla presa negli stessi istanti."
+            )
+
+        if balance > 0:
+            verdict = (
+                f"Usando i {energy} presi dalla batteria hai evitato "
+                f"{format_gco2(balance)}: erano stati caricati quando la rete era più "
+                f"pulita di quando li hai consumati."
+            )
+        else:
+            verdict = (
+                f"Usando i {energy} presi dalla batteria hai emesso "
+                f"{format_gco2(-balance)} in più: erano stati caricati quando la rete era "
+                f"più sporca di quando li hai consumati."
+            )
+
+        if avoided.saved_gco2 > 0 and avoided.lost_gco2 > 0:
+            verdict += (
+                f" Il saldo mette insieme {format_gco2(avoided.saved_gco2)} evitati e "
+                f"{format_gco2(avoided.lost_gco2)} in più."
+            )
+        return verdict + " Al lordo delle perdite di carica e scarica."
+
+    def _avoided_excluded(self, avoided: AvoidedEmissions) -> str:
+        #Le due quote che il saldo non copre
+        excluded = []
+        if avoided.unmatched_wh > 0 and avoided.rows > 0:
+            excluded.append(f"{format_energy(avoided.unmatched_wh)} senza lettura vicina")
+        if avoided.partial_wh > 0:
+            excluded.append(f"{format_energy(avoided.partial_wh)} senza storico di ricarica")
+        if not excluded:
+            return ""
+        return f" Fuori dal saldo: {' e '.join(excluded)}."
 
     def _render_provenance(self, summary: RangeSummary) -> None:
         tones = {

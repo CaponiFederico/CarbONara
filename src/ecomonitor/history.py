@@ -4,7 +4,9 @@ from enum import Enum
 
 from ecomonitor.carbon.attribution import AttributionSource
 from ecomonitor.storage.db import (
+    LIVE_SAMPLE_SOURCE,
     EnergySample,
+    GridSample,
     LocalDatabase,
     grid_window_from_samples,
     local_day_bounds,
@@ -47,6 +49,20 @@ POOL_ATTRIBUTION_SOURCES = (
 
 #resta fuori da ogni confronto
 FALLBACK_ATTRIBUTION_SOURCES = (AttributionSource.BATTERY_POOL_FALLBACK.value,)
+
+# sorgente su cui le emissioni evitate hanno senso
+AVOIDED_COMPARABLE_SOURCE = AttributionSource.BATTERY_POOL.value
+
+#Oltre questo il campione non descrive piu' l'istante della riga
+AVOIDED_MAX_MATCH_SECONDS = 300.0
+
+#Sotto un'ora di righe collegate il saldo non descrive niente
+MIN_AVOIDED_ROWS = 60
+
+#Sotto questa quota di energia da batteria collegata, il saldo descrive un
+#ritaglio del consumo a batteria e non il consumo a batteria
+MIN_AVOIDED_MATCH_SHARE = 0.5
+
 
 class Period(Enum):
     #I periodi di aggregazione dello storico
@@ -131,6 +147,101 @@ class HourSlot:
 
 
 @dataclass(frozen=True)
+class AvoidedEmissions:
+    #Emissioni evitate, o in piu'
+
+    saved_gco2: float = 0.0
+    lost_gco2: float = 0.0
+    #energia da batteria che il confronto ha davvero coperto
+    wh: float = 0.0
+    rows: int = 0
+    #energia da batteria senza un campione di rete utilizzabile vicino
+    unmatched_wh: float = 0.0
+    unmatched_rows: int = 0
+    #energia da batteria con pool parziale o assente
+    partial_wh: float = 0.0
+
+    @property
+    def balance_gco2(self) -> float:
+        #Positivo evitato, negativo emesso
+        return self.saved_gco2 - self.lost_gco2
+
+    @property
+    def battery_wh(self) -> float:
+        return self.wh + self.unmatched_wh + self.partial_wh
+
+    @property
+    def has_battery(self) -> bool:
+        #Su una macchina sempre collegata questo numero non esiste
+        return self.battery_wh > 0
+
+    @property
+    def matched_share(self) -> float:
+        total = self.wh + self.unmatched_wh
+        return self.wh / total if total > 0 else 0.0
+
+    @property
+    def is_publishable(self) -> bool:
+        return self.rows >= MIN_AVOIDED_ROWS and self.matched_share >= MIN_AVOIDED_MATCH_SHARE
+
+
+def compute_avoided(
+    samples: list[EnergySample],
+    grid_samples: list[GridSample],
+    max_match_seconds: float = AVOIDED_MAX_MATCH_SECONDS,
+) -> AvoidedEmissions:
+    #Collega ogni riga al campione di rete piu' vicino e somma le differenze
+    saved = lost = matched_wh = unmatched_wh = partial_wh = 0.0
+    rows = unmatched_rows = 0
+    index = 0
+
+    for sample in samples:
+        if sample.wh <= 0:
+            continue
+        if sample.attribution_source in POOL_ATTRIBUTION_SOURCES + FALLBACK_ATTRIBUTION_SOURCES:
+            if sample.attribution_source != AVOIDED_COMPARABLE_SOURCE:
+                partial_wh += sample.wh
+                continue
+        else:
+            continue
+
+        while index + 1 < len(grid_samples) and abs(
+            (grid_samples[index + 1].timestamp - sample.timestamp).total_seconds()
+        ) <= abs((grid_samples[index].timestamp - sample.timestamp).total_seconds()):
+            index += 1
+
+        nearest = grid_samples[index] if grid_samples else None
+        if (
+            nearest is None
+            or abs((nearest.timestamp - sample.timestamp).total_seconds()) > max_match_seconds
+            or nearest.source != LIVE_SAMPLE_SOURCE
+        ):
+            unmatched_wh += sample.wh
+            unmatched_rows += 1
+            continue
+
+        #gco2 == wh / 1000 * intensita', identita' che il buffer mantiene esatta
+        paid = sample.gco2 / sample.wh * 1000.0
+        avoided = sample.wh / 1000.0 * (nearest.g_per_kwh - paid)
+        if avoided >= 0:
+            saved += avoided
+        else:
+            lost -= avoided
+        matched_wh += sample.wh
+        rows += 1
+
+    return AvoidedEmissions(
+        saved_gco2=saved,
+        lost_gco2=lost,
+        wh=matched_wh,
+        rows=rows,
+        unmatched_wh=unmatched_wh,
+        unmatched_rows=unmatched_rows,
+        partial_wh=partial_wh,
+    )
+
+
+@dataclass(frozen=True)
 class RangeSummary:
     period: Period
     start: datetime
@@ -158,6 +269,7 @@ class RangeSummary:
     grid_samples: int = 0
     source_wh: dict[str, float] = field(default_factory=dict)
     source_gco2: dict[str, float] = field(default_factory=dict)
+    avoided: AvoidedEmissions = field(default_factory=AvoidedEmissions)
     hours: tuple[HourSlot, ...] = ()
     days_with_data: int = 0
 
@@ -413,6 +525,12 @@ def build_range_summary(
         start=start,
     )
 
+    battery_sources = POOL_ATTRIBUTION_SOURCES + FALLBACK_ATTRIBUTION_SOURCES
+    if any(source in source_wh for source in battery_sources):
+        avoided = compute_avoided(samples, grid_samples)
+    else:
+        avoided = AvoidedEmissions()
+
     return RangeSummary(
         period=period,
         start=start,
@@ -434,6 +552,7 @@ def build_range_summary(
         grid_samples=grid.samples,
         source_wh=source_wh,
         source_gco2=source_gco2,
+        avoided=avoided,
         hours=_hour_slots(buckets),
         days_with_data=len({day for day, _ in buckets}),
     )
