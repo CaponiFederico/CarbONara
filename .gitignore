@@ -7,3 +7,8 @@ __pycache__/
 .env
 config.json
 *.db
+
+packaging/build/
+packaging/dist/
+packaging/out/
+packaging/ecomonitor.ico

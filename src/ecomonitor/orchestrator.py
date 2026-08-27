@@ -1,4 +1,5 @@
 import logging
+import random
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
@@ -24,6 +25,9 @@ from ecomonitor.storage.event_buffer import EnergyEventBuffer, EnergySample
 #alimentazione, campiona l'intensita' di rete con la sua cadenza, delega
 #l'attribuzione, persiste consumo, eventuale ricarica e stato del pool.
 GRID_BACKFILL_DAYS = 30
+
+#Scarto casuale sull'intervallo di campionamento della rete
+GRID_SAMPLE_JITTER_RATIO = 0.1
 
 #Non importa Qt: la catena sensore -> carbonio -> database resta verificabile
 #senza GUI, senza hardware e senza rete
@@ -77,7 +81,9 @@ class Orchestrator:
         db: LocalDatabase | None = None,
         grid_service: GridCarbonIntensityService | None = None,
         power_source_reader=read_power_source_state,
+        rng: random.Random | None = None,
     ) -> None:
+        self._rng = rng or random.Random()
         self.config_manager = config_manager or ConfigManager()
         config = self.config_manager.config
 
@@ -154,6 +160,8 @@ class Orchestrator:
             self._active_day, self.integrator.max_interval_seconds
         )
         self._last_grid_sample_at: datetime | None = None
+        #l'intervallo effettivo del prossimo campione, sorteggiato dopo ognuno
+        self._grid_sample_due_seconds: float | None = None
         self._last_pool_save_at: datetime | None = None
         #placeholder, sostituito dal primo tick
         self._current_intensity = self.grid_service.static_country_mean
@@ -224,14 +232,18 @@ class Orchestrator:
         #si campiona sempre, collegati o no: alimenta la media mobile e lo
         #storico locale con cui si ricostruiscono le ricariche ad app chiusa
         interval = self.config_manager.config.grid_sample_interval_seconds
+        due = self._grid_sample_due_seconds
+        if due is None:
+            due = interval
         if (
             self._last_grid_sample_at is not None
-            and (now - self._last_grid_sample_at).total_seconds() < interval
+            and (now - self._last_grid_sample_at).total_seconds() < due
         ):
             return
 
         self._current_intensity = self.grid_service.get_current_intensity()
         self._last_grid_sample_at = now
+        self._grid_sample_due_seconds = self._jittered_grid_interval(interval)
         self.rolling_avg.add(self._current_intensity)
         self.db.record_grid_intensity(
             now,
@@ -242,6 +254,11 @@ class Orchestrator:
             #campioni non ricalcolabili
             self.grid_service.last_value_source,
         )
+
+    def _jittered_grid_interval(self, interval: float) -> float:
+        #mai zero o negativo
+        spread = interval * GRID_SAMPLE_JITTER_RATIO
+        return max(1.0, interval + self._rng.uniform(-spread, spread))
 
     def _charge_window_end(
         self, start: datetime, now: datetime, charged_percent: float
