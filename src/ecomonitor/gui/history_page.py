@@ -74,8 +74,7 @@ _HELP = {
         "Il confronto fra la potenza media stimata dal modello e quella misurata."
     ),
     "intensity": (
-        "L'intensità media effettivamente pagata, pesata sull'energia e "
-        "confrontata con la media della rete nello stesso periodo."
+        "L'intensità media effettivamente pagata, pesata sull'energia."
     ),
     "provenance": (
         "Da dove viene l'attribuzione di CO2 dell'energia del periodo."
@@ -525,27 +524,78 @@ class HistoryPage(QWidget):
             )
 
         applied = summary.applied_intensity
-        delta = summary.intensity_delta
         if applied is None:
             self.intensity_label.setText("")
-        elif delta is None:
-            self.intensity_label.setText(
-                f"Intensità media pagata: {applied:.0f} gCO2/kWh. Nessun campione di rete "
-                "nel periodo con cui confrontarla."
+            return
+        self.intensity_label.setText(
+            f"Intensità media pagata: {applied:.0f} gCO2/kWh. "
+            + self._intensity_comparison(summary)
+            + self._battery_note(summary)
+        )
+
+    def _intensity_comparison(self, summary: RangeSummary) -> str:
+        #Il confronto con la rete vale solo per l'energia presa dalla rete
+        delta = summary.intensity_delta
+        if delta is None:
+            if summary.grid_wh <= 0:
+                return (
+                    "Nel periodo non c'è energia presa dalla rete: quella dalla batteria "
+                    "porta l'intensità del momento in cui è stata caricata, e non si "
+                    "confronta con la rete di adesso."
+                )
+            if summary.grid_mean_intensity is None:
+                return "Nessun campione di rete nel periodo con cui confrontarla."
+            return (
+                f"La rete è stata osservata {format_duration(summary.grid_covered_seconds)} "
+                f"su {format_duration(summary.elapsed_seconds)} del periodo "
+                f"({summary.grid_coverage_ratio * 100:.0f}%): troppo poco per dire se hai "
+                f"consumato meglio o peggio della sua media."
             )
-        elif abs(delta) <= _INTENSITY_NOISE_RATIO * (summary.grid_mean_intensity or 0.1):
-            #sotto questo scarto idue valori sono lo stesso numero con arrotondamenti diversi
-            self.intensity_label.setText(
-                f"Intensità media pagata: {applied:.0f} gCO2/kWh, in linea con la media "
-                f"della rete nel periodo."
+
+        grid_applied = summary.applied_grid_intensity or 0.0
+        mean = summary.grid_mean_intensity or 0.0
+        observed = f"{format_duration(summary.grid_covered_seconds)} osservate"
+        if abs(delta) <= _INTENSITY_NOISE_RATIO * (mean or 0.1):
+            #sotto questo scarto i due valori sono lo stesso numero con arrotondamenti 
+            return (
+                f"Sull'energia presa dalla rete hai pagato {grid_applied:.0f}, in linea con "
+                f"i {mean:.0f} medi della rete nelle {observed}."
+            ) + self._load_shift_note(summary)
+
+        verdict = "più pulita" if delta < 0 else "più sporca"
+        return (
+            f"Sull'energia presa dalla rete hai pagato {grid_applied:.0f} contro {mean:.0f} "
+            f"medi della rete nelle {observed}: hai consumato quando era {verdict} "
+            f"({delta:+.0f})."
+        ) + self._load_shift_note(summary)
+
+    def _load_shift_note(self, summary: RangeSummary) -> str:
+        #Lo stesso scarto in grammi
+        grams = summary.load_shift_gco2
+        if grams is None:
+            return ""
+
+        energy = format_energy(summary.grid_wh)
+        if grams >= 0:
+            return (
+                f" Su {energy} sono {format_gco2(grams)} evitati rispetto a consumare la "
+                f"stessa energia a intensità media del periodo."
             )
-        else:
-            verdict = "più pulita" if delta < 0 else "più sporca"
-            self.intensity_label.setText(
-                f"Intensità media pagata: {applied:.0f} gCO2/kWh, contro "
-                f"{summary.grid_mean_intensity:.0f} di media della rete: hai consumato "
-                f"quando la rete era {verdict} del suo solito ({delta:+.0f})."
-            )
+        return (
+            f" Su {energy} sono {format_gco2(-grams)} in più rispetto a consumare la "
+            f"stessa energia a intensità media del periodo."
+        )
+
+    def _battery_note(self, summary: RangeSummary) -> str:
+        #Le due popolazioni che il confronto lascia fuori, dichiarate solo se ci sono
+        excluded = []
+        if summary.pool_wh > 0:
+            excluded.append(f"{format_energy(summary.pool_wh)} dalla batteria")
+        if summary.fallback_wh > 0:
+            excluded.append(f"{format_energy(summary.fallback_wh)} senza storico di ricarica")
+        if not excluded:
+            return ""
+        return f" Fuori dal confronto: {' e '.join(excluded)}."
 
     def _render_provenance(self, summary: RangeSummary) -> None:
         tones = {

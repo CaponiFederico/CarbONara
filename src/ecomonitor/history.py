@@ -2,7 +2,13 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from enum import Enum
 
-from ecomonitor.storage.db import EnergySample, LocalDatabase, local_day_bounds
+from ecomonitor.carbon.attribution import AttributionSource
+from ecomonitor.storage.db import (
+    EnergySample,
+    LocalDatabase,
+    grid_window_from_samples,
+    local_day_bounds,
+)
 
 #Aggregati per periodo, letti dal database
 
@@ -21,6 +27,26 @@ FALLBACK_MAX_GAP_SECONDS = 60.0
 #per pochi secondi, il rapporto e' rumoroso e non ha senso pubblicarlo
 MIN_COMPARABLE_SECONDS = 600.0
 
+GRID_SAMPLE_MAX_GAP_SECONDS = 900.0
+
+#Sotto questa copertura la media dei campioni non e' un termine di paragone per
+#il periodo
+MIN_GRID_COVERAGE_RATIO = 0.5
+
+#Le righe attribuite alla rete
+GRID_ATTRIBUTION_SOURCES = (AttributionSource.GRID_LIVE.value,)
+
+#Batteria con storico di ricarica: intensita' vera ma di un altro momento
+POOL_ATTRIBUTION_SOURCES = (
+    AttributionSource.BATTERY_POOL.value,
+    AttributionSource.BATTERY_POOL_PARTIAL.value,
+)
+
+#Batteria senza storico: l'intensita' viene da un riferimento esterno e non
+#misura nessun istante
+
+#resta fuori da ogni confronto
+FALLBACK_ATTRIBUTION_SOURCES = (AttributionSource.BATTERY_POOL_FALLBACK.value,)
 
 class Period(Enum):
     #I periodi di aggregazione dello storico
@@ -126,7 +152,12 @@ class RangeSummary:
     battery_wh: float
 
     grid_mean_intensity: float | None
+    #quanta parte del periodo i campioni di rete coprono davvero
+    grid_coverage_ratio: float = 0.0
+    grid_covered_seconds: float = 0.0
+    grid_samples: int = 0
     source_wh: dict[str, float] = field(default_factory=dict)
+    source_gco2: dict[str, float] = field(default_factory=dict)
     hours: tuple[HourSlot, ...] = ()
     days_with_data: int = 0
 
@@ -156,17 +187,61 @@ class RangeSummary:
             return None
         return self.operational_gco2 / self.energy_wh * 1000.0
 
+    def _wh_from(self, sources: tuple[str, ...]) -> float:
+        return sum(self.source_wh.get(source, 0.0) for source in sources)
+
+    def _intensity_from(self, sources: tuple[str, ...]) -> float | None:
+        wh = self._wh_from(sources)
+        if wh <= 0:
+            return None
+        return sum(self.source_gco2.get(source, 0.0) for source in sources) / wh * 1000.0
+
+    @property
+    def grid_wh(self) -> float:
+        return self._wh_from(GRID_ATTRIBUTION_SOURCES)
+
+    @property
+    def pool_wh(self) -> float:
+        return self._wh_from(POOL_ATTRIBUTION_SOURCES)
+
+    @property
+    def fallback_wh(self) -> float:
+        return self._wh_from(FALLBACK_ATTRIBUTION_SOURCES)
+
+    @property
+    def applied_grid_intensity(self) -> float | None:
+        #Intensita' pagata sulla sola energia presa dalla rete nel periodo
+        return self._intensity_from(GRID_ATTRIBUTION_SOURCES)
+
+    @property
+    def applied_pool_intensity(self) -> float | None:
+        #Intensita' ereditata dalle ricariche
+        return self._intensity_from(POOL_ATTRIBUTION_SOURCES)
+
+    @property
+    def has_enough_grid_coverage(self) -> bool:
+        return (
+            self.grid_mean_intensity is not None
+            and self.grid_coverage_ratio >= MIN_GRID_COVERAGE_RATIO
+        )
+
     @property
     def intensity_delta(self) -> float | None:
-        #Quanto l'intensita' pagata si discosta dalla media
-        #della rete nello stesso periodo
-
-        #Negativo = rete piu' pulita del suo solito
-        #Positivo = rete piu' sporca del suo solito
-        applied = self.applied_intensity
-        if applied is None or self.grid_mean_intensity is None:
+        #Quanto l'intensita' pagata sull'energia di rete si discosta dalla media
+        #della rete nelle stesse ore
+        applied = self.applied_grid_intensity
+        mean = self.grid_mean_intensity
+        if applied is None or mean is None or not self.has_enough_grid_coverage:
             return None
-        return applied - self.grid_mean_intensity
+        return applied - mean
+
+    @property
+    def load_shift_gco2(self) -> float | None:
+        #Lo stesso confronto in grammi
+        delta = self.intensity_delta
+        if delta is None:
+            return None
+        return -delta * self.grid_wh / 1000.0
 
     # -- misura contro stima -----------------------------------------------
 
@@ -288,6 +363,7 @@ def build_range_summary(
 
     buckets: dict[tuple[date, int], _HourBucket] = {}
     source_wh: dict[str, float] = {}
+    source_gco2: dict[str, float] = {}
     energy_wh = operational_gco2 = observed_seconds = 0.0
     measured_wh = measured_seconds = estimated_wh = estimated_seconds = 0.0
     plugged_wh = battery_wh = 0.0
@@ -321,6 +397,21 @@ def build_range_summary(
             source_wh[sample.attribution_source] = (
                 source_wh.get(sample.attribution_source, 0.0) + sample.wh
             )
+            source_gco2[sample.attribution_source] = (
+                source_gco2.get(sample.attribution_source, 0.0) + sample.gco2
+            )
+
+    grid_samples = db.grid_intensity_samples_between(start, end)
+
+    #la copertura si misura sul tempo gia' trascorso: le ore che il periodo
+    #non ha ancora raggiunto non sono ore mancanti
+    horizon = min(now, end)
+    grid = grid_window_from_samples(
+        [sample for sample in grid_samples if sample.timestamp < horizon],
+        horizon,
+        GRID_SAMPLE_MAX_GAP_SECONDS,
+        start=start,
+    )
 
     return RangeSummary(
         period=period,
@@ -337,8 +428,12 @@ def build_range_summary(
         estimated_seconds=estimated_seconds,
         plugged_wh=plugged_wh,
         battery_wh=battery_wh,
-        grid_mean_intensity=db.mean_grid_intensity_between(start, end),
+        grid_mean_intensity=grid.mean_g_per_kwh,
+        grid_coverage_ratio=grid.coverage_ratio,
+        grid_covered_seconds=grid.covered_seconds,
+        grid_samples=grid.samples,
         source_wh=source_wh,
+        source_gco2=source_gco2,
         hours=_hour_slots(buckets),
         days_with_data=len({day for day, _ in buckets}),
     )
