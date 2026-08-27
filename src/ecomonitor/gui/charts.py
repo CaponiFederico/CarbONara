@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from PySide6.QtCore import QEvent, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPaintEvent
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPaintEvent
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
 from ecomonitor.gui.theme import LIGHT, Theme
@@ -20,6 +20,9 @@ class Bar:
     value: float | None
     caption: str
     tone: str = "accent"
+
+    #Quota della barra che viene da una stima invece che da un sensore
+    estimated_share: float = 0.0
 
 
 def _tone_color(theme: Theme, tone: str) -> QColor:
@@ -78,6 +81,15 @@ class BarChart(QWidget):
             f"Minimo {lowest.label}: {lowest.value:.1f} {self._unit}. "
             f"Le fasce senza valore non sono state osservate abbastanza a lungo."
         )
+        #la divisione della barra
+        with_estimates = [bar for bar in described if bar.estimated_share > 0]
+        if with_estimates:
+            worst = max(with_estimates, key=lambda bar: bar.estimated_share)
+            self.setAccessibleDescription(
+                self.accessibleDescription()
+                + f" {len(with_estimates)} contengono stime, al massimo il "
+                f"{worst.estimated_share * 100:.0f}% in {worst.label}."
+            )
 
     #geometria
     def _plot_rect(self) -> QRectF:
@@ -165,8 +177,36 @@ class BarChart(QWidget):
                 continue
 
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(_tone_color(self._theme, bar.tone))
-            painter.drawRoundedRect(rect, 2.0, 2.0)
+            base = _tone_color(self._theme, bar.tone)
+
+            if bar.estimated_share <= 0.0:
+                painter.setBrush(base)
+                painter.drawRoundedRect(rect, 2.0, 2.0)
+                continue
+
+            #Barra divisa in proporzione
+            shape = QPainterPath()
+            shape.addRoundedRect(rect, 2.0, 2.0)
+            painter.save()
+            painter.setClipPath(shape)
+
+            #almeno un pixel
+            estimated_height = max(1.0, rect.height() * min(1.0, bar.estimated_share))
+            measured_height = max(0.0, rect.height() - estimated_height)
+
+            painter.fillRect(
+                QRectF(rect.left(), rect.top(), rect.width(), measured_height), base
+            )
+            painter.fillRect(
+                QRectF(
+                    rect.left(),
+                    rect.bottom() - estimated_height,
+                    rect.width(),
+                    estimated_height,
+                ),
+                _tone_color(self._theme, "warning"),
+            )
+            painter.restore()
 
         painter.setPen(QColor(self._theme.text_muted))
         painter.setBrush(Qt.BrushStyle.NoBrush)

@@ -9,8 +9,8 @@ from ecomonitor.sensors.base import (
 )
 
 #Azione che sblocca la misura vera
-_ELEVA = "Avvia l'app come amministratore per misurare la CPU invece di stimarla."
-_ELEVA_UNA_VOLTA = (
+_ELEVATE = "Avvia l'app come amministratore per misurare la CPU invece di stimarla."
+_ELEVATE_ONCE = (
     "Avviala una volta come amministratore: l'app impara il consumo di questa "
     "macchina e da allora le stime saranno molto piu' vicine al vero."
 )
@@ -24,19 +24,19 @@ def _tagged(backend: SensorBackend, mode: MeasurementMode) -> SensorBackend:
 
 def _mode_for(kind: str, calibration) -> MeasurementMode:
     #La descrizione dice cosa e' misurato, il consiglio dice cosa manca
-    tarata = calibration is not None
+    calibrated = calibration is not None
     detail = {
         "partial": "GPU misurata, CPU stimata",
         "calibrated": "stima su tutti i domini",
         "generic": "stima su tutti i domini",
     }[kind]
-    if tarata:
+    if calibrated:
         detail += ", tarata su questa macchina"
     elif kind == "generic":
         detail += " da TDP generico"
 
     return MeasurementMode(
-        kind=kind, detail=detail, advice=_ELEVA if tarata else _ELEVA_UNA_VOLTA
+        kind=kind, detail=detail, advice=_ELEVATE if calibrated else _ELEVATE_ONCE
     )
 from ecomonitor.sensors.calibration import (
     calibration_from_database,

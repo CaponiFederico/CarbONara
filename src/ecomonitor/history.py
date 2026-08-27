@@ -260,8 +260,8 @@ def _hour_slots(buckets: dict[tuple[date, int], _HourBucket]) -> tuple[HourSlot,
             mean_w = sum(per_day) / len(per_day)
 
         #quota pesata sull'energia dei soli giorni che formano la barra
-        totale = sum(bucket.wh for bucket in complete)
-        stimata = sum(bucket.estimated_wh for bucket in complete)
+        total_wh = sum(bucket.wh for bucket in complete)
+        estimated_wh = sum(bucket.estimated_wh for bucket in complete)
 
         slots.append(
             HourSlot(
@@ -269,7 +269,7 @@ def _hour_slots(buckets: dict[tuple[date, int], _HourBucket]) -> tuple[HourSlot,
                 mean_w=mean_w,
                 days_counted=len(complete),
                 days_partial=partial,
-                estimated_share=(stimata / totale) if totale > 0 else 0.0,
+                estimated_share=(estimated_wh / total_wh) if total_wh > 0 else 0.0,
             )
         )
     return tuple(slots)

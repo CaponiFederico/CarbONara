@@ -91,8 +91,8 @@ AUTO_REFRESH_PERIODS = frozenset({Period.TODAY})
 #Scarto relativo sotto cui il rumore del modello di ripiego non viene considerato significativo
 _INTENSITY_NOISE_RATIO = 0.01
 
-#Sopra questa quota di energia stimata la barra cambia colore
-_ESTIMATED_TONE_THRESHOLD = 0.10
+#quota di stime oltre la quale una fascia oraria e' considerata "per lo piu' stimata"
+_MOSTLY_ESTIMATED = 0.50
 
 _EMPTY_TEXT = (
     "Nessun dato salvato per questo periodo.\n"
@@ -460,13 +460,8 @@ class HistoryPage(QWidget):
                     label=f"{slot.hour:02d}",
                     value=slot.mean_w,
                     caption=slot.caption,
-                    #stesso arancione della quota stimata nella barra di
-                    #composizione
-                    tone=(
-                        "warning"
-                        if slot.estimated_share > _ESTIMATED_TONE_THRESHOLD
-                        else "accent"
-                    ),
+                    #la barra si divide in proporzione fra misurato e stimato
+                    estimated_share=slot.estimated_share,
                 )
                 for slot in summary.hours
             ],
@@ -475,13 +470,14 @@ class HistoryPage(QWidget):
 
         counted = sum(1 for slot in summary.hours if slot.has_value)
         skipped = sum(slot.days_partial for slot in summary.hours)
-        stimate = sum(
-            1 for slot in summary.hours
-            if slot.has_value and slot.estimated_share > _ESTIMATED_TONE_THRESHOLD
-        )
+        with_estimates = [s for s in summary.hours if s.has_value and s.estimated_share > 0]
+        mostly_estimated = sum(1 for s in with_estimates if s.estimated_share > _MOSTLY_ESTIMATED)
         parts = [f"{counted} fasce su 24 hanno almeno un giorno osservato per intero"]
-        if stimate:
-            parts.append(f"{stimate} in arancione perché in parte stimate")
+        if with_estimates:
+            note = f"{len(with_estimates)} contengono stime, in arancione"
+            if mostly_estimated:
+                note += f" ({mostly_estimated} per oltre metà)"
+            parts.append(note)
         if skipped:
             parts.append(f"{skipped} osservazioni orarie escluse perché coperte solo in parte")
         equivalent = format_phone_charges(summary.energy_wh / WH_PER_PHONE_CHARGE)
