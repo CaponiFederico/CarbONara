@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=EcoMonitor
+GenericName=Monitoraggio energetico
+Comment=Consumo energetico e emissioni di CO2eq del computer
+Exec=__EXEC__
+Icon=ecomonitor
+Terminal=false
+Categories=Utility;Monitor;System;
+StartupWMClass=EcoMonitor
+Keywords=energia;CO2;consumo;green;

@@ -21,7 +21,8 @@ windows = [
     "HardwareMonitor>=1.2",
 ]
 packaging = [
-    "pyinstaller>=6.22; sys_platform == 'win32'",
+    #serve su entrambi i sistemi: lo stesso spec costruisce Windows e Linux
+    "pyinstaller>=6.22",
 ]
 dev = [
     "ruff>=0.6",
