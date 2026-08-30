@@ -1,6 +1,7 @@
 import os
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ecomonitor import autostart
 from ecomonitor.config import API_KEY_ENV_VAR, ATTRIBUTION_MODELS, ConfigManager
 
 #La configurazione vive in un JSON nella cartella utente
@@ -49,6 +51,19 @@ class SettingsDialog(QDialog):
             self.attribution_combo.setCurrentText(config.attribution_model)
         form.addRow("Modello di attribuzione:", self.attribution_combo)
 
+        self.autostart_check = QCheckBox("Avvia EcoMonitor all'accesso a Windows")
+        self._autostart_supported = autostart.is_supported()
+        if self._autostart_supported:
+            self.autostart_check.setChecked(autostart.is_enabled())
+            self.autostart_check.setToolTip(
+                "Avvio con i sensori hardware leggibili"
+            )
+        else:
+            self.autostart_check.setChecked(False)
+            self.autostart_check.setEnabled(False)
+            self.autostart_check.setToolTip(autostart.unsupported_reason())
+        form.addRow("Avvio automatico:", self.autostart_check)
+
         layout = QVBoxLayout(self)
         layout.addLayout(form)
 
@@ -71,7 +86,25 @@ class SettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+    def _apply_autostart(self) -> bool:
+        #Torna False se la finestra deve restare aperta
+        if not self._autostart_supported:
+            return True
+        wanted = self.autostart_check.isChecked()
+        if wanted == autostart.is_enabled():
+            return True
+        try:
+            autostart.set_enabled(wanted)
+        except autostart.AutostartError as exc:
+            QMessageBox.warning(self, "Avvio automatico non modificato", str(exc))
+            #la casella torna a dire la verita'
+            self.autostart_check.setChecked(autostart.is_enabled())
+            return False
+        return True
+
     def accept(self) -> None:
+        if not self._apply_autostart():
+            return
         config = self._manager.config
         config.em_zone = self.zone_edit.text().strip() or config.em_zone
         config.country_code = (self.country_edit.text().strip() or config.country_code).upper()

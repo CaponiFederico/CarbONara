@@ -43,12 +43,21 @@ Type: filesandordirs; Name: "{app}\_internal"
 
 [Files]
 Source: "dist\{#AppName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "autostart.ps1"; DestDir: "{app}"
+
+[Tasks]
+Name: "autostart"; Description: "Avvia EcoMonitor all'accesso"; \
+    GroupDescription: "Avvio automatico:"
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; \
     Comment: "Monitoraggio di energia e CO2eq"
 Name: "{autoprograms}\{#AppName} (amministratore)"; Filename: "{app}\{#AppExeName}"; \
-    Comment: "Monitoraggio di energia e CO2eq (sensori hardware completi)"
+    Comment: "Monitoraggio di energia e CO2eq"
+
+[Registry]
+Root: HKCU; Subkey: "Software\EcoMonitor"; ValueType: dword; ValueName: "Autostart"; \
+    ValueData: 1; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: autostart
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Avvia {#AppName}"; \
@@ -67,14 +76,46 @@ begin
   SaveStringToFile(LinkPath, Content, False);
 end;
 
+// Registrazione e rimozione dell'avvio automatico
+function RunAutostartScript(const Arguments: string): Boolean;
+var
+  ResultCode: Integer;
+  ScriptPath: string;
+begin
+  ScriptPath := ExpandConstant('{app}\autostart.ps1');
+  Result := ShellExec('runas', 'powershell.exe',
+    '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath + '" ' + Arguments,
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
+function CurrentUserId: string;
+begin
+  Result := ExpandConstant('{%USERDOMAIN}') + '\' + ExpandConstant('{username}');
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
+  begin
     MarkShortcutAsElevated(ExpandConstant('{autoprograms}\{#AppName} (amministratore).lnk'));
+    if WizardIsTaskSelected('autostart') then
+      if not RunAutostartScript('-Register -TargetPath "' + ExpandConstant('{app}\{#AppExeName}')
+          + '" -UserId "' + CurrentUserId + '"') then
+        SuppressibleMsgBox('Avvio automatico non configurato: elevazione rifiutata o non riuscita.' + #13#10 +
+          'L' + #39 + 'applicazione resta installata e avviabile dal menu Start.',
+          mbInformation, MB_OK, IDOK);
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if CurUninstallStep = usUninstall then
+    if RegValueExists(HKCU, 'Software\EcoMonitor', 'Autostart') then
+      if not RunAutostartScript('-Unregister') then
+        SuppressibleMsgBox('Non sono riuscito a togliere l' + #39 + 'avvio automatico.' + #13#10 +
+          'Rimuoverlo da Utilita' + #39 + ' di pianificazione, attivita' + #39 + ' EcoMonitor.',
+          mbInformation, MB_OK, IDOK);
+
   if CurUninstallStep = usPostUninstall then
     SuppressibleMsgBox('I dati misurati restano in:' + #13#10 +
            ExpandConstant('{localappdata}\ecomonitor') + #13#10#13#10 +
