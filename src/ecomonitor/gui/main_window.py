@@ -87,6 +87,8 @@ _STALE_FLOOR_SECONDS = 15.0
 
 _MINIMUM_WIDTH = 460
 
+_STARTING_WIDTH = 700
+
 
 def _format_age(seconds: float) -> str:
     #testo dell'ultimo aggiornamento nella barra di stato
@@ -143,6 +145,7 @@ class MainWindow(QMainWindow):
         self._build_status_bar()
         self.setMinimumWidth(_MINIMUM_WIDTH)
         self._show_page(self.dashboard_page)
+        self.resize(max(_STARTING_WIDTH, self.sizeHint().width()), self.sizeHint().height())
 
         #stato della barra di stato, aggiornata anche fra un tick e l'altro
         self._last_tick_at: float | None = None
@@ -352,7 +355,6 @@ class MainWindow(QMainWindow):
             if candidate is None:
                 continue  # indice fuori posto: QStackedWidget puo' restituire None
             policy = candidate.sizePolicy()
-            #nome diverso dall'altezza calcolata sotto
             wanted_policy = (
                 QSizePolicy.Policy.Preferred if candidate is page else QSizePolicy.Policy.Ignored
             )
@@ -361,17 +363,6 @@ class MainWindow(QMainWindow):
             candidate.setSizePolicy(policy)
 
         self._stack.setCurrentWidget(page)
-
-        if self._user_shrank_the_window():
-            #scegliere una dimensione che non costringa l'utente a ridimensionare la finestra
-            return
-
-        wanted = max(self.minimumHeight(), self.sizeHint().height())
-        screen = self.screen()
-        if screen is not None:
-            #la pagina di storico puo' chiedere piu' dello schermo
-            wanted = min(wanted, screen.availableGeometry().height())
-        self._set_height(wanted)
 
     def show_dashboard(self) -> None:
         self._show_page(self.dashboard_page)
@@ -512,6 +503,9 @@ class MainWindow(QMainWindow):
     def fit_to_content(self) -> None:
         #una volta dopo aver aggiornato le etichette di un tick
         if self._user_shrank_the_window():
+            return
+
+        if self._stack.currentWidget() is not self.dashboard_page:
             return
 
         central = self.centralWidget()

@@ -60,10 +60,53 @@ Root: HKCU; Subkey: "Software\EcoMonitor"; ValueType: dword; ValueName: "Autosta
     ValueData: 1; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: autostart
 
 [Run]
+Filename: "{sys}\schtasks.exe"; Parameters: "/run /tn ""{#AppName}"""; \
+    Description: "Avvia {#AppName}"; Flags: postinstall skipifsilent runhidden; \
+    Check: AutostartTaskExists
 Filename: "{app}\{#AppExeName}"; Description: "Avvia {#AppName}"; \
-    Flags: nowait postinstall skipifsilent
+    Flags: nowait postinstall skipifsilent; Check: not AutostartTaskExists
 
 [Code]
+function EcoMonitorIsRunning: Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := Exec(ExpandConstant('{cmd}'),
+    '/c tasklist /fi "imagename eq {#AppExeName}" | find /i "{#AppExeName}" > nul',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
+function AutostartTaskExists: Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := Exec(ExpandConstant('{sys}\schtasks.exe'), '/query /tn "EcoMonitor"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  Result := '';
+  if not EcoMonitorIsRunning then
+    exit;
+
+  if SuppressibleMsgBox('EcoMonitor e'' in esecuzione e i suoi file non si possono sostituire.'
+      + #13#10#13#10 + 'Chiuderlo ora? I dati non ancora scritti, al massimo un minuto,'
+      + #13#10 + 'andranno persi. In alternativa: Esci dall''area di notifica, poi riprova.',
+      mbConfirmation, MB_YESNO, IDYES) = IDYES then
+  begin
+    ShellExec('runas', 'taskkill.exe', '/f /im {#AppExeName}', '', SW_HIDE,
+      ewWaitUntilTerminated, ResultCode);
+    Sleep(1500);
+  end;
+
+  if EcoMonitorIsRunning then
+    Result := 'EcoMonitor e'' ancora in esecuzione. Chiuderlo con Esci dall''area di notifica'
+      + #13#10 + 'e riavviare l''installazione.';
+end;
+
 procedure MarkShortcutAsElevated(const LinkPath: string);
 var
   Content: AnsiString;
