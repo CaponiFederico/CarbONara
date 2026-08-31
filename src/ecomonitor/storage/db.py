@@ -1,6 +1,7 @@
 import json
 import logging
 import sqlite3
+from collections.abc import Iterable
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -704,6 +705,24 @@ class LocalDatabase:
                 (to_utc_iso(timestamp), zone, g_per_kwh, source),
             )
             conn.commit()
+
+    def record_grid_intensity_bulk(
+        self, samples: Iterable[tuple[datetime, str, float, str]]
+    ) -> int:
+        rows = [
+            (to_utc_iso(timestamp), zone, g_per_kwh, source)
+            for timestamp, zone, g_per_kwh, source in samples
+        ]
+        if not rows:
+            return 0
+        with closing(self._connect()) as conn:
+            conn.executemany(
+                "INSERT INTO grid_intensity_samples (timestamp, zone, g_per_kwh, source) "
+                "VALUES (?, ?, ?, ?)",
+                rows,
+            )
+            conn.commit()
+        return len(rows)
 
     def mean_grid_intensity_between(
         self, start: datetime, end: datetime, zone: str | None = None

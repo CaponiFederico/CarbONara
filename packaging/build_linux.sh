@@ -31,15 +31,31 @@ DIST_DIR="${PACKAGING_DIR}/dist"
 OUT_DIR="${PACKAGING_DIR}/out"
 STAGE_DIR="${BUILD_DIR}/stage"
 
+#Il pacchetto della build precedente non deve sopravvivere a una build fallita
+TARBALL="${OUT_DIR}/ecomonitor-${VERSION}-linux-${ARCH}.tar.gz"
+rm -f "${TARBALL}"
+
 "${PYTHON}" "${PACKAGING_DIR}/make_icon.py"
 "${PYTHON}" -m PyInstaller --clean --noconfirm \
     --distpath "${DIST_DIR}" --workpath "${BUILD_DIR}" \
     "${PACKAGING_DIR}/ecomonitor.spec"
 
+#Il plugin Qt "xcb" dipende da libxcb-cursor.so.0, che non e' una dipendenza pip di
+#PySide6: se manca dalla macchina di build PyInstaller non la incapsula
+if ! compgen -G "${DIST_DIR}/EcoMonitor/_internal/libxcb-cursor.so*" >/dev/null; then
+    echo "ERRORE: libxcb-cursor.so.0 non e' finita nel pacchetto." >&2
+    echo "Senza, l'interfaccia grafica aborta su qualunque sessione X11" >&2
+    echo "Installarla sulla macchina di build e ricostruire:" >&2
+    echo "  sudo apt install libxcb-cursor0" >&2
+    exit 2
+fi
+
 rm -rf "${STAGE_DIR}"
 mkdir -p "${STAGE_DIR}" "${OUT_DIR}"
 cp -r "${DIST_DIR}/EcoMonitor" "${STAGE_DIR}/EcoMonitor"
 cp "${PACKAGING_DIR}/linux_install.sh" "${STAGE_DIR}/install.sh"
+"${PACKAGING_DIR}/read_api_key.sh" >"${STAGE_DIR}/EcoMonitor/api_key"
+chmod 0644 "${STAGE_DIR}/EcoMonitor/api_key"
 cp "${PACKAGING_DIR}/ecomonitor.desktop" "${PACKAGING_DIR}/ecomonitor.png" "${STAGE_DIR}/"
 #le regole udev per RAPL servono all'utente dopo l'installazione
 mkdir -p "${STAGE_DIR}/scripts"
@@ -49,8 +65,6 @@ chmod +x "${STAGE_DIR}/install.sh" "${STAGE_DIR}/EcoMonitor/EcoMonitor"
 
 "${DIST_DIR}/ecomonitor-cli" --help >/dev/null
 
-TARBALL="${OUT_DIR}/ecomonitor-${VERSION}-linux-${ARCH}.tar.gz"
-rm -f "${TARBALL}"
 tar -czf "${TARBALL}" -C "${STAGE_DIR}" .
 
 echo

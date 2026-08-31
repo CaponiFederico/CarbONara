@@ -2,6 +2,7 @@ import json
 import logging
 import math
 import os
+import sys
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
@@ -16,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 APP_NAME = "ecomonitor"
 API_KEY_ENV_VAR = "ECOMONITOR_EM_API_KEY"
+
+PACKAGED_API_KEY_FILE = "api_key"
 
 ATTRIBUTION_MODELS: tuple[str, ...] = tuple(model.value for model in AttributionModel)
 
@@ -51,8 +54,23 @@ class AppConfig:
 
     @property
     def api_key(self) -> str | None:
-        #la variabile d'ambiente ha la precedenza sul file
-        return os.environ.get(API_KEY_ENV_VAR) or self.electricitymaps_api_key
+        return (
+            os.environ.get(API_KEY_ENV_VAR)
+            or self.electricitymaps_api_key
+            or packaged_api_key()
+        )
+
+
+def packaged_api_key() -> str | None:
+    if not getattr(sys, "frozen", False):
+        return None
+    try:
+        key = (Path(sys.executable).parent / PACKAGED_API_KEY_FILE).read_text(
+            encoding="utf-8"
+        )
+    except OSError:
+        return None
+    return key.strip() or None
 
 
 def default_config_path() -> Path:

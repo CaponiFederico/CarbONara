@@ -74,16 +74,19 @@ def backfill_grid_history(
             empty += 1
             continue
 
+        pending: list[tuple[datetime, str, float, str]] = []
         for point in points:
             hour = _hour_key(point.timestamp)
             if hour in covered or not (start <= point.timestamp < end):
                 already += 1
                 continue
-            db.record_grid_intensity(
-                point.timestamp, service.zone, point.g_per_kwh, RECONSTRUCTED_SOURCE
+            pending.append(
+                (point.timestamp, service.zone, point.g_per_kwh, RECONSTRUCTED_SOURCE)
             )
             covered.add(hour)
             filled += 1
+
+        db.record_grid_intensity_bulk(pending)
 
     result = BackfillResult(
         hours_filled=filled,

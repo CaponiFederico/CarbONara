@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 TASK_NAME = "EcoMonitor"
 SCRIPT_NAME = "autostart.ps1"
 
+XDG_AUTOSTART_ENTRY = "ecomonitor.desktop"
+
 #niente finestra di console dietro l'interfaccia grafica
 _CREATE_NO_WINDOW = 0x08000000
 _SW_HIDE = 0
@@ -26,17 +28,28 @@ class AutostartError(RuntimeError):
     pass
 
 
+SUPPORTED_SYSTEMS = ("Windows", "Linux")
+
+
 def is_supported() -> bool:
-    #Solo su Windows e solo sull'applicazione installata
-    return platform.system() == "Windows" and getattr(sys, "frozen", False)
+    return platform.system() in SUPPORTED_SYSTEMS and getattr(sys, "frozen", False)
 
 
 def unsupported_reason() -> str:
-    if platform.system() != "Windows":
-        return "L'avvio automatico e' disponibile solo su Windows."
+    if platform.system() not in SUPPORTED_SYSTEMS:
+        return "L'avvio automatico e' disponibile solo su Windows e Linux."
     if not getattr(sys, "frozen", False):
         return "L'avvio automatico e' disponibile solo sull'applicazione installata."
     return ""
+
+
+def autostart_entry_path() -> Path:
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "autostart" / XDG_AUTOSTART_ENTRY
+
+
+def _target_path() -> str:
+    return str(Path(sys.executable).resolve())
 
 
 def script_path() -> Path:
@@ -54,6 +67,8 @@ def is_elevated() -> bool:
 
 def is_enabled() -> bool:
     #Interrogare non richiede privilegi
+    if platform.system() == "Linux":
+        return _linux_is_enabled()
     if platform.system() != "Windows":
         return False
     try:
@@ -74,6 +89,10 @@ def set_enabled(enabled: bool) -> None:
     #Solleva AutostartError
     if not is_supported():
         raise AutostartError(unsupported_reason())
+
+    if platform.system() == "Linux":
+        _linux_set_enabled(enabled)
+        return
 
     script = script_path()
     if not script.is_file():
@@ -185,3 +204,43 @@ def _run_elevated(script: Path, arguments: list[str]) -> None:
             f"Il comando elevato e' fallito (codice {exit_code.value}). "
             "Controllare Utilita' di pianificazione."
         )
+
+
+def _linux_entry_text() -> str:
+    #X-GNOME-Autostart-enabled
+    return (
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        "Name=EcoMonitor\n"
+        "Comment=Monitoraggio del consumo energetico, avviato all'accesso\n"
+        f"Exec={_target_path()}\n"
+        "Icon=ecomonitor\n"
+        "Terminal=false\n"
+        "X-GNOME-Autostart-enabled=true\n"
+    )
+
+
+def _linux_is_enabled() -> bool:
+    try:
+        content = autostart_entry_path().read_text(encoding="utf-8")
+    except OSError:
+        return False
+    wanted = f"Exec={_target_path()}"
+    return any(line.strip() == wanted for line in content.splitlines())
+
+
+def _linux_set_enabled(enabled: bool) -> None:
+    path = autostart_entry_path()
+    if not enabled:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise AutostartError(f"Non riesco a rimuovere {path}: {exc}") from exc
+        return
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_linux_entry_text(), encoding="utf-8")
+        path.chmod(0o644)
+    except OSError as exc:
+        raise AutostartError(f"Non riesco a scrivere {path}: {exc}") from exc

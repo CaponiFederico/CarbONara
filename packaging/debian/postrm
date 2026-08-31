@@ -1,0 +1,24 @@
+#!/bin/bash
+# Eseguito da dpkg come root dopo la rimozione del pacchetto
+
+set -e
+
+case "${1}" in
+remove | purge)
+    #La regola udev 
+    for energy_file in /sys/class/powercap/intel-rapl:*/energy_uj; do
+        [ -e "${energy_file}" ] || continue
+        chmod 0400 "${energy_file}" || true
+    done
+    if command -v udevadm >/dev/null; then
+        udevadm control --reload-rules || true
+    fi
+    if command -v update-desktop-database >/dev/null; then
+        update-desktop-database -q /usr/share/applications || true
+    fi
+    echo "Le misure raccolte restano in ~/.local/share/ecomonitor di ogni utente:"
+    echo "cancellarle a mano se non servono piu'."
+    ;;
+esac
+
+exit 0

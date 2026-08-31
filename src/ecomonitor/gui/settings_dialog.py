@@ -14,7 +14,12 @@ from PySide6.QtWidgets import (
 )
 
 from ecomonitor import autostart
-from ecomonitor.config import API_KEY_ENV_VAR, ATTRIBUTION_MODELS, ConfigManager
+from ecomonitor.config import (
+    API_KEY_ENV_VAR,
+    ATTRIBUTION_MODELS,
+    ConfigManager,
+    packaged_api_key,
+)
 
 #La configurazione vive in un JSON nella cartella utente
 
@@ -42,7 +47,11 @@ class SettingsDialog(QDialog):
 
         self.api_key_edit = QLineEdit(config.electricitymaps_api_key or "")
         self.api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.api_key_edit.setPlaceholderText("senza chiave si usano le medie statiche")
+        self.api_key_edit.setPlaceholderText(
+            "una chiave e' gia' inclusa: qui se puoi metterene una propria"
+            if packaged_api_key()
+            else "senza chiave si usano le medie statiche"
+        )
         form.addRow("Chiave API ElectricityMaps:", self.api_key_edit)
 
         self.attribution_combo = QComboBox()
@@ -51,7 +60,7 @@ class SettingsDialog(QDialog):
             self.attribution_combo.setCurrentText(config.attribution_model)
         form.addRow("Modello di attribuzione:", self.attribution_combo)
 
-        self.autostart_check = QCheckBox("Avvia EcoMonitor all'accesso a Windows")
+        self.autostart_check = QCheckBox("Avvia EcoMonitor all'accesso")
         self._autostart_supported = autostart.is_supported()
         if self._autostart_supported:
             self.autostart_check.setChecked(autostart.is_enabled())

@@ -1,0 +1,22 @@
+Package: ecomonitor
+Version: __VERSION__
+Architecture: __ARCH__
+Maintainer: Federico Caponi <f.caponi7@studenti.unipi.it>
+Installed-Size: __SIZE__
+Depends: libc6, libdrm2, libegl1, libgl1, libglvnd0, libglx0, libwayland-client0, libwayland-cursor0, libwayland-egl1, libxcb1
+Section: utils
+Priority: optional
+Description: Misura consumo energetico e emissioni di CO2eq del computer
+ EcoMonitor misura quanta energia consuma questo computer e attribuisce a ogni
+ wattora l'intensita' di carbonio della rete elettrica nel momento in cui e'
+ stato consumato. Su un portatile a batteria l'attribuzione risale al momento
+ della ricarica, non a quello dell'uso.
+ .
+ L'applicazione distingue sempre una misura da una stima e dichiara quale delle
+ due sta mostrando.
+ .
+ Per misurare davvero il consumo del processore servono i contatori RAPL del
+ kernel, che il sistema riserva a root. Questo pacchetto installa una regola
+ udev in /usr/lib/udev/rules.d che li rende leggibili a tutti gli utenti; senza
+ di essa il consumo della CPU verrebbe stimato invece che misurato. Rimuovendo
+ il pacchetto la regola viene tolta e i permessi tornano come prima.

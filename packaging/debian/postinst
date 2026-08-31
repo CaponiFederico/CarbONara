@@ -1,0 +1,32 @@
+#!/bin/bash
+# Eseguito da dpkg come root dopo lo scompattamento del pacchetto
+
+set -e
+
+case "${1}" in
+configure)
+    #La regola udev 
+    applied=0
+    for energy_file in /sys/class/powercap/intel-rapl:*/energy_uj; do
+        [ -e "${energy_file}" ] || continue
+        chmod a+r "${energy_file}" || true
+        applied=$((applied + 1))
+    done
+    if [ "${applied}" -eq 0 ]; then
+        echo "NOTA: nessun contatore RAPL trovato: questa CPU non li espone (AMD pre-Zen,"
+        echo "      ARM, macchina virtuale). EcoMonitor stimera' il consumo del processore."
+    fi
+
+    if command -v udevadm >/dev/null; then
+        udevadm control --reload-rules || true
+    fi
+    if command -v update-desktop-database >/dev/null; then
+        update-desktop-database -q /usr/share/applications || true
+    fi
+    if command -v gtk-update-icon-cache >/dev/null; then
+        gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true
+    fi
+    ;;
+esac
+
+exit 0
