@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<component type="desktop-application">
+  <id>io.github.caponifederico.ecomonitor</id>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>EcoMonitor</name>
+  <summary>Consumo energetico e emissioni di CO2eq del computer</summary>
+
+  <description>
+    <p>
+      EcoMonitor misura quanta energia consuma questo computer e attribuisce a
+      ogni wattora l'intensita' di carbonio della rete elettrica nel momento in
+      cui e' stato consumato. Su un portatile a batteria l'attribuzione risale
+      al momento della ricarica, non a quello dell'uso.
+    </p>
+    <p>
+      L'applicazione distingue sempre una misura da una stima e dichiara quale
+      delle due sta mostrando: quando i dati non sostengono un modello, lo dice
+      invece di produrre un numero plausibile e falso.
+    </p>
+    <p>
+      Per misurare davvero il consumo del processore servono i contatori RAPL
+      del kernel, che il sistema riserva a root. Il pacchetto installa una
+      regola udev che li rende leggibili; senza di essa il consumo della CPU
+      viene stimato invece che misurato.
+    </p>
+  </description>
+
+  <pkgname>ecomonitor</pkgname>
+
+  <launchable type="desktop-id">ecomonitor.desktop</launchable>
+
+  <url type="homepage">https://github.com/CaponiFederico/Ecomonitor</url>
+
+
+  <developer id="io.github.caponifederico">
+    <name>Federico Caponi</name>
+  </developer>
+
+  <categories>
+    <category>Utility</category>
+    <category>Monitor</category>
+    <category>System</category>
+  </categories>
+
+  <keywords>
+    <keyword>energia</keyword>
+    <keyword>CO2</keyword>
+    <keyword>consumo</keyword>
+    <keyword>green</keyword>
+  </keywords>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.1.0" date="2026-09-01" />
+  </releases>
+</component>

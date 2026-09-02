@@ -7,6 +7,8 @@ name = "ecomonitor"
 version = "0.1.0"
 description = "Monitoraggio del consumo energetico e delle emissioni di CO2-eq di laptop/desktop (tesi triennale, green computing)"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "psutil>=5.9",
     "platformdirs>=4.0",

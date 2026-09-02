@@ -1,6 +1,7 @@
 
 #Amministratore
 #   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Register -TargetPath "...\EcoMonitor.exe" -UserId "DOMINIO\utente"
+#   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Register -TargetPath "..." -UserId "..." -Arguments "--background"
 #   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Unregister
 #
 [CmdletBinding()]
@@ -8,7 +9,8 @@ param(
     [switch]$Register,
     [switch]$Unregister,
     [string]$TargetPath,
-    [string]$UserId
+    [string]$UserId,
+    [string]$Arguments
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,7 +37,12 @@ if (-not (Test-Path $TargetPath)) { throw "Non trovo l'eseguibile: $TargetPath" 
 # UAC puo' elevare con un account amministratore diverso 
 if (-not $UserId) { $UserId = "$env:USERDOMAIN\$env:USERNAME" }
 
-$action = New-ScheduledTaskAction -Execute $TargetPath
+#-Argument con una stringa vuota registrerebbe un argomento vuoto invece di nessuno
+if ($Arguments) {
+    $action = New-ScheduledTaskAction -Execute $TargetPath -Argument $Arguments
+} else {
+    $action = New-ScheduledTaskAction -Execute $TargetPath
+}
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $UserId
 $principal = New-ScheduledTaskPrincipal -UserId $UserId -LogonType Interactive -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet `

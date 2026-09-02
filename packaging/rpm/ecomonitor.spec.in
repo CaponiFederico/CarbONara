@@ -1,0 +1,118 @@
+#Modello del pacchetto RPM per Fedora
+
+%global __os_install_post %{nil}
+
+Name:           ecomonitor
+Version:        0.1.0
+Release:        1%{?dist}
+Summary:        Misura consumo energetico e emissioni di CO2eq del computer
+License:        MIT
+BuildArch:      __ARCH__
+
+#Le librerie dentro il bundle 
+AutoReqProv:    no
+
+Requires:       glibc
+Requires:       libdrm
+Requires:       libglvnd
+Requires:       libglvnd-egl
+Requires:       libglvnd-glx
+Requires:       libwayland-client
+Requires:       libwayland-cursor
+Requires:       libwayland-egl
+Requires:       libxcb
+Requires:       fontconfig
+Requires:       freetype
+
+%description
+EcoMonitor misura quanta energia consuma questo computer e attribuisce a ogni
+wattora l'intensita' di carbonio della rete elettrica nel momento in cui e'
+stato consumato. Su un portatile a batteria l'attribuzione risale al momento
+della ricarica, non a quello dell'uso.
+
+L'applicazione distingue sempre una misura da una stima e dichiara quale delle
+due sta mostrando.
+
+Per misurare davvero il consumo del processore servono i contatori RAPL del
+kernel, che il sistema riserva a root. Questo pacchetto installa una regola
+udev in /usr/lib/udev/rules.d che li rende leggibili a tutti gli utenti; senza
+di essa il consumo della CPU verrebbe stimato invece che misurato. Rimuovendo
+il pacchetto la regola viene tolta e i permessi tornano come prima.
+
+%install
+rm -rf %{buildroot}
+mkdir -p %{buildroot}
+cp -a __STAGE_DIR__/. %{buildroot}/
+
+%files
+%defattr(-,root,root,-)
+%license /usr/share/licenses/ecomonitor/LICENSE
+/opt/ecomonitor
+/usr/bin/ecomonitor
+/usr/share/applications/ecomonitor.desktop
+/usr/share/metainfo/io.github.caponifederico.ecomonitor.metainfo.xml
+/usr/share/icons/hicolor/256x256/apps/ecomonitor.png
+/usr/lib/udev/rules.d/99-ecomonitor-rapl.rules
+
+%preun
+#Un'applicazione lasciata viva continuerebbe a girare su file cancellati
+if [ "$1" = 0 ]; then
+    running=$(pgrep -f '^/opt/ecomonitor/EcoMonitor' 2>/dev/null || true)
+    if [ -n "${running}" ]; then
+        echo "Chiusura di EcoMonitor in corso prima della rimozione..."
+        kill -INT ${running} 2>/dev/null || true
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            still=$(pgrep -f '^/opt/ecomonitor/EcoMonitor' 2>/dev/null || true)
+            [ -z "${still}" ] && break
+            sleep 0.5
+        done
+        still=$(pgrep -f '^/opt/ecomonitor/EcoMonitor' 2>/dev/null || true)
+        if [ -n "${still}" ]; then
+            kill ${still} 2>/dev/null || true
+            sleep 2
+            still=$(pgrep -f '^/opt/ecomonitor/EcoMonitor' 2>/dev/null || true)
+            [ -n "${still}" ] && kill -9 ${still} 2>/dev/null || true
+        fi
+    fi
+fi
+exit 0
+
+%post
+applied=0
+for energy_file in /sys/class/powercap/intel-rapl:*/energy_uj; do
+    [ -e "${energy_file}" ] || continue
+    chmod a+r "${energy_file}" || true
+    applied=$((applied + 1))
+done
+if [ "${applied}" -eq 0 ]; then
+    echo "NOTA: nessun contatore RAPL trovato: questa CPU non li espone (AMD pre-Zen,"
+    echo "      ARM, macchina virtuale). EcoMonitor stimera' il consumo del processore."
+fi
+
+if command -v udevadm >/dev/null; then
+    udevadm control --reload-rules || true
+fi
+if command -v update-desktop-database >/dev/null; then
+    update-desktop-database -q /usr/share/applications || true
+fi
+if command -v gtk-update-icon-cache >/dev/null; then
+    gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true
+fi
+exit 0
+
+%postun
+if [ "$1" = 0 ] && [ ! -e /opt/ecomonitor/EcoMonitor ]; then
+    for energy_file in /sys/class/powercap/intel-rapl:*/energy_uj; do
+        [ -e "${energy_file}" ] || continue
+        chmod 0400 "${energy_file}" || true
+    done
+    if command -v udevadm >/dev/null; then
+        udevadm control --reload-rules || true
+    fi
+    if command -v update-desktop-database >/dev/null; then
+        update-desktop-database -q /usr/share/applications || true
+    fi
+    echo "Le misure raccolte restano in ~/.local/share/ecomonitor di ogni utente:"
+    echo "cancellarle a mano se non servono piu'."
+fi
+exit 0

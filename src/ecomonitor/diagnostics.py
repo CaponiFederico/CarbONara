@@ -54,9 +54,8 @@ def _has_elevated_privileges() -> bool | None:
 
 
 def cmd_env(args: argparse.Namespace) -> None:
-    import psutil
-
     from ecomonitor.config import API_KEY_ENV_VAR, ConfigManager, default_config_path
+    from ecomonitor.power_context import read_power_source_state
     from ecomonitor.sensors.factory import get_backend
 
     _title("Ambiente")
@@ -76,14 +75,14 @@ def cmd_env(args: argparse.Namespace) -> None:
     else:
         print(f"{INFO} privilegi elevati: non determinabile")
 
-    battery = psutil.sensors_battery()
-    if battery is None:
+    power = read_power_source_state()
+    if power.battery_percent is None:
         _line(INFO, "batteria: assente -> scenario DESKTOP (attribuzione sempre da rete)")
     else:
         _line(
             INFO,
-            f"batteria: presente, {battery.percent:.0f}% "
-            f"({'collegato' if battery.power_plugged else 'a batteria'}) -> scenario LAPTOP",
+            f"batteria: presente, {power.battery_percent:.0f}% "
+            f"({'collegato' if power.is_plugged_in else 'a batteria'}) -> scenario LAPTOP",
         )
 
     backend = get_backend()
@@ -641,7 +640,7 @@ def main(argv: list[str] | None = None) -> int:
     p_pool = sub.add_parser("pool", help="attribuzione e persistenza (nessun hardware richiesto)")
     p_pool.set_defaults(func=cmd_pool)
 
-    p_battery = sub.add_parser("battery", help="osserva i Delta% reali collegando/scollegando")
+    p_battery = sub.add_parser("battery", help="osserva i Delta%% reali collegando/scollegando")
     p_battery.add_argument("--minutes", type=float, default=5.0)
     p_battery.set_defaults(func=cmd_battery)
 

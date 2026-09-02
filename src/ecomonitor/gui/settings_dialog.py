@@ -1,5 +1,6 @@
 import os
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -73,6 +74,21 @@ class SettingsDialog(QDialog):
             self.autostart_check.setToolTip(autostart.unsupported_reason())
         form.addRow("Avvio automatico:", self.autostart_check)
 
+        self.hidden_start_check = QCheckBox("Parti in secondo piano, senza aprire la finestra")
+        if self._autostart_supported:
+            self.hidden_start_check.setChecked(autostart.starts_hidden())
+            #senza avvio automatico non c'e' niente da far partire nascosto
+            self.hidden_start_check.setEnabled(self.autostart_check.isChecked())
+            self.autostart_check.toggled.connect(self.hidden_start_check.setEnabled)
+            self.hidden_start_check.setToolTip(
+                "Vale solo all'accesso, se EcoMonitor parte automaticamente"
+            )
+        else:
+            self.hidden_start_check.setChecked(False)
+            self.hidden_start_check.setEnabled(False)
+            self.hidden_start_check.setToolTip(autostart.unsupported_reason())
+        form.addRow("", self.hidden_start_check)
+
         layout = QVBoxLayout(self)
         layout.addLayout(form)
 
@@ -91,6 +107,8 @@ class SettingsDialog(QDialog):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
+        for button in buttons.buttons():
+            button.setIcon(QIcon())
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -100,14 +118,15 @@ class SettingsDialog(QDialog):
         if not self._autostart_supported:
             return True
         wanted = self.autostart_check.isChecked()
-        if wanted == autostart.is_enabled():
+        wanted_hidden = wanted and self.hidden_start_check.isChecked()
+        if wanted == autostart.is_enabled() and wanted_hidden == autostart.starts_hidden():
             return True
         try:
-            autostart.set_enabled(wanted)
+            autostart.set_enabled(wanted, start_hidden=wanted_hidden)
         except autostart.AutostartError as exc:
             QMessageBox.warning(self, "Avvio automatico non modificato", str(exc))
-            #la casella torna a dire la verita'
             self.autostart_check.setChecked(autostart.is_enabled())
+            self.hidden_start_check.setChecked(autostart.starts_hidden())
             return False
         return True
 

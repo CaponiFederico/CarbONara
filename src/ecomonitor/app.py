@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import logging
 import os
+import platform
 import signal
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from logging.handlers import RotatingFileHandler
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
 import platformdirs
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
-from PySide6.QtGui import QPalette
-from PySide6.QtWidgets import QApplication, QStyleFactory, QSystemTrayIcon
+from PySide6.QtGui import QIcon, QPalette
+from PySide6.QtWidgets import QApplication, QMessageBox, QStyleFactory, QSystemTrayIcon
 
+from ecomonitor import autostart
 from ecomonitor.config import ConfigManager
 from ecomonitor.gui.icon import app_icon
 from ecomonitor.gui.main_window import MainWindow
@@ -41,6 +44,7 @@ logger = logging.getLogger(__name__)
 
 #Stili
 _DARK_AWARE_STYLES = ("windows11", "Fusion")
+PLATFORM_THEME_ENV_VAR = "QT_QPA_PLATFORMTHEME"
 
 
 def choose_dark_aware_style(
@@ -59,6 +63,175 @@ def choose_dark_aware_style(
     return None
 
 
+def background_mode_available(system: str, tray_available: bool, can_be_restored: bool) -> bool:
+    #Su GNOME non esiste area di notifica
+    if tray_available:
+        return False  # con la tray l'app e' sempre richiamabile, non serve un secondo avvio
+    if system != "Linux":
+        return False
+    return can_be_restored
+
+
+def hidden_start_requested(arguments: Sequence[str]) -> bool:
+    #lo passa la voce di avvio automatico
+    return autostart.HIDDEN_START_FLAG in arguments
+
+
+def should_start_hidden(requested: bool, tray_available: bool, background_available: bool) -> bool:
+    if not requested:
+        return False
+    return tray_available or background_available
+
+
+#Testo dell'avviso
+TRAY_NOTICE_TITLE = "EcoMonitor continua a misurare"
+TRAY_NOTICE_TEXT = (
+    "La finestra è nascosta, l'app resta attiva nella barra delle "
+    "applicazioni. Per uscire davvero: clic destro sull'icona → Esci."
+)
+BACKGROUND_NOTICE_TITLE = "EcoMonitor continua a misurare"
+BACKGROUND_NOTICE_TEXT = (
+    "La finestra è stata chiusa ma l'applicazione resta attiva e continua "
+    "a misurare.\n\nPer rivederla, riavvia EcoMonitor dal menu delle "
+    "applicazioni: tornerà in primo piano.\n\nPer fermare davvero la "
+    "misurazione, usa il pulsante «Esci» in fondo alla finestra."
+)
+
+NoticeChannel = Literal["tray", "dialog", "none"]
+
+
+def background_notice_channel(
+    tray_available: bool,
+    tray_supports_messages: bool,
+    background_available: bool,
+    tray_notice_shown: bool,
+    dialog_notice_shown: bool,
+) -> NoticeChannel:
+    #Chiudere la finestra non ferma la misurazione
+    if tray_available:
+        if tray_notice_shown or not tray_supports_messages:
+            return "none"
+        return "tray"
+    if not background_available:
+        return "none"  # chiudere termina davvero: non c'e' niente da avvertire
+    if dialog_notice_shown:
+        return "none"
+    return "dialog"
+
+
+def build_background_notice() -> QMessageBox:
+    notice = QMessageBox(
+        QMessageBox.Icon.Information,
+        BACKGROUND_NOTICE_TITLE,
+        BACKGROUND_NOTICE_TEXT,
+        QMessageBox.StandardButton.Ok,
+    )
+    for button in notice.buttons():
+        button.setIcon(QIcon())
+    notice.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+    #QMessageBox 
+    notice.setWindowModality(Qt.WindowModality.NonModal)
+    return notice
+
+
+class BackgroundNoticePresenter:
+    def __init__(self) -> None:
+        self._open: list[QMessageBox] = []
+
+    @property
+    def is_showing(self) -> bool:
+        return bool(self._open)
+
+    def show(self) -> QMessageBox:
+        notice = build_background_notice()
+        notice.finished.connect(lambda _: self._open.clear())
+        self._open.append(notice)
+        notice.show()
+        return notice
+
+
+DefaultAutostartAction = Literal["enable", "record", "wait", "skip"]
+
+
+def default_autostart_action(
+    supported: bool, already_applied: bool, already_enabled: bool, needs_elevation: bool
+) -> DefaultAutostartAction:
+    #L'avvio automatico nasce attivo, ma l'utente puo' disattivarlo
+    if not supported or already_applied:
+        return "skip"
+    if already_enabled:
+        #gia' attivo
+        return "record"
+    if needs_elevation:
+        return "wait"
+    return "enable"
+
+
+def apply_default_autostart(config_manager: ConfigManager) -> None:
+    config = config_manager.config
+    supported = autostart.is_supported()
+    already_applied = config.autostart_default_applied
+    decided = not supported or already_applied
+    action = default_autostart_action(
+        supported=supported,
+        already_applied=already_applied,
+        already_enabled=False if decided else autostart.is_enabled(),
+        needs_elevation=False if decided else autostart.needs_elevation(),
+    )
+    if action in ("skip", "wait"):
+        return
+
+    if action == "enable":
+        try:
+            autostart.set_enabled(True)
+        except autostart.AutostartError as exc:
+            logger.warning("Non riesco ad attivare l'avvio automatico: %s", exc)
+            return
+        logger.info(
+            "Avvio automatico attivato: EcoMonitor si aprira' all'accesso, in primo "
+            "piano. Si disattiva dalle impostazioni"
+        )
+
+    config.autostart_default_applied = True
+    try:
+        config_manager.save()
+    except OSError as exc:
+        logger.warning(
+            "Avvio automatico attivato ma non riesco a ricordarlo (%s): "
+            "spegnerlo dalle impostazioni potrebbe non bastare",
+            exc,
+        )
+
+
+def platform_theme_to_force(system: str, current: str | None, plugin_exists: bool) -> str | None:
+    if system != "Linux":
+        return None
+    if current is not None:
+        return None
+    if not plugin_exists:
+        return None
+    return "xdgdesktopportal"
+
+
+def _xdg_portal_plugin_exists() -> bool:
+    try:
+        import PySide6
+    except ImportError:
+        return False
+    plugins = Path(PySide6.__file__).parent / "Qt" / "plugins" / "platformthemes"
+    return (plugins / "libqxdgdesktopportal.so").exists()
+
+
+def _force_platform_theme() -> None:
+    chosen = platform_theme_to_force(
+        system=platform.system(),
+        current=os.environ.get(PLATFORM_THEME_ENV_VAR),
+        plugin_exists=_xdg_portal_plugin_exists(),
+    )
+    if chosen is not None:
+        os.environ[PLATFORM_THEME_ENV_VAR] = chosen
+
+
 def _system_prefers_dark(app: QApplication) -> bool:
     #La preferenza dichiarata dal sistema
     return app.styleHints().colorScheme() == Qt.ColorScheme.Dark
@@ -75,6 +248,7 @@ def _apply_dark_aware_style(app: QApplication) -> None:
         return
     previous = app.style().objectName()
     app.setStyle(chosen)
+    app.setPalette(app.style().standardPalette())
     logger.info(
         "Sistema in tema scuro ma lo stile '%s' rende chiaro: passo a '%s'", previous, chosen
     )
@@ -237,16 +411,17 @@ SIGINT_POLL_MS = 500
 
 
 def _install_sigint_handler(app: QApplication) -> QTimer:
-    #Qt non gestisce SIGINT: senza questo Ctrl+C non chiude l'app, e su Windows
-    #non arriva neanche KeyboardInterrupt. Il timer scatta ogni mezzo secondo
-    #per restituire il controllo all'interprete e far eseguire l'handler
 
-    def _request_quit(*_) -> None:
-        signal.signal(signal.SIGINT, signal.SIG_DFL)  # un secondo Ctrl+C forza
+    def _request_quit(signum=None, *_) -> None:
+        if signum is not None:
+            signal.signal(signum, signal.SIG_DFL)
         logger.info("Interruzione richiesta: chiusura pulita in corso")
         app.quit()
 
-    signal.signal(signal.SIGINT, _request_quit)
+    for signal_name in ("SIGINT", "SIGTERM"):
+        number = getattr(signal, signal_name, None)
+        if number is not None:
+            signal.signal(number, _request_quit)
 
     timer = QTimer()
     timer.timeout.connect(lambda: None)
@@ -328,6 +503,7 @@ def _configure_logging() -> None:
 def main() -> None:
     _configure_logging()
 
+    _force_platform_theme()
     app = QApplication(sys.argv)
     #prima di costruire qualunque widget: cambiare stile dopo li lascerebbe con
     #la tavolozza vecchia
@@ -365,13 +541,29 @@ def main() -> None:
         )
         return
 
-    #SingleInstanceGuard intercetta una seconda GUI 
+    #Dove manca l'area di notifica si puo' comunque restare in secondo piano
+    background_available = background_mode_available(
+        system=platform.system(),
+        tray_available=tray_available,
+        can_be_restored=guard.is_listening,
+    )
+    if background_available:
+        window.hide_on_close = True
+        app.setQuitOnLastWindowClosed(False)
+        #senza tray l'unico Esci è nella finestra
+        window.enable_quit_button(app.quit)
+        logger.info(
+            "Nessuna area di notifica: EcoMonitor continua a misurare in secondo piano. "
+            "Rilanciarlo riporta in primo piano la finestra, il pulsante «Esci» lo ferma"
+        )
+
+    #SingleInstanceGuard intercetta una seconda GUI
     db_lock = DatabaseLock(default_database_path())
     if not db_lock.acquire():
         guard.release()
         logger.error(
-            "Il database e' gia' in uso da un altro processo (probabilmente "
-            "ecomonitor-cli): questa istanza esce senza toccarlo"
+            "Il database e' gia' in uso da un altro processo: "
+            " questa istanza esce senza toccarlo"
         )
         return
 
@@ -380,36 +572,67 @@ def main() -> None:
     config_manager = ConfigManager()
     config = config_manager.config
 
-    #mostrata subito, e da qui in poi il thread della GUI non fa piu' niente di
-    #lungo: la finestra risponde mentre i sensori si aprono altrove
-    window.show()
-    window.raise_()
-    window.activateWindow()
+    requested_hidden = hidden_start_requested(sys.argv[1:])
+    start_hidden = should_start_hidden(requested_hidden, tray_available, background_available)
+    if requested_hidden and not start_hidden:
+        logger.warning(
+            "Avvio in secondo piano chiesto ma non possibile su questo desktop: senza "
+            "area di notifica e senza modalita' in secondo piano la finestra non si "
+            "potrebbe piu' riaprire, quindi EcoMonitor si apre in primo piano"
+        )
+
+    if start_hidden:
+        logger.info(
+            "Avvio in secondo piano: la misurazione parte senza aprire la finestra. "
+            "Rilanciare EcoMonitor la riporta in primo piano"
+        )
+    else:
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
+ 
+    QTimer.singleShot(0, lambda: apply_default_autostart(config_manager))
 
     tray = create_tray_icon(window, on_quit=app.quit) if tray_available else None
-    if tray is None:
+    if tray is None and not background_available:
+        #solo quando la modalita' in secondo piano non e' disponibile
         logger.info(
             "Nessuna area di notifica su questo desktop: l'applicazione non puo' restare "
             "in background, quindi chiudere la finestra la termina. Il monitoraggio "
             "riprende al prossimo avvio"
         )
 
-    def announce_background_mode() -> None:
-        #una volta sola nella vita dell'installazione
-        if tray is None or config.tray_notice_shown or not tray.supportsMessages():
-            return
-        tray.showMessage(
-            "EcoMonitor continua a misurare",
-            "La finestra è nascosta, l'app resta attiva nella barra delle "
-            "applicazioni. Per uscire davvero: clic destro sull'icona → Esci.",
-            QSystemTrayIcon.MessageIcon.Information,
-            10_000,
-        )
-        config.tray_notice_shown = True
+    def remember_notice_shown() -> None:
         try:
             config_manager.save()
         except OSError:
             logger.warning("Impossibile ricordare che l'avviso di background e' stato mostrato")
+
+    notice_presenter = BackgroundNoticePresenter()
+
+    def announce_background_mode() -> None:
+        channel = background_notice_channel(
+            tray_available=tray is not None,
+            tray_supports_messages=tray is not None and tray.supportsMessages(),
+            background_available=background_available,
+            tray_notice_shown=config.tray_notice_shown,
+            dialog_notice_shown=config.background_notice_shown,
+        )
+        if channel == "tray" and tray is not None:
+            tray.showMessage(
+                TRAY_NOTICE_TITLE,
+                TRAY_NOTICE_TEXT,
+                QSystemTrayIcon.MessageIcon.Information,
+                10_000,
+            )
+            config.tray_notice_shown = True
+            remember_notice_shown()
+        elif channel == "dialog":
+            config.background_notice_shown = True
+            remember_notice_shown()
+            #fuori da closeEvent: si apre quando la chiusura e' gia' conclusa
+            QTimer.singleShot(0, notice_presenter.show)
 
     window.on_hidden = announce_background_mode
 

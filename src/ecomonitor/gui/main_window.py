@@ -340,12 +340,18 @@ class MainWindow(QMainWindow):
         self.settings_button.clicked.connect(self.open_settings)
         self._describe(self.settings_button, _FIELD_HELP["settings"])
 
+        #Serve dove chiudere nasconde e non c'e' tray 
+        self.quit_button = QPushButton("Esci")
+        self.quit_button.setObjectName("navButton")
+        self.quit_button.setVisible(False)
+
         bar = self.statusBar()
         bar.setSizeGripEnabled(False)
         bar.addWidget(self.status_dot)
         bar.addWidget(self.status_label, 1)
         bar.addPermanentWidget(self.history_button)
         bar.addPermanentWidget(self.settings_button)
+        bar.addPermanentWidget(self.quit_button)
 
     # -- interazione -------------------------------------------------------
 
@@ -370,6 +376,11 @@ class MainWindow(QMainWindow):
     def show_history(self) -> None:
         self._show_page(self.history_page)
         self.fit_to_content()
+
+    def enable_quit_button(self, on_quit: Callable[[], None]) -> None:
+        #chiamato da app.py quando chiudere nasconde ma non c'e' l'area di notifica
+        self.quit_button.clicked.connect(on_quit)
+        self.quit_button.setVisible(True)
 
     def open_settings(self) -> None:
         SettingsDialog(self).exec()

@@ -17,6 +17,8 @@ SCRIPT_NAME = "autostart.ps1"
 
 XDG_AUTOSTART_ENTRY = "ecomonitor.desktop"
 
+HIDDEN_START_FLAG = "--background"
+
 #niente finestra di console dietro l'interfaccia grafica
 _CREATE_NO_WINDOW = 0x08000000
 _SW_HIDE = 0
@@ -65,6 +67,10 @@ def is_elevated() -> bool:
         return False
 
 
+def needs_elevation() -> bool:
+    return platform.system() == "Windows" and not is_elevated()
+
+
 def is_enabled() -> bool:
     #Interrogare non richiede privilegi
     if platform.system() == "Linux":
@@ -85,13 +91,45 @@ def is_enabled() -> bool:
     return result.returncode == 0
 
 
-def set_enabled(enabled: bool) -> None:
+def starts_hidden() -> bool:
+    #Se la voce esistente chiede di partire in secondo piano
+    if platform.system() == "Linux":
+        return _linux_starts_hidden()
+    if platform.system() != "Windows":
+        return False
+    return HIDDEN_START_FLAG in _windows_task_xml()
+
+
+def _windows_task_xml() -> str:
+    try:
+        result = subprocess.run(
+            ["schtasks.exe", "/query", "/tn", TASK_NAME, "/xml"],
+            capture_output=True,
+            check=False,
+            creationflags=_CREATE_NO_WINDOW,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("Non riesco a leggere l'attivita' pianificata: %s", exc)
+        return ""
+    if result.returncode != 0:
+        return ""
+    return decode_task_xml(result.stdout)
+
+
+def decode_task_xml(raw: bytes) -> str:
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return raw.decode("utf-16", errors="replace")
+    return raw.decode("utf-8", errors="replace")
+
+
+def set_enabled(enabled: bool, start_hidden: bool = False) -> None:
     #Solleva AutostartError
     if not is_supported():
         raise AutostartError(unsupported_reason())
 
     if platform.system() == "Linux":
-        _linux_set_enabled(enabled)
+        _linux_set_enabled(enabled, start_hidden)
         return
 
     script = script_path()
@@ -109,6 +147,8 @@ def set_enabled(enabled: bool) -> None:
             "-UserId",
             _current_user_id(),
         ]
+        if start_hidden:
+            arguments += ["-Arguments", HIDDEN_START_FLAG]
 
     if is_elevated():
         _run_here(script, arguments)
@@ -206,30 +246,55 @@ def _run_elevated(script: Path, arguments: list[str]) -> None:
         )
 
 
-def _linux_entry_text() -> str:
+def _linux_entry_text(start_hidden: bool) -> str:
     #X-GNOME-Autostart-enabled
+    command = _target_path()
+    if start_hidden:
+        command += " " + HIDDEN_START_FLAG
     return (
         "[Desktop Entry]\n"
         "Type=Application\n"
         "Name=EcoMonitor\n"
         "Comment=Monitoraggio del consumo energetico, avviato all'accesso\n"
-        f"Exec={_target_path()}\n"
+        f"Exec={command}\n"
+        #se l'eseguibile non c'e' piu' la voce viene ignorata invece di fallire in
+        #silenzio a ogni accesso
+        f"TryExec={_target_path()}\n"
         "Icon=ecomonitor\n"
         "Terminal=false\n"
         "X-GNOME-Autostart-enabled=true\n"
     )
 
 
-def _linux_is_enabled() -> bool:
+def _linux_exec_value() -> str | None:
+    #il valore della riga Exec
     try:
         content = autostart_entry_path().read_text(encoding="utf-8")
     except OSError:
+        return None
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Exec="):
+            return stripped.removeprefix("Exec=")
+    return None
+
+
+def _linux_is_enabled() -> bool:
+    value = _linux_exec_value()
+    if value is None:
         return False
-    wanted = f"Exec={_target_path()}"
-    return any(line.strip() == wanted for line in content.splitlines())
+    #l'argomento si toglie dalla coda 
+    return value.removesuffix(HIDDEN_START_FLAG).strip() == _target_path()
 
 
-def _linux_set_enabled(enabled: bool) -> None:
+def _linux_starts_hidden() -> bool:
+    value = _linux_exec_value()
+    if value is None:
+        return False
+    return value.rstrip().endswith(HIDDEN_START_FLAG) and _linux_is_enabled()
+
+
+def _linux_set_enabled(enabled: bool, start_hidden: bool = False) -> None:
     path = autostart_entry_path()
     if not enabled:
         try:
@@ -240,7 +305,7 @@ def _linux_set_enabled(enabled: bool) -> None:
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(_linux_entry_text(), encoding="utf-8")
+        path.write_text(_linux_entry_text(start_hidden), encoding="utf-8")
         path.chmod(0o644)
     except OSError as exc:
         raise AutostartError(f"Non riesco a scrivere {path}: {exc}") from exc

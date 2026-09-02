@@ -52,6 +52,12 @@ class AppConfig:
     tray_notice_shown: bool = False
     #l'avviso "continuo a misurare in background" si mostra una volta sola
 
+    background_notice_shown: bool = False
+    #lo stesso avviso, ma dove non c'e' area di notifica
+
+    autostart_default_applied: bool = False
+    #l'avvio automatico nasce attivo, ma una volta sola
+
     @property
     def api_key(self) -> str | None:
         return (
@@ -155,6 +161,8 @@ def _sanitised(config: AppConfig) -> AppConfig:
         )
 
     config.tray_notice_shown = bool(config.tray_notice_shown)
+    config.background_notice_shown = bool(config.background_notice_shown)
+    config.autostart_default_applied = bool(config.autostart_default_applied)
     if config.electricitymaps_api_key is not None:
         config.electricitymaps_api_key = str(config.electricitymaps_api_key).strip() or None
     return config

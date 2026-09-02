@@ -236,6 +236,48 @@ def _reference_shape() -> dict[str, tuple[str, dict[str, tuple], list[str]]]:
         return shape
 
 
+def _split_schema(script: str) -> tuple[str, str]:
+    #Gli indici vanno creati dopo la migrazione
+    tables: list[str] = []
+    indexes: list[str] = []
+    for statement in script.split(";"):
+        if not statement.strip():
+            continue
+        target = indexes if "CREATE INDEX" in statement.upper() else tables
+        target.append(f"{statement};")
+    return "\n".join(tables), "\n".join(indexes)
+
+
+def _table_has_rows(conn: sqlite3.Connection, table: str) -> bool:
+    return conn.execute(f"SELECT EXISTS(SELECT 1 FROM {table})").fetchone()[0] == 1
+
+
+def _set_aside_table(
+    conn: sqlite3.Connection, table: str, create_sql: str, index_sqls: list[str]
+) -> str:
+    suffix = 0
+    while True:
+        parked = f"{table}_legacy" if suffix == 0 else f"{table}_legacy{suffix}"
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (parked,)
+        ).fetchone()
+        if exists is None:
+            break
+        suffix += 1
+
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(f"ALTER TABLE {table} RENAME TO {parked}")
+        conn.execute(create_sql)
+        for index_sql in index_sqls:
+            conn.execute(index_sql)
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    conn.execute("COMMIT")
+    return parked
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     #CREATE TABLE IF NOT EXISTS non crea le colonne mancanti, 
     # quindi si ricostruiscono le tabelle che hanno
@@ -257,7 +299,25 @@ def _migrate(conn: sqlite3.Connection) -> None:
         unaddable = [name for name in missing if want[name][1] and want[name][2] is None]
 
         if blocking or unaddable:
-            _rebuild_table(conn, table, create_sql, index_sqls, sorted(set(want) & set(have)))
+            carried = sorted(set(want) & set(have))
+            unfillable = [
+                name
+                for name, (_type, notnull, default) in want.items()
+                if notnull and default is None and name not in carried
+            ]
+            if unfillable and _table_has_rows(conn, table):
+                parked = _set_aside_table(conn, table, create_sql, index_sqls)
+                logger.warning(
+                    "Le righe di %s appartengono a uno schema incompatibile (manca "
+                    "una sorgente per: %s): spostate in %s e non convertite, perche' "
+                    "servirebbe inventare dei valori. La tabella riparte vuota",
+                    table,
+                    ", ".join(unfillable),
+                    parked,
+                )
+                continue
+
+            _rebuild_table(conn, table, create_sql, index_sqls, carried)
             logger.info(
                 "Schema di %s ricostruito (colonne rimosse: %s, aggiunte: %s)",
                 table,
@@ -343,8 +403,11 @@ class LocalDatabase:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         #isolation_level=None: la migrazione governa le sue transazioni a mano
         with closing(sqlite3.connect(self.path, isolation_level=None)) as conn:
-            conn.executescript(SCHEMA)
+            #tabelle, poi migrazione, poi indici
+            tables_sql, indexes_sql = _split_schema(SCHEMA)
+            conn.executescript(tables_sql)
             _migrate(conn)
+            conn.executescript(indexes_sql)
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.path)

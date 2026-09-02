@@ -53,6 +53,10 @@ class SingleInstanceGuard(QObject):
         self._server = server
         return True
 
+    @property
+    def is_listening(self) -> bool:
+        return self._server is not None
+
     def release(self) -> None:
         if self._server is not None:
             self._server.close()
