@@ -1,15 +1,20 @@
 #Modello del pacchetto RPM per Fedora
 
+%global debug_package %{nil}
+
 %global __os_install_post %{nil}
 
+#un .rpm costruito su Ubuntu porta 343 percorsi in piu' che puntano dentro il bundle
+%global _build_id_links none
+
 Name:           ecomonitor
-Version:        0.1.0
+Version:        __VERSION__
 Release:        1%{?dist}
 Summary:        Misura consumo energetico e emissioni di CO2eq del computer
 License:        MIT
 BuildArch:      __ARCH__
 
-#Le librerie dentro il bundle 
+#Le librerie dentro il bundle non sono dipendenze da risolvere
 AutoReqProv:    no
 
 Requires:       glibc
@@ -45,7 +50,10 @@ mkdir -p %{buildroot}
 cp -a __STAGE_DIR__/. %{buildroot}/
 
 %files
+
 %defattr(-,root,root,-)
+
+%dir /usr/share/licenses/ecomonitor
 %license /usr/share/licenses/ecomonitor/LICENSE
 /opt/ecomonitor
 /usr/bin/ecomonitor
@@ -55,23 +63,40 @@ cp -a __STAGE_DIR__/. %{buildroot}/
 /usr/lib/udev/rules.d/99-ecomonitor-rapl.rules
 
 %preun
-#Un'applicazione lasciata viva continuerebbe a girare su file cancellati
+#Un'applicazione lasciata viva continuerebbe a girare su file cancellatito.
+#
+#Il pacchetto installa anche /usr/bin/ecomonitor come collegamento
+running_pids() {
+    for proc_dir in /proc/[0-9]*; do
+        read -r comm 2>/dev/null < "${proc_dir}/comm" || continue
+        case "${comm}" in
+        EcoMonitor | ecomonitor) ;;
+        *) continue ;;
+        esac
+        exe="$(readlink "${proc_dir}/exe" 2>/dev/null || true)"
+        case "${exe}" in
+        "/opt/ecomonitor/EcoMonitor" | "/opt/ecomonitor/EcoMonitor (deleted)")
+            echo "${proc_dir#/proc/}"
+            ;;
+        esac
+    done
+}
+
 if [ "$1" = 0 ]; then
-    running=$(pgrep -f '^/opt/ecomonitor/EcoMonitor' 2>/dev/null || true)
-    if [ -n "${running}" ]; then
+    pids=$(running_pids)
+    if [ -n "${pids}" ]; then
         echo "Chiusura di EcoMonitor in corso prima della rimozione..."
-        kill -INT ${running} 2>/dev/null || true
+        kill -INT ${pids} 2>/dev/null || true
         for _ in 1 2 3 4 5 6 7 8 9 10; do
-            still=$(pgrep -f '^/opt/ecomonitor/EcoMonitor' 2>/dev/null || true)
-            [ -z "${still}" ] && break
+            [ -z "$(running_pids)" ] && break
             sleep 0.5
         done
-        still=$(pgrep -f '^/opt/ecomonitor/EcoMonitor' 2>/dev/null || true)
-        if [ -n "${still}" ]; then
-            kill ${still} 2>/dev/null || true
+        pids=$(running_pids)
+        if [ -n "${pids}" ]; then
+            kill ${pids} 2>/dev/null || true
             sleep 2
-            still=$(pgrep -f '^/opt/ecomonitor/EcoMonitor' 2>/dev/null || true)
-            [ -n "${still}" ] && kill -9 ${still} 2>/dev/null || true
+            pids=$(running_pids)
+            [ -n "${pids}" ] && kill -9 ${pids} 2>/dev/null || true
         fi
     fi
 fi

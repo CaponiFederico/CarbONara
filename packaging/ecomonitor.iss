@@ -150,6 +150,34 @@ begin
   end;
 end;
 
+// la disinstallazione lasciava vivi i processi in esecuzione
+function InitializeUninstall: Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+  if not EcoMonitorIsRunning then
+    exit;
+
+  if SuppressibleMsgBox('EcoMonitor e'' in esecuzione e i suoi file non si possono rimuovere.'
+      + #13#10#13#10 + 'Chiuderlo ora? I dati non ancora scritti, al massimo un minuto,'
+      + #13#10 + 'andranno persi. In alternativa: Esci dall''area di notifica, poi riprova.',
+      mbConfirmation, MB_YESNO, IDYES) = IDYES then
+  begin
+    ShellExec('runas', 'taskkill.exe', '/f /im {#AppExeName}', '', SW_HIDE,
+      ewWaitUntilTerminated, ResultCode);
+    Sleep(1500);
+  end;
+
+  if EcoMonitorIsRunning then
+  begin
+    SuppressibleMsgBox('EcoMonitor e'' ancora in esecuzione: disinstallare adesso lascerebbe'
+      + #13#10 + 'i suoi file sul disco. Chiuderlo con Esci dall''area di notifica'
+      + #13#10 + 'e riavviare la disinstallazione.', mbError, MB_OK, IDOK);
+    Result := False;
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then

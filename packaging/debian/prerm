@@ -1,0 +1,46 @@
+#!/bin/bash
+# Eseguito da dpkg come root prima di rimuovere i file del pacchetto
+
+set -e
+
+#Un'applicazione lasciata viva continuerebbe a girare su file cancellati
+running_pids() {
+    for proc_dir in /proc/[0-9]*; do
+        read -r comm 2>/dev/null < "${proc_dir}/comm" || continue
+        case "${comm}" in
+        EcoMonitor | ecomonitor) ;;
+        *) continue ;;
+        esac
+        exe="$(readlink "${proc_dir}/exe" 2>/dev/null || true)"
+        case "${exe}" in
+        "/opt/ecomonitor/EcoMonitor" | "/opt/ecomonitor/EcoMonitor (deleted)")
+            echo "${proc_dir#/proc/}"
+            ;;
+        esac
+    done
+}
+
+case "${1}" in
+remove)
+    #durante un aggiornamento dpkg chiama prerm con "upgrade"
+    pids="$(running_pids)"
+    if [ -n "${pids}" ]; then
+        echo "Chiusura di EcoMonitor in corso prima della rimozione..."
+        #SIGINT
+        kill -INT ${pids} 2>/dev/null || true
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            [ -z "$(running_pids)" ] && break
+            sleep 0.5
+        done
+        pids="$(running_pids)"
+        if [ -n "${pids}" ]; then
+            kill ${pids} 2>/dev/null || true
+            sleep 2
+            pids="$(running_pids)"
+            [ -n "${pids}" ] && kill -9 ${pids} 2>/dev/null || true
+        fi
+    fi
+    ;;
+esac
+
+exit 0

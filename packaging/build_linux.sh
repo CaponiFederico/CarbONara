@@ -30,10 +30,19 @@ BUILD_DIR="${PACKAGING_DIR}/build"
 DIST_DIR="${PACKAGING_DIR}/dist"
 OUT_DIR="${PACKAGING_DIR}/out"
 STAGE_DIR="${BUILD_DIR}/stage"
+ORIGIN_FILE="${DIST_DIR}/EcoMonitor.origin"
+
+#dichiara chi ha costruito il bundle, cosi' build_deb.sh e build_rpm.sh non
+#impacchettano quello di un'altra distribuzione
+source "${PACKAGING_DIR}/bundle_origin.sh"
 
 #Il pacchetto della build precedente non deve sopravvivere a una build fallita
 TARBALL="${OUT_DIR}/ecomonitor-${VERSION}-linux-${ARCH}.tar.gz"
 rm -f "${TARBALL}"
+
+#se PyInstaller fallisce non deve restare la dichiarazione della build precedente
+#accanto al bundle vecchio
+rm -f "${ORIGIN_FILE}"
 
 "${PYTHON}" "${PACKAGING_DIR}/make_icon.py"
 "${PYTHON}" -m PyInstaller --clean --noconfirm \
@@ -49,6 +58,8 @@ if ! compgen -G "${DIST_DIR}/EcoMonitor/_internal/libxcb-cursor.so*" >/dev/null;
     echo "  sudo apt install libxcb-cursor0" >&2
     exit 2
 fi
+
+write_bundle_origin "${ORIGIN_FILE}" "${PYTHON}"
 
 rm -rf "${STAGE_DIR}"
 mkdir -p "${STAGE_DIR}" "${OUT_DIR}"

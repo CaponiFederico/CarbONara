@@ -93,6 +93,13 @@ class DatabaseLock:
     def release(self) -> None:
         if self._handle is None:
             return
+
+        try:
+            os.truncate(self._handle, 0)
+        except OSError as exc:
+            #cartella gia' rimossa: il rilascio del lock avviene
+            #automaticamente
+            logger.debug("PID non azzerato in %s (%s)", self.path, exc)
         try:
             _unlock(self._handle)
         finally:

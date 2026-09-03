@@ -15,10 +15,16 @@ DIST_DIR="${PACKAGING_DIR}/dist"
 OUT_DIR="${PACKAGING_DIR}/out"
 STAGE_DIR="${PACKAGING_DIR}/build/deb"
 RAPL_SCRIPT="${PROJECT_ROOT}/scripts/install_rapl_permissions.sh"
+ORIGIN_FILE="${DIST_DIR}/EcoMonitor.origin"
+
+source "${PACKAGING_DIR}/bundle_origin.sh"
 
 VERSION="$(grep -m1 -E '^version = ' "${PROJECT_ROOT}/pyproject.toml" | cut -d'"' -f2)"
 [[ -n ${VERSION} ]] || { echo "ERRORE: versione non leggibile da pyproject.toml" >&2; exit 2; }
 ARCH="$(dpkg --print-architecture)"
+
+require_bundle_origin "${ORIGIN_FILE}" debian \
+    "su Debian/Ubuntu:  bash packaging/build_linux.sh && bash packaging/build_deb.sh" || exit 2
 
 DEB="${OUT_DIR}/ecomonitor_${VERSION}_${ARCH}.deb"
 mkdir -p "${OUT_DIR}"
@@ -81,12 +87,22 @@ chmod 0644 "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps/ecomonitor.png"
 INSTALLED_SIZE="$(du -sk --exclude=DEBIAN "${STAGE_DIR}" | cut -f1)"
 sed -e "s|__VERSION__|${VERSION}|" -e "s|__ARCH__|${ARCH}|" -e "s|__SIZE__|${INSTALLED_SIZE}|" \
     "${PACKAGING_DIR}/debian/control" >"${STAGE_DIR}/DEBIAN/control"
-cp "${PACKAGING_DIR}/debian/postinst" "${PACKAGING_DIR}/debian/postrm" "${STAGE_DIR}/DEBIAN/"
-chmod 0755 "${STAGE_DIR}/DEBIAN/postinst" "${STAGE_DIR}/DEBIAN/postrm"
+cp "${PACKAGING_DIR}/debian/postinst" "${PACKAGING_DIR}/debian/prerm" \
+    "${PACKAGING_DIR}/debian/postrm" "${STAGE_DIR}/DEBIAN/"
+chmod 0755 "${STAGE_DIR}/DEBIAN/postinst" "${STAGE_DIR}/DEBIAN/prerm" \
+    "${STAGE_DIR}/DEBIAN/postrm"
 
 dpkg-deb --root-owner-group --build "${STAGE_DIR}" "${DEB}" >/dev/null
 
 dpkg-deb --info "${DEB}" >/dev/null
+ctrl="$(dpkg-deb --ctrl-tarfile "${DEB}" | tar tf -)"
+for script in postinst prerm postrm; do
+    if ! grep -qx "./${script}" <<<"${ctrl}"; then
+        echo "ERRORE: ${script} non e' finito nel pacchetto." >&2
+        rm -f "${DEB}"
+        exit 2
+    fi
+done
 contents="$(dpkg-deb --contents "${DEB}")"
 for required in ./opt/ecomonitor/EcoMonitor ./usr/bin/ecomonitor \
     ./usr/share/applications/ecomonitor.desktop \

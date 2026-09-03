@@ -6,7 +6,9 @@
 #
 # Produce packaging/out/ecomonitor-<versione>-1.<dist>.<arch>.rpm
 #
-# Serve rpmbuild
+# Serve rpmbuild, che non chiede root ma deve esserci:
+#   sudo dnf install rpm-build
+
 set -euo pipefail
 
 PACKAGING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,10 +20,14 @@ RPM_DIR="${PACKAGING_DIR}/build/rpm"
 STAGE_DIR="${RPM_DIR}/root"
 TOP_DIR="${RPM_DIR}/topdir"
 SPEC_TEMPLATE="${PACKAGING_DIR}/rpm/ecomonitor.spec.in"
+ORIGIN_FILE="${DIST_DIR}/EcoMonitor.origin"
 RAPL_SCRIPT="${PROJECT_ROOT}/scripts/install_rapl_permissions.sh"
 LICENSE_FILE="${PROJECT_ROOT}/LICENSE"
+#Il nome del file e' l'id del componente AppStream li vuole uguali
 METAINFO_ID="io.github.caponifederico.ecomonitor"
 METAINFO_FILE="${PACKAGING_DIR}/${METAINFO_ID}.metainfo.xml"
+
+source "${PACKAGING_DIR}/bundle_origin.sh"
 
 if ! command -v rpmbuild >/dev/null; then
     echo "ERRORE: rpmbuild non e' installato." >&2
@@ -32,12 +38,18 @@ fi
 VERSION="$(grep -m1 -E '^version = ' "${PROJECT_ROOT}/pyproject.toml" | cut -d'"' -f2)"
 [[ -n ${VERSION} ]] || { echo "ERRORE: versione non leggibile da pyproject.toml" >&2; exit 2; }
 ARCH="$(uname -m)"
+#il suffisso della distribuzione (.fc44) lo decide rpm 
 DIST_TAG="$(rpm --eval '%{?dist}')"
+
+#Il bundle e' quello della macchina che l'ha costruito
+require_bundle_origin "${ORIGIN_FILE}" fedora \
+    "su Fedora:  bash packaging/build_linux.sh && bash packaging/build_rpm.sh" || exit 2
 
 RPM="${OUT_DIR}/ecomonitor-${VERSION}-1${DIST_TAG}.${ARCH}.rpm"
 mkdir -p "${OUT_DIR}"
 rm -f "${RPM}"
 
+#L'.rpm impacchetta quello che ha prodotto PyInstaller
 if [[ ! -x ${DIST_DIR}/EcoMonitor/EcoMonitor ]]; then
     echo "ERRORE: manca ${DIST_DIR}/EcoMonitor/EcoMonitor." >&2
     echo "Eseguire prima:  bash packaging/build_linux.sh" >&2
@@ -52,6 +64,7 @@ if ! compgen -G "${DIST_DIR}/EcoMonitor/_internal/libxcb-cursor.so*" >/dev/null;
     exit 2
 fi
 
+#Un bundle copiato da un'altra macchina puo' arrivare con delle librerie troncate
 truncated="$(find "${DIST_DIR}/EcoMonitor" -type f -name '*.so*' -empty | head -5)"
 if [[ -n ${truncated} ]]; then
     echo "ERRORE: nel bundle ci sono librerie vuote, la copia e' incompleta:" >&2
@@ -73,8 +86,6 @@ if [[ ! -f ${LICENSE_FILE} ]]; then
     exit 2
 fi
 
-#Senza i metadati AppStream l'applicazione compare in GNOME Software come voce
-#generica
 if [[ ! -f ${METAINFO_FILE} ]]; then
     echo "ERRORE: manca ${METAINFO_FILE}." >&2
     exit 2
@@ -150,6 +161,7 @@ LC_ALL=C rpmbuild -bb --quiet --define "_topdir ${TOP_DIR}" "${SPEC}" 2>&1 \
 if grep -q "Couldn't exec" "${RPMBUILD_LOG}"; then
     echo "ERRORE: rpmbuild non ha trovato i propri script di controllo:" >&2
     grep "Couldn't exec" "${RPMBUILD_LOG}" >&2
+    echo "Il pacchetto sarebbe uscito senza quelle verifiche." >&2
     echo "Installare rpm-build (sudo dnf install rpm-build), oppure, se e' stato" >&2
     echo "estratto a mano, indicare dove sono i suoi script:" >&2
     echo "  RPM_CONFIGDIR=/percorso/con/check-files bash packaging/build_rpm.sh" >&2
@@ -177,13 +189,14 @@ for required in /opt/ecomonitor/EcoMonitor /usr/bin/ecomonitor \
     fi
 done
 
-#Le librerie del bundle non devono comparire fra le dipendenze 
+#Le librerie del bundle non devono comparire fra le dipendenze
 if rpm -qp --provides "${RPM}" | grep -q 'libQt6'; then
     echo "ERRORE: il pacchetto dichiara di fornire le librerie Qt del bundle." >&2
     rm -f "${RPM}"
     exit 2
 fi
 
+#L'eseguibile deve restare quello di PyInstaller
 original_size="$(stat -c %s "${DIST_DIR}/EcoMonitor/EcoMonitor")"
 packed_size="$(rpm -qp --qf '[%{FILENAMES} %{FILESIZES}\n]' "${RPM}" |
     awk '$1 == "/opt/ecomonitor/EcoMonitor" { print $2 }')"
