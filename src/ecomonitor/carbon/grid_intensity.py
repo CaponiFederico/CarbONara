@@ -1,7 +1,9 @@
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from statistics import median
 from typing import Protocol
 
 import httpx
@@ -43,12 +45,35 @@ def _parse_point(item: dict) -> IntensityPoint:
     )
 
 
+#Ripiego per fascia oraria
+HOUR_FALLBACK_DAYS = 7
+
+MIN_HOUR_FALLBACK_SAMPLES = 12
+
+MIN_HOUR_FALLBACK_DAYS = 2
+
+#mediana e non media
+HOUR_MEDIAN_SOURCE = "local_hour_median"
+
+
+class GridHourSample(Protocol):
+    @property
+    def timestamp(self) -> datetime: ...
+
+    @property
+    def g_per_kwh(self) -> float: ...
+
+
 class LocalIntensityHistory(Protocol):
     #accumula i campioni di tutte le zone in cui il dispositivo si e' trovato
 
     def mean_grid_intensity_between(
         self, start: datetime, end: datetime, zone: str | None = None
     ) -> float | None: ...
+
+    def grid_intensity_hour_samples(
+        self, hour: int, start: datetime, end: datetime, zone: str | None = None
+    ) -> Sequence[GridHourSample]: ...
 
 
 class StaticFallbackProvider:
@@ -112,6 +137,8 @@ class GridCarbonIntensityService:
     ) -> None:
         self.zone = zone
         self.country_code = country_code or country_code_from_zone(zone)
+        #serve a sapere se la chiave e' davvero cambiata
+        self._api_key = api_key
         self._live = provider or (ElectricityMapsProvider(api_key) if api_key else None)
         self._fallback = StaticFallbackProvider()
         self._local_history = local_history
@@ -125,6 +152,20 @@ class GridCarbonIntensityService:
         self._last_value_source: str = "static_fallback"
         self._last_mean_source: str | None = None
 
+    def set_api_key(self, api_key: str | None) -> bool:
+        #Cambia la chiave a caldo. Torna True se qualcosa e' cambiato.
+        if api_key == self._api_key:
+            return False
+
+        self._api_key = api_key
+        self._live = ElectricityMapsProvider(api_key) if api_key else None
+        self._cached_value = None
+        self._cached_at = None
+        self._cached_forecast = []
+        self._forecast_cached_at = None
+        self._last_value_source = "static_fallback"
+        return True
+
     @property
     def has_live_provider(self) -> bool:
         #chiave API configurata Non significa che l'ultimo valore sia live: 
@@ -133,9 +174,47 @@ class GridCarbonIntensityService:
 
     @property
     def last_value_source(self) -> str:
-        #live se l'ultimo valore restituito da get_current_intensity() arriva da ElectricityMaps
-        #static_fallback se e' la media nazionale di ripiego
+        #da dove viene l'ultimo valore di get_current_intensity()
         return self._last_value_source
+
+    def hour_median_intensity(self, now: datetime | None = None) -> float | None:
+        #Mediana dei campioni misurati nella fascia oraria
+        if self._local_history is None:
+            return None
+
+        moment = (now or datetime.now(UTC)).astimezone()
+        start = moment - timedelta(days=HOUR_FALLBACK_DAYS)
+        try:
+            samples = self._local_history.grid_intensity_hour_samples(
+                moment.hour, start, moment, self.zone
+            )
+        except Exception:
+            #il database non deve poter far fallire un tick
+            logger.exception("Ripiego per fascia oraria non calcolabile")
+            return None
+
+        if len(samples) < MIN_HOUR_FALLBACK_SAMPLES:
+            logger.debug(
+                "Fascia %02d:00: %d campioni misurati, ne servono %d: resto sulla "
+                "media nazionale",
+                moment.hour,
+                len(samples),
+                MIN_HOUR_FALLBACK_SAMPLES,
+            )
+            return None
+
+        days = {sample.timestamp.astimezone().date() for sample in samples}
+        if len(days) < MIN_HOUR_FALLBACK_DAYS:
+            logger.debug(
+                "Fascia %02d:00: campioni da %d giorno solo, ne servono %d: resto "
+                "sulla media nazionale",
+                moment.hour,
+                len(days),
+                MIN_HOUR_FALLBACK_DAYS,
+            )
+            return None
+
+        return median(sample.g_per_kwh for sample in samples)
 
     @property
     def static_country_mean(self) -> float:
@@ -168,11 +247,16 @@ class GridCarbonIntensityService:
                 self.zone,
             )
 
-        if value is None:
-            value = self._fallback.get_current_intensity(self.zone)
-            self._last_value_source = "static_fallback"
-        else:
+        if value is not None:
             self._last_value_source = "live"
+        else:
+            #prima della media nazionale
+            value = self.hour_median_intensity()
+            if value is not None:
+                self._last_value_source = HOUR_MEDIAN_SOURCE
+            else:
+                value = self._fallback.get_current_intensity(self.zone)
+                self._last_value_source = "static_fallback"
 
         self._cached_value, self._cached_at = value, now
         return value

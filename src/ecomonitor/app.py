@@ -5,6 +5,8 @@ import os
 import platform
 import signal
 import sys
+import threading
+import time
 from collections.abc import Callable, Sequence
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -82,6 +84,27 @@ def should_start_hidden(requested: bool, tray_available: bool, background_availa
         return False
     return tray_available or background_available
 
+TRAY_WAIT_SECONDS = 30.0
+TRAY_WAIT_STEP_SECONDS = 0.25
+
+def waits_for_tray(requested_hidden: bool, system: str, tray_available: bool) -> bool:
+    return requested_hidden and system == "Windows" and not tray_available
+
+def wait_for_tray(
+    is_available: Callable[[], bool],
+    now: Callable[[], float],
+    sleep: Callable[[float], None],
+    timeout: float = TRAY_WAIT_SECONDS,
+    step: float = TRAY_WAIT_STEP_SECONDS,
+) -> bool:
+    #Torna True appena l'area di notifica compare, False allo scadere
+    deadline = now() + timeout
+    while True:
+        if is_available():
+            return True
+        if now() >= deadline:
+            return False
+        sleep(step)
 
 #Testo dell'avviso
 TRAY_NOTICE_TITLE = "EcoMonitor continua a misurare"
@@ -281,6 +304,9 @@ class PollingWorker(QObject):
         self._orchestrator: Orchestrator | None = None
         self._poll_interval_ms = int(poll_interval_seconds * 1000)
         self._running = True
+        #Richiesta di cambio chiave in arrivo dal thread della GUI
+        self._pending_lock = threading.Lock()
+        self._pending_user_api_key: tuple[str | None, ...] = ()
 
     def _backfill_grid_history(self) -> None:
         #Un errore non deve fermare il monitoraggio
@@ -295,6 +321,26 @@ class PollingWorker(QObject):
     def has_orchestrator(self) -> bool:
         #letto dal thread della GUI alla chiusura
         return self._orchestrator is not None
+
+    def request_user_api_key(self, user_api_key: str | None) -> None:
+        #chiamata dal thread della GUI quando le impostazioni vengono salvate
+        with self._pending_lock:
+            self._pending_user_api_key = (user_api_key,)
+
+    def _take_pending_user_api_key(self) -> tuple[str | None, ...]:
+        with self._pending_lock:
+            pending, self._pending_user_api_key = self._pending_user_api_key, ()
+        return pending
+
+    def _apply_pending_user_api_key(self) -> None:
+        pending = self._take_pending_user_api_key()
+        if not pending or self._orchestrator is None:
+            return
+        try:
+            self._orchestrator.apply_user_api_key(pending[0])
+        except Exception:
+            #una chiave rifiutata non deve fermare la misura
+            logger.exception("Chiave ElectricityMaps non applicata")
 
     @Slot()
     def run(self) -> None:
@@ -312,6 +358,9 @@ class PollingWorker(QObject):
         first_tick_done = False
 
         while self._running:
+            #prima del tick: cosi' il primo tick dopo il salvataggio interroga
+            #gia' l'API invece di restituire ancora il ripiego
+            self._apply_pending_user_api_key()
             try:
                 result = self._orchestrator.tick()
                 self.tick_ready.emit(result)
@@ -334,7 +383,7 @@ class PollingWorker(QObject):
         #addormentato oltre il timeout di wait() e Qt aborta
         step_ms = 100
         elapsed = 0
-        while elapsed < total_ms and self._running:
+        while elapsed < total_ms and self._running and not self._pending_user_api_key:
             QThread.msleep(min(step_ms, total_ms - elapsed))
             elapsed += step_ms
 
@@ -516,6 +565,28 @@ def main() -> None:
     #Non tutti i desktop hanno un'area di notifica
     # Dove non c'e', chiudere chiude
     tray_available = QSystemTrayIcon.isSystemTrayAvailable()
+
+    requested_hidden = hidden_start_requested(sys.argv[1:])
+
+    def pump_and_sleep(seconds: float) -> None:
+        app.processEvents()
+        QThread.msleep(int(seconds * 1000))
+
+    if waits_for_tray(requested_hidden, platform.system(), tray_available):
+        logger.info(
+            "Avvio in secondo piano chiesto ma l'area di notifica non c'e' ancora: "
+            "aspetto che la shell la crei, fino a %g s", TRAY_WAIT_SECONDS
+        )
+        tray_available = wait_for_tray(
+            QSystemTrayIcon.isSystemTrayAvailable,
+            time.monotonic,
+            pump_and_sleep,
+        )
+        if not tray_available:
+            logger.warning(
+                "L'area di notifica non e' comparsa: EcoMonitor si apre in primo piano"
+            )
+
     app.setQuitOnLastWindowClosed(not tray_available)
 
     #lo stesso file su cui scrive l'orchestratore: la pagina di storico lo
@@ -572,7 +643,6 @@ def main() -> None:
     config_manager = ConfigManager()
     config = config_manager.config
 
-    requested_hidden = hidden_start_requested(sys.argv[1:])
     start_hidden = should_start_hidden(requested_hidden, tray_available, background_available)
     if requested_hidden and not start_hidden:
         logger.warning(
@@ -652,6 +722,8 @@ def main() -> None:
     thread.started.connect(worker.run)
     worker.tick_ready.connect(updater.on_tick_ready)
     worker.startup_failed.connect(updater.on_startup_failed)
+
+    window.on_api_key_changed = worker.request_user_api_key
 
     def cleanup() -> None:
         sigint_timer.stop()

@@ -54,6 +54,11 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller fallito" }
 & (Join-Path $DistDir "ecomonitor-cli.exe") --help | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "l'eseguibile costruito non parte" }
 
+& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File (Join-Path $PackagingDir "read_api_key.ps1") `
+    -OutFile (Join-Path (Join-Path $DistDir "EcoMonitor") "api_key")
+if ($LASTEXITCODE -ne 0) { throw "chiave ElectricityMaps non disponibile: pacchetto non costruito" }
+
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 & $iscc "/DAppVersion=$Version" (Join-Path $PackagingDir "ecomonitor.iss") | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup ha fallito la compilazione" }

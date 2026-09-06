@@ -18,6 +18,7 @@ from ecomonitor import autostart
 from ecomonitor.config import (
     API_KEY_ENV_VAR,
     ATTRIBUTION_MODELS,
+    AppConfig,
     ConfigManager,
     packaged_api_key,
 )
@@ -26,6 +27,14 @@ from ecomonitor.config import (
 
 #la lista viene da config.ATTRIBUTION_MODELS
 _ATTRIBUTION_MODELS = ATTRIBUTION_MODELS
+
+
+def user_api_key(config: AppConfig) -> str | None:
+    #La chiave dell'utente l'unica che il campo puo' mostrare
+    saved = config.electricitymaps_api_key
+    if saved and saved == packaged_api_key():
+        return None
+    return saved
 
 class SettingsDialog(QDialog):
     def __init__(self, parent: QWidget | None = None, manager: ConfigManager | None = None) -> None:
@@ -46,12 +55,17 @@ class SettingsDialog(QDialog):
         self.country_edit = QLineEdit(config.country_code)
         form.addRow("Codice paese (ISO):", self.country_edit)
 
-        self.api_key_edit = QLineEdit(config.electricitymaps_api_key or "")
+        self._saved_key = user_api_key(config)
+        self.saved_user_api_key = self._saved_key
+        self.api_key_changed = False
+        self.api_key_edit = QLineEdit(self._saved_key or "")
         self.api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.api_key_edit.setPlaceholderText(
-            "una chiave e' gia' inclusa: qui se puoi metterene una propria"
+        self.api_key_edit.setPlaceholderText(self._api_key_placeholder())
+        self.api_key_edit.setToolTip(
+            "La tua chiave ha la precedenza su quella inclusa. "
+            "Per tornare a quella inclusa: cancella il campo e salva."
             if packaged_api_key()
-            else "senza chiave si usano le medie statiche"
+            else "Per toglierla: cancella il campo e salva."
         )
         form.addRow("Chiave API ElectricityMaps:", self.api_key_edit)
 
@@ -100,7 +114,10 @@ class SettingsDialog(QDialog):
                 )
             )
 
-        note = QLabel("Le modifiche hanno effetto al prossimo avvio dell'applicazione.")
+        note = QLabel(
+            "La chiave ha effetto subito. Le altre modifiche al prossimo avvio "
+            "dell'applicazione."
+        )
         note.setWordWrap(True)
         layout.addWidget(note)
 
@@ -112,6 +129,11 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _api_key_placeholder(self) -> str:
+        if packaged_api_key():
+            return "Inserisci la tua chiave per usarla al posto di quella inclusa"
+        return "senza chiave si usano le medie statiche"
 
     def _apply_autostart(self) -> bool:
         #Torna False se la finestra deve restare aperta
@@ -137,6 +159,8 @@ class SettingsDialog(QDialog):
         config.em_zone = self.zone_edit.text().strip() or config.em_zone
         config.country_code = (self.country_edit.text().strip() or config.country_code).upper()
         config.electricitymaps_api_key = self.api_key_edit.text().strip() or None
+        self.saved_user_api_key = config.electricitymaps_api_key
+        self.api_key_changed = self.saved_user_api_key != self._saved_key
         config.attribution_model = self.attribution_combo.currentText()
         try:
             self._manager.save()

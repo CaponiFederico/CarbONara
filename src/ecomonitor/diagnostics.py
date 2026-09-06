@@ -232,6 +232,8 @@ def cmd_grid(args: argparse.Namespace) -> None:
 
     from ecomonitor.advisor import CarbonAwareAdvisor, RollingAverage
     from ecomonitor.carbon.grid_intensity import (
+        HOUR_FALLBACK_DAYS,
+        HOUR_MEDIAN_SOURCE,
         STATIC_FALLBACK_G_PER_KWH,
         GridCarbonIntensityService,
     )
@@ -254,6 +256,13 @@ def cmd_grid(args: argparse.Namespace) -> None:
     #La provenienza la dichiara il servizio
     if service.last_value_source == "live":
         _line(OK, f"valore live: {intensity:.0f} gCO2/kWh (media statica del paese: {static:.0f})")
+    elif service.last_value_source == HOUR_MEDIAN_SOURCE:
+        _line(
+            INFO,
+            f"valore ricostruito: {intensity:.0f} gCO2/kWh, mediana della stessa "
+            f"fascia oraria negli ultimi {HOUR_FALLBACK_DAYS} giorni "
+            f"(media statica del paese: {static:.0f})",
+        )
     elif service.has_live_provider:
         _line(
             WARN,

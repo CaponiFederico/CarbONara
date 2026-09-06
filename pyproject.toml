@@ -26,6 +26,10 @@ packaging = [
     #serve su entrambi i sistemi: lo stesso spec costruisce Windows e Linux
     "pyinstaller>=6.22",
 ]
+validation = [
+    "zeroconf>=0.132",
+    "cryptography>=42.0",
+]
 dev = [
     "ruff>=0.6",
     "pytest>=8.0",

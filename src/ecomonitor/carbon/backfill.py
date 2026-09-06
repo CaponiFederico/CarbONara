@@ -3,12 +3,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from ecomonitor.carbon.grid_intensity import GridCarbonIntensityService
+from ecomonitor.storage import db as db_module
 from ecomonitor.storage.db import LocalDatabase
 
 logger = logging.getLogger(__name__)
 
 #Riempimento dello storico di rete per le ore in cui l'app non girava
-RECONSTRUCTED_SOURCE = "reconstructed_api"
+#definita in storage.db
+RECONSTRUCTED_SOURCE = db_module.RECONSTRUCTED_SOURCE
 
 #limiti dell'API
 MAX_REQUEST_DAYS = 10
@@ -57,7 +59,10 @@ def backfill_grid_history(
 
     covered = {
         _hour_key(sample.timestamp)
-        for sample in db.grid_intensity_samples_between(start, end)
+        #solo le fonti misurate
+        for sample in db.grid_intensity_samples_between(
+            start, end, sources=db_module.MEASURED_SOURCES
+        )
     }
 
     filled = already = requests = empty = 0

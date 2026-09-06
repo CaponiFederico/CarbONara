@@ -5,6 +5,7 @@ from enum import Enum
 from ecomonitor.carbon.attribution import AttributionSource
 from ecomonitor.storage.db import (
     LIVE_SAMPLE_SOURCE,
+    MEASURED_SOURCES,
     EnergySample,
     GridSample,
     LocalDatabase,
@@ -569,7 +570,8 @@ def build_range_summary(
                 source_gco2.get(sample.attribution_source, 0.0) + sample.gco2
             )
 
-    grid_samples = db.grid_intensity_samples_between(start, end)
+    #solo le fonti che sono davvero dati di rete
+    grid_samples = db.grid_intensity_samples_between(start, end, sources=MEASURED_SOURCES)
 
     #la copertura si misura sul tempo gia' trascorso: le ore che il periodo
     #non ha ancora raggiunto non sono ore mancanti

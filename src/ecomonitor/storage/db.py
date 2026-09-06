@@ -1,7 +1,7 @@
 import json
 import logging
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -161,6 +161,10 @@ class EnergySample:
 
 #Un campione letto davvero dalla rete
 LIVE_SAMPLE_SOURCE = "live"
+
+RECONSTRUCTED_SOURCE = "reconstructed_api"
+
+MEASURED_SOURCES: tuple[str, ...] = (LIVE_SAMPLE_SOURCE, RECONSTRUCTED_SOURCE)
 
 SECONDS_IN_HOUR = 3600.0
 @dataclass(frozen=True)
@@ -804,10 +808,36 @@ class LocalDatabase:
             row = conn.execute(query, params).fetchone()
         return row[0] if row[1] > 0 else None
 
-    def grid_intensity_samples_between(
-        self, start: datetime, end: datetime, zone: str | None = None
+    def grid_intensity_hour_samples(
+        self, hour: int, start: datetime, end: datetime, zone: str | None = None
     ) -> list[GridSample]:
-        #I campioni grezzi di una finestra, in ordine di tempo
+        query = (
+            "SELECT timestamp, g_per_kwh, source FROM grid_intensity_samples "
+            "WHERE timestamp >= ? AND timestamp < ? AND source = ?"
+        )
+        params: list = [to_utc_iso(start), to_utc_iso(end), LIVE_SAMPLE_SOURCE]
+        if zone is not None:
+            query += " AND zone = ?"
+            params.append(zone)
+        with closing(self._connect()) as conn:
+            rows = conn.execute(query, params).fetchall()
+
+        samples = []
+        for row in rows:
+            timestamp = datetime.fromisoformat(row[0])
+            if timestamp.astimezone().hour == hour:
+                samples.append(
+                    GridSample(timestamp=timestamp, g_per_kwh=row[1], source=row[2])
+                )
+        return samples
+
+    def grid_intensity_samples_between(
+        self,
+        start: datetime,
+        end: datetime,
+        zone: str | None = None,
+        sources: Sequence[str] | None = None,
+    ) -> list[GridSample]:
         query = (
             "SELECT timestamp, g_per_kwh, source FROM grid_intensity_samples "
             "WHERE timestamp >= ? AND timestamp < ?"
@@ -816,6 +846,9 @@ class LocalDatabase:
         if zone is not None:
             query += " AND zone = ?"
             params.append(zone)
+        if sources is not None:
+            query += f" AND source IN ({','.join('?' * len(sources))})"
+            params.extend(sources)
         query += " ORDER BY timestamp"
         with closing(self._connect()) as conn:
             rows = conn.execute(query, params).fetchall()

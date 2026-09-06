@@ -48,6 +48,8 @@ Source: "autostart.ps1"; DestDir: "{app}"
 [Tasks]
 Name: "autostart"; Description: "Avvia EcoMonitor all'accesso"; \
     GroupDescription: "Avvio automatico:"
+Name: "autostart\background"; Description: "Parti nell'area di notifica, senza aprire la finestra"; \
+    GroupDescription: "Avvio automatico:"; Flags: unchecked
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; \
@@ -131,6 +133,14 @@ begin
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
 end;
 
+function HiddenStartArgument: string;
+begin
+  if WizardIsTaskSelected('autostart\background') then
+    Result := ' -Arguments "--background"'
+  else
+    Result := '';
+end;
+
 function CurrentUserId: string;
 begin
   Result := ExpandConstant('{%USERDOMAIN}') + '\' + ExpandConstant('{username}');
@@ -143,7 +153,7 @@ begin
     MarkShortcutAsElevated(ExpandConstant('{autoprograms}\{#AppName} (amministratore).lnk'));
     if WizardIsTaskSelected('autostart') then
       if not RunAutostartScript('-Register -TargetPath "' + ExpandConstant('{app}\{#AppExeName}')
-          + '" -UserId "' + CurrentUserId + '"') then
+          + '" -UserId "' + CurrentUserId + '"' + HiddenStartArgument) then
         SuppressibleMsgBox('Avvio automatico non configurato: elevazione rifiutata o non riuscita.' + #13#10 +
           'L' + #39 + 'applicazione resta installata e avviabile dal menu Start.',
           mbInformation, MB_OK, IDOK);

@@ -10,6 +10,7 @@ SOURCE_LABELS = {
 
 GRID_SOURCE_LABELS = {
     "live": "dati in tempo reale",
+    "local_hour_median": "stima dalla stessa fascia oraria dei giorni scorsi",
     "static_fallback": "media statica di ripiego, nessuna chiave API",
 }
 

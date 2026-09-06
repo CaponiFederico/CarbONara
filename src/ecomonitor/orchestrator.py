@@ -171,6 +171,21 @@ class Orchestrator:
         self._last_totals_resync_at: datetime | None = None
         self._resync_totals(self._active_day)
 
+    def apply_user_api_key(self, user_api_key: str | None) -> bool:
+        config = self.config_manager.config
+        config.electricitymaps_api_key = user_api_key
+        if not self.grid_service.set_api_key(config.api_key):
+            return False
+
+        self._last_grid_sample_at = None
+        logger.info(
+            "Chiave ElectricityMaps aggiornata: %s",
+            "si interroga l'API al prossimo tick"
+            if config.api_key
+            else "nessuna chiave disponibile, si usa il ripiego statico",
+        )
+        return True
+
     def backfill_grid_history(self, days: int = GRID_BACKFILL_DAYS):
         #Colma le ore in cui l'app non girava con lo storico orario dell'API
         end = now_utc()

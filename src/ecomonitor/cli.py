@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 #serve a testare il backend e l'orchestrator senza GUI, e a raccogliere dati
 _GRID_SOURCE_LABELS = {
     "live": "dati live",
+    "local_hour_median": "mediana della fascia oraria",
     "static_fallback": "media statica",
 }
 

@@ -72,9 +72,9 @@ def packaged_api_key() -> str | None:
         return None
     try:
         key = (Path(sys.executable).parent / PACKAGED_API_KEY_FILE).read_text(
-            encoding="utf-8"
+            encoding="utf-8-sig"
         )
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     return key.strip() or None
 

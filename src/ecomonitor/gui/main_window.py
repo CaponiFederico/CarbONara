@@ -164,6 +164,8 @@ class MainWindow(QMainWindow):
         #nascondersi significherebbe restare vivi e irraggiungibili
 
         self.on_hidden: Callable[[], None] | None = None
+        #lo collega app.py al thread di polling, che possiede il servizio di rete
+        self.on_api_key_changed: Callable[[str | None], None] | None = None
         #chiamata quando la finestra viene nascosta chiudendola: cosa
         #notificare lo decide app.py, la finestra non sa nulla della tray
 
@@ -383,7 +385,11 @@ class MainWindow(QMainWindow):
         self.quit_button.setVisible(True)
 
     def open_settings(self) -> None:
-        SettingsDialog(self).exec()
+        dialog = SettingsDialog(self)
+        dialog.exec()
+        #la chiave si applica senza riavviare
+        if dialog.api_key_changed and self.on_api_key_changed is not None:
+            self.on_api_key_changed(dialog.saved_user_api_key)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if not self.hide_on_close:
