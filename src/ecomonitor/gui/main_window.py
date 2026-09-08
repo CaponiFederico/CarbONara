@@ -22,7 +22,12 @@ from ecomonitor.gui.icon import app_icon
 from ecomonitor.gui.labels import GRID_SOURCE_LABELS, SOURCE_LABELS
 from ecomonitor.gui.settings_dialog import SettingsDialog
 from ecomonitor.gui.theme import LIGHT, Theme, build_stylesheet
-from ecomonitor.reporting import WH_PER_PHONE_CHARGE, format_phone_charges
+from ecomonitor.reporting import (
+    G_CO2_PER_EMAIL,
+    WH_PER_PHONE_CHARGE,
+    format_email_count,
+    format_phone_charges,
+)
 
 #le etichette
 _SOURCE_LABELS = SOURCE_LABELS
@@ -46,6 +51,11 @@ _FIELD_HELP = {
         "Quante volte avresti potuto ricaricare del tutto uno smartphone con l'energia "
         f"che il computer ha consumato oggi, contando {WH_PER_PHONE_CHARGE:.0f} wattora "
         "per ricarica completa."
+    ),
+    "emails": (
+        "A quante email inviate corrispondono i grammi di CO2 emessi oggi dal "
+        f"computer, contando {G_CO2_PER_EMAIL:g} grammi per una email breve "
+        "scritta e letta su un portatile."
     ),
     "intensity": (
         "Quanto è pulita l'elettricità che stai usando: grammi di CO2 per ogni "
@@ -244,23 +254,30 @@ class MainWindow(QMainWindow):
             self._describe(widget, help_text)
         return card, value
 
-    def _build_cards(self) -> QHBoxLayout:
-        row = QHBoxLayout()
-        row.setSpacing(10)
+    def _build_cards(self) -> QGridLayout:
+        grid = QGridLayout()
+        grid.setSpacing(10)
 
         energy_card, self.energy_label = self._build_card(
             "energia oggi", "Wh", _FIELD_HELP["energy"]
         )
-        gco2_card, self.operational_gco2_label = self._build_card(
-            "CO2eq oggi", "g", _FIELD_HELP["operational_gco2"]
-        )
         charges_card, self.phone_charges_label = self._build_card(
             "ricariche di smartphone", "", _FIELD_HELP["phone_charges"]
         )
+        gco2_card, self.operational_gco2_label = self._build_card(
+            "CO2eq oggi", "g", _FIELD_HELP["operational_gco2"]
+        )
+        emails_card, self.emails_label = self._build_card(
+            "mail inviate", "", _FIELD_HELP["emails"]
+        )
 
-        for card in (energy_card, gco2_card, charges_card):
-            row.addWidget(card, 1)
-        return row
+        grid.addWidget(energy_card, 0, 0)
+        grid.addWidget(charges_card, 0, 1)
+        grid.addWidget(gco2_card, 1, 0)
+        grid.addWidget(emails_card, 1, 1)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        return grid
 
     def _build_advice(self) -> QFrame:
         self.advice_banner = QFrame()
@@ -437,6 +454,8 @@ class MainWindow(QMainWindow):
         #dall'energia e non dai grammi: l'equivalenza non deve muoversi quando
         #si muove l'intensita' della rete
         self.phone_charges_label.setText(format_phone_charges(energy_wh / WH_PER_PHONE_CHARGE))
+        #dai grammi e non dall'energia
+        self.emails_label.setText(format_email_count(operational_gco2 / G_CO2_PER_EMAIL))
 
     def update_active_hours(self, hours: float) -> None:
         self._active_hours = hours

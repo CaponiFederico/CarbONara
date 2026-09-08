@@ -6,6 +6,10 @@ from ecomonitor.storage.db import LocalDatabase
 #Wh di una ricarica completa di uno smartphone TODO segnaposto
 WH_PER_PHONE_CHARGE = 13.0
 
+#gCO2eq di una email breve 
+#https://carbonliteracy.com/the-carbon-cost-of-an-email/
+G_CO2_PER_EMAIL = 0.3
+
 
 def format_energy(wh: float) -> str:
     #migliorare la leggibilita' dei numeri: 1.234,56 Wh e' piu' leggibile di 1234.56 Wh
@@ -32,6 +36,16 @@ def format_duration(seconds: float) -> str:
     return f"{seconds / 3600.0:.1f} h"
 
 
+def format_email_count(count: float) -> str:
+    if count >= 10:
+        return f"{count:.0f}"
+    if count >= 1:
+        return f"{count:.1f}"
+    if count > 0:
+        return "< 1"
+    return "0"
+
+
 def format_phone_charges(count: float) -> str:
     if count >= 10:
         return f"{count:.0f}"
@@ -53,6 +67,11 @@ class DailyReport:
     @property
     def equivalent_phone_charges(self) -> float:
         return self.energy_wh / WH_PER_PHONE_CHARGE
+
+    @property
+    def equivalent_emails(self) -> float:
+        #dai grammi e non dall'energia
+        return self.operational_gco2 / G_CO2_PER_EMAIL
 
 
 class ReportingEngine:
