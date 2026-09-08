@@ -8,7 +8,7 @@ __pycache__/
 config.json
 *.db
 docs/
-wattmeter/
+
 
 packaging/build/
 packaging/dist/
