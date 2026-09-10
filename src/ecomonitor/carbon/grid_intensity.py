@@ -166,6 +166,20 @@ class GridCarbonIntensityService:
         self._last_value_source = "static_fallback"
         return True
 
+    def set_zone(self, zone: str) -> bool:
+        #Cambia zona a caldo
+        if zone == self.zone:
+            return False
+
+        self.zone = zone
+        #le cache sono della zona vecchia
+        self._cached_value = None
+        self._cached_at = None
+        self._cached_forecast = []
+        self._forecast_cached_at = None
+        self._last_value_source = "static_fallback"
+        return True
+
     @property
     def has_live_provider(self) -> bool:
         #chiave API configurata Non significa che l'ultimo valore sia live: 

@@ -61,7 +61,7 @@ def backfill_grid_history(
         _hour_key(sample.timestamp)
         #solo le fonti misurate
         for sample in db.grid_intensity_samples_between(
-            start, end, sources=db_module.MEASURED_SOURCES
+            start, end, zone=service.zone, sources=db_module.MEASURED_SOURCES
         )
     }
 

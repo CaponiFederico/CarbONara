@@ -304,9 +304,11 @@ class PollingWorker(QObject):
         self._orchestrator: Orchestrator | None = None
         self._poll_interval_ms = int(poll_interval_seconds * 1000)
         self._running = True
-        #Richiesta di cambio chiave in arrivo dal thread della GUI
+
+        #Richiesta di cambio chiave o zona
         self._pending_lock = threading.Lock()
         self._pending_user_api_key: tuple[str | None, ...] = ()
+        self._pending_zone: tuple[str, ...] = ()
 
     def _backfill_grid_history(self) -> None:
         #Un errore non deve fermare il monitoraggio
@@ -342,6 +344,32 @@ class PollingWorker(QObject):
             #una chiave rifiutata non deve fermare la misura
             logger.exception("Chiave ElectricityMaps non applicata")
 
+    def request_zone(self, zone: str) -> None:
+        #chiamata dal thread della GUI quando si sceglie una zona 
+        with self._pending_lock:
+            self._pending_zone = (zone,)
+
+    def _take_pending_zone(self) -> tuple[str, ...]:
+        with self._pending_lock:
+            pending, self._pending_zone = self._pending_zone, ()
+        return pending
+
+    def _apply_pending_zone(self) -> bool:
+        #True se la zona e' cambiata
+        pending = self._take_pending_zone()
+        if not pending or self._orchestrator is None:
+            return False
+        try:
+            return self._orchestrator.apply_zone(pending[0])
+        except Exception:
+            #una zona rifiutata non deve fermare la misura
+            logger.exception("Zona ElectricityMaps non applicata")
+            return False
+
+    def _has_pending_request(self) -> bool:
+        with self._pending_lock:
+            return bool(self._pending_user_api_key or self._pending_zone)
+
     @Slot()
     def run(self) -> None:
         try:
@@ -361,11 +389,15 @@ class PollingWorker(QObject):
             #prima del tick: cosi' il primo tick dopo il salvataggio interroga
             #gia' l'API invece di restituire ancora il ripiego
             self._apply_pending_user_api_key()
+            zone_changed = self._apply_pending_zone()
             try:
                 result = self._orchestrator.tick()
                 self.tick_ready.emit(result)
                 if not first_tick_done:
                     first_tick_done = True
+                    self._backfill_grid_history()
+                elif zone_changed:
+                    #dopo il tick 
                     self._backfill_grid_history()
             except Exception:
                 #un tick fallito (sensore momentaneamente non leggibile, disco
@@ -383,7 +415,7 @@ class PollingWorker(QObject):
         #addormentato oltre il timeout di wait() e Qt aborta
         step_ms = 100
         elapsed = 0
-        while elapsed < total_ms and self._running and not self._pending_user_api_key:
+        while elapsed < total_ms and self._running and not self._has_pending_request():
             QThread.msleep(min(step_ms, total_ms - elapsed))
             elapsed += step_ms
 
@@ -724,6 +756,7 @@ def main() -> None:
     worker.startup_failed.connect(updater.on_startup_failed)
 
     window.on_api_key_changed = worker.request_user_api_key
+    window.on_zone_changed = worker.request_zone
 
     def cleanup() -> None:
         sigint_timer.stop()

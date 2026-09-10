@@ -186,6 +186,28 @@ class Orchestrator:
         )
         return True
 
+    def apply_zone(self, zone: str) -> bool:
+        #Cambia zona True se la zona e' cambiata
+        config = self.config_manager.config
+        config.em_zone = zone
+        if not self.grid_service.set_zone(zone):
+            return False
+
+        #il tick campiona subito
+        self._last_grid_sample_at = None
+
+        #la media di riferimento riparte
+        self.rolling_avg = RollingAverage()
+        for value in self.db.recent_grid_intensities(self.rolling_avg.window_size, zone=zone):
+            self.rolling_avg.add(value)
+
+        logger.info(
+            "Zona ElectricityMaps aggiornata: %s, %d campioni gia' in archivio",
+            zone,
+            self.rolling_avg.sample_count,
+        )
+        return True
+
     def backfill_grid_history(self, days: int = GRID_BACKFILL_DAYS):
         #Colma le ore in cui l'app non girava con lo storico orario dell'API
         end = now_utc()

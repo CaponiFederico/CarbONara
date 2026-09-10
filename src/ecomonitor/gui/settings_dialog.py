@@ -22,6 +22,9 @@ from ecomonitor.config import (
     ConfigManager,
     packaged_api_key,
 )
+from ecomonitor.gui.theme import LIGHT, Theme
+from ecomonitor.gui.zone_map import ZoneMapWidget
+from ecomonitor.gui.zone_map_data import ZONE_NAMES, ZONE_REGIONS
 
 #La configurazione vive in un JSON nella cartella utente
 
@@ -37,20 +40,27 @@ def user_api_key(config: AppConfig) -> str | None:
     return saved
 
 class SettingsDialog(QDialog):
-    def __init__(self, parent: QWidget | None = None, manager: ConfigManager | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        manager: ConfigManager | None = None,
+        theme: Theme | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("EcoMonitor — impostazioni")
         self._manager = manager or ConfigManager()
         config = self._manager.config
 
-        form = QFormLayout()
+        self._saved_zone = config.em_zone
+        self.saved_zone = config.em_zone
+        self.zone_changed = False
+        self.zone_map = ZoneMapWidget(config.em_zone, theme=theme or LIGHT)
+        self.zone_map.zone_changed.connect(self._on_zone_picked)
+        self.zone_label = QLabel()
+        self.zone_label.setWordWrap(True)
+        self._refresh_zone_label(config.em_zone)
 
-        self.zone_edit = QLineEdit(config.em_zone)
-        self.zone_edit.setToolTip(
-            "Zona di mercato ElectricityMaps, non il codice del paese. "
-            "Per l'Italia: IT-NO, IT-CNO (Pisa), IT-CSO, IT-SO, IT-SIC, IT-SAR."
-        )
-        form.addRow("Zona ElectricityMaps:", self.zone_edit)
+        form = QFormLayout()
 
         self.country_edit = QLineEdit(config.country_code)
         form.addRow("Codice paese (ISO):", self.country_edit)
@@ -104,6 +114,10 @@ class SettingsDialog(QDialog):
         form.addRow("", self.hidden_start_check)
 
         layout = QVBoxLayout(self)
+        title = QLabel("Zona di mercato elettrico")
+        layout.addWidget(title)
+        layout.addWidget(self.zone_map, stretch=1)
+        layout.addWidget(self.zone_label)
         layout.addLayout(form)
 
         if os.environ.get(API_KEY_ENV_VAR):
@@ -115,8 +129,8 @@ class SettingsDialog(QDialog):
             )
 
         note = QLabel(
-            "La chiave ha effetto subito. Le altre modifiche al prossimo avvio "
-            "dell'applicazione."
+            "La zona e la chiave hanno effetto subito. Le altre modifiche al "
+            "prossimo avvio dell'applicazione."
         )
         note.setWordWrap(True)
         layout.addWidget(note)
@@ -129,6 +143,20 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _on_zone_picked(self, zone: str) -> None:
+        #la scelta si vede subito, ma vale solo dal Save in poi
+        self._refresh_zone_label(zone)
+
+    def _refresh_zone_label(self, zone: str) -> None:
+        name = ZONE_NAMES.get(zone)
+        if name is None:
+            self.zone_label.setText(
+                f"Zona configurata: {zone} — non e' una delle sei zone italiane, "
+                "scegline una sulla cartina per sostituirla."
+            )
+            return
+        self.zone_label.setText(f"{name} ({zone}) — {ZONE_REGIONS[zone]}")
 
     def _api_key_placeholder(self) -> str:
         if packaged_api_key():
@@ -156,7 +184,9 @@ class SettingsDialog(QDialog):
         if not self._apply_autostart():
             return
         config = self._manager.config
-        config.em_zone = self.zone_edit.text().strip() or config.em_zone
+        config.em_zone = self.zone_map.selected_zone or config.em_zone
+        self.saved_zone = config.em_zone
+        self.zone_changed = self.saved_zone != self._saved_zone
         config.country_code = (self.country_edit.text().strip() or config.country_code).upper()
         config.electricitymaps_api_key = self.api_key_edit.text().strip() or None
         self.saved_user_api_key = config.electricitymaps_api_key
@@ -165,7 +195,8 @@ class SettingsDialog(QDialog):
         try:
             self._manager.save()
         except OSError as exc:
-            
+            self.api_key_changed = False
+            self.zone_changed = False
             QMessageBox.warning(
                 self,
                 "Impossibile salvare le impostazioni",
