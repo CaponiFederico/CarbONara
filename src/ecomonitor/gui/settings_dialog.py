@@ -1,6 +1,8 @@
 import os
+from collections.abc import Iterable
 
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import QRect, Qt
+from PySide6.QtGui import QIcon, QResizeEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -31,6 +33,40 @@ from ecomonitor.gui.zone_map_data import ZONE_NAMES, ZONE_REGIONS
 #la lista viene da config.ATTRIBUTION_MODELS
 _ATTRIBUTION_MODELS = ATTRIBUTION_MODELS
 
+#spazio fra il bordo della cartina e l'elenco delle regioni 
+_ZONE_LABEL_GAP = 4
+class WrappedTextBox(QWidget):
+    #etichetta che va a capo
+    def __init__(self, label: QLabel, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._label = label
+        box = QVBoxLayout(self)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.addWidget(label)
+        self._reserved_texts: tuple[str, ...] = ()
+
+    def set_reserved_texts(self, texts: Iterable[str]) -> None:
+        self._reserved_texts = tuple(texts)
+        self._reserve_space()
+
+    def _reserve_space(self) -> None:
+        width = self._label.width()
+        if width <= 0:
+            return
+        metrics = self._label.fontMetrics()
+        tallest = max(
+            metrics.boundingRect(
+                QRect(0, 0, width, 0), int(Qt.TextFlag.TextWordWrap), text
+            ).height()
+            for text in (self._reserved_texts or (self._label.text(),))
+        )
+        if tallest != self.minimumHeight():
+            self.setMinimumHeight(tallest)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._reserve_space()
+
 
 def user_api_key(config: AppConfig) -> str | None:
     #La chiave dell'utente l'unica che il campo puo' mostrare
@@ -59,6 +95,10 @@ class SettingsDialog(QDialog):
         self.zone_label = QLabel()
         self.zone_label.setWordWrap(True)
         self._refresh_zone_label(config.em_zone)
+        self.zone_caption = WrappedTextBox(self.zone_label)
+        self.zone_caption.set_reserved_texts(
+            [self._zone_description(zone) for zone in ZONE_NAMES] + [self.zone_label.text()]
+        )
 
         form = QFormLayout()
 
@@ -117,7 +157,8 @@ class SettingsDialog(QDialog):
         title = QLabel("Zona di mercato elettrico")
         layout.addWidget(title)
         layout.addWidget(self.zone_map, stretch=1)
-        layout.addWidget(self.zone_label)
+        layout.addSpacing(_ZONE_LABEL_GAP)
+        layout.addWidget(self.zone_caption)
         layout.addLayout(form)
 
         if os.environ.get(API_KEY_ENV_VAR):
@@ -133,7 +174,8 @@ class SettingsDialog(QDialog):
             "prossimo avvio dell'applicazione."
         )
         note.setWordWrap(True)
-        layout.addWidget(note)
+        self.note_box = WrappedTextBox(note)
+        layout.addWidget(self.note_box)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
@@ -148,15 +190,18 @@ class SettingsDialog(QDialog):
         #la scelta si vede subito, ma vale solo dal Save in poi
         self._refresh_zone_label(zone)
 
-    def _refresh_zone_label(self, zone: str) -> None:
+    @staticmethod
+    def _zone_description(zone: str) -> str:
         name = ZONE_NAMES.get(zone)
         if name is None:
-            self.zone_label.setText(
+            return (
                 f"Zona configurata: {zone} — non e' una delle sei zone italiane, "
                 "scegline una sulla cartina per sostituirla."
             )
-            return
-        self.zone_label.setText(f"{name} ({zone}) — {ZONE_REGIONS[zone]}")
+        return f"{name} ({zone}) — {ZONE_REGIONS[zone]}"
+
+    def _refresh_zone_label(self, zone: str) -> None:
+        self.zone_label.setText(self._zone_description(zone))
 
     def _api_key_placeholder(self) -> str:
         if packaged_api_key():
