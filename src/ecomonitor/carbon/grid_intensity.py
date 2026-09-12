@@ -55,6 +55,21 @@ MIN_HOUR_FALLBACK_DAYS = 2
 #mediana e non media
 HOUR_MEDIAN_SOURCE = "local_hour_median"
 
+LIVE_FAILURE_AUTH = "auth"
+
+LIVE_FAILURE_UNREACHABLE = "unreachable"
+
+#401 chiave non valida
+#403 chiave senza accesso'
+AUTH_STATUS_CODES = frozenset({401, 403})
+
+
+def live_failure_reason(exc: Exception) -> str:
+    #Distingue il rifiuto dell'API dal resto
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in AUTH_STATUS_CODES:
+        return LIVE_FAILURE_AUTH
+    return LIVE_FAILURE_UNREACHABLE
+
 
 class GridHourSample(Protocol):
     @property
@@ -124,6 +139,15 @@ class ElectricityMapsProvider:
         return [_parse_point(item) for item in payload.get("data", [])]
 
 
+def check_api_key(api_key: str, zone: str, timeout: float = 4.0) -> str | None:
+    #Prova una chiave prima di salvarla
+    try:
+        ElectricityMapsProvider(api_key, timeout=timeout).get_current_intensity(zone)
+    except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
+        return live_failure_reason(exc)
+    return None
+
+
 class GridCarbonIntensityService:
     def __init__(
         self,
@@ -151,6 +175,7 @@ class GridCarbonIntensityService:
         self._forecast_cached_at: float | None = None
         self._last_value_source: str = "static_fallback"
         self._last_mean_source: str | None = None
+        self._last_live_failure: str | None = None
 
     def set_api_key(self, api_key: str | None) -> bool:
         #Cambia la chiave a caldo. Torna True se qualcosa e' cambiato.
@@ -164,6 +189,7 @@ class GridCarbonIntensityService:
         self._cached_forecast = []
         self._forecast_cached_at = None
         self._last_value_source = "static_fallback"
+        self._last_live_failure = None
         return True
 
     def set_zone(self, zone: str) -> bool:
@@ -178,6 +204,7 @@ class GridCarbonIntensityService:
         self._cached_forecast = []
         self._forecast_cached_at = None
         self._last_value_source = "static_fallback"
+        self._last_live_failure = None
         return True
 
     @property
@@ -190,6 +217,10 @@ class GridCarbonIntensityService:
     def last_value_source(self) -> str:
         #da dove viene l'ultimo valore di get_current_intensity()
         return self._last_value_source
+
+    @property
+    def last_live_failure(self) -> str | None:
+        return self._last_live_failure
 
     def hour_median_intensity(self, now: datetime | None = None) -> float | None:
         #Mediana dei campioni misurati nella fascia oraria
@@ -252,7 +283,17 @@ class GridCarbonIntensityService:
             try:
                 value = self._live.get_current_intensity(self.zone)
             except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
-                logger.warning("ElectricityMaps non raggiungibile (%s), uso il fallback statico", exc)
+                self._last_live_failure = live_failure_reason(exc)
+                if self._last_live_failure == LIVE_FAILURE_AUTH:
+                    logger.error(
+                        "ElectricityMaps ha rifiutato la chiave API (%s): i dati in "
+                        "tempo reale resteranno spenti finche' non viene sostituita",
+                        exc,
+                    )
+                else:
+                    logger.warning(
+                        "ElectricityMaps non raggiungibile (%s), uso il ripiego", exc
+                    )
         else:
             logger.debug(
                 "Nessuna chiave ElectricityMaps configurata: uso la media statica per %s. "
@@ -263,6 +304,7 @@ class GridCarbonIntensityService:
 
         if value is not None:
             self._last_value_source = "live"
+            self._last_live_failure = None
         else:
             #prima della media nazionale
             value = self.hour_median_intensity()

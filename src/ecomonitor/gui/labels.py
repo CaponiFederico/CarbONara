@@ -11,7 +11,12 @@ SOURCE_LABELS = {
 GRID_SOURCE_LABELS = {
     "live": "dati in tempo reale",
     "local_hour_median": "stima dalla stessa fascia oraria dei giorni scorsi",
-    "static_fallback": "media statica di ripiego, nessuna chiave API",
+    "static_fallback": "media statica di ripiego",
+}
+
+GRID_FAILURE_LABELS = {
+    "auth": "chiave API rifiutata",
+    "unreachable": "API non raggiungibile",
 }
 
 #forma breve
@@ -33,3 +38,16 @@ def short_source_label(source: str) -> str:
 
 def grid_source_label(source: str) -> str:
     return GRID_SOURCE_LABELS.get(source, source)
+
+
+def grid_source_detail(source: str, failure: str | None = None) -> str:
+    label = grid_source_label(source)
+    if source == "live":
+        return label
+    return f"{label} — {grid_failure_label(failure) or 'nessuna chiave API'}"
+
+
+def grid_failure_label(failure: str | None) -> str | None:
+    if failure is None:
+        return None
+    return GRID_FAILURE_LABELS.get(failure, failure)

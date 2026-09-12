@@ -234,6 +234,7 @@ def cmd_grid(args: argparse.Namespace) -> None:
     from ecomonitor.carbon.grid_intensity import (
         HOUR_FALLBACK_DAYS,
         HOUR_MEDIAN_SOURCE,
+        LIVE_FAILURE_AUTH,
         STATIC_FALLBACK_G_PER_KWH,
         GridCarbonIntensityService,
     )
@@ -253,22 +254,34 @@ def cmd_grid(args: argparse.Namespace) -> None:
     static = STATIC_FALLBACK_G_PER_KWH.get(
         service.country_code, STATIC_FALLBACK_G_PER_KWH["DEFAULT"]
     )
-    #La provenienza la dichiara il servizio
+    fallback_label = (
+        f"mediana della stessa fascia oraria negli ultimi {HOUR_FALLBACK_DAYS} giorni"
+        if service.last_value_source == HOUR_MEDIAN_SOURCE
+        else "media statica del paese"
+    )
     if service.last_value_source == "live":
         _line(OK, f"valore live: {intensity:.0f} gCO2/kWh (media statica del paese: {static:.0f})")
+    elif service.last_live_failure == LIVE_FAILURE_AUTH:
+        #la chiave va sostituita
+        _line(
+            FAIL,
+            "ElectricityMaps ha rifiutato la chiave API (HTTP 401 o 403): la chiave "
+            "e' assente dal proprio account, scaduta o senza accesso a questa zona "
+            f"({service.zone}). Valore di ripiego {intensity:.0f} gCO2/kWh dalla "
+            f"{fallback_label}",
+        )
+    elif service.last_live_failure is not None:
+        _line(
+            WARN,
+            f"chiave presente ma ElectricityMaps non risponde: valore di ripiego "
+            f"{intensity:.0f} gCO2/kWh dalla {fallback_label}, controllare i log",
+        )
     elif service.last_value_source == HOUR_MEDIAN_SOURCE:
         _line(
             INFO,
             f"valore ricostruito: {intensity:.0f} gCO2/kWh, mediana della stessa "
             f"fascia oraria negli ultimi {HOUR_FALLBACK_DAYS} giorni "
             f"(media statica del paese: {static:.0f})",
-        )
-    elif service.has_live_provider:
-        _line(
-            WARN,
-            f"chiave presente ma valore non live ({intensity:.0f} gCO2/kWh, "
-            f"fonte '{service.last_value_source}'): API irraggiungibile o zona non "
-            "coperta, controllare i log",
         )
     else:
         _line(INFO, f"valore statico: {intensity:.0f} gCO2/kWh")

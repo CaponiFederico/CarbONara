@@ -461,6 +461,7 @@ class WindowUpdater(QObject):
             attribution.source.value,
             attribution.is_estimated_intensity,
             grid_source=result["grid_intensity_source"],
+            grid_failure=result["grid_intensity_failure"],
             zone=result["grid_zone"],
             coverage_ratio=attribution.pool_coverage_ratio,
         )

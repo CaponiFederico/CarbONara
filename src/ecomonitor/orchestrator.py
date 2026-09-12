@@ -511,6 +511,7 @@ class Orchestrator:
             #che cosa e' misurato davvero
             "measurement_mode": getattr(self.backend, "mode", NATIVE_MODE),
             "grid_intensity_source": self.grid_service.last_value_source,
+            "grid_intensity_failure": self.grid_service.last_live_failure,
             "grid_zone": self.grid_service.zone,
             #da dove viene il riferimento applicato all'energia di origine
             #ignota

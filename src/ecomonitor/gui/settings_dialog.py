@@ -1,8 +1,9 @@
+import logging
 import os
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 from PySide6.QtCore import QRect, Qt
-from PySide6.QtGui import QIcon, QResizeEvent
+from PySide6.QtGui import QGuiApplication, QIcon, QResizeEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -27,6 +28,14 @@ from ecomonitor.config import (
 from ecomonitor.gui.theme import LIGHT, Theme
 from ecomonitor.gui.zone_map import ZoneMapWidget
 from ecomonitor.gui.zone_map_data import ZONE_NAMES, ZONE_REGIONS
+
+logger = logging.getLogger(__name__)
+
+
+def _default_key_validator(api_key: str, zone: str) -> str | None:
+    from ecomonitor.carbon.grid_intensity import check_api_key
+
+    return check_api_key(api_key, zone)
 
 #La configurazione vive in un JSON nella cartella utente
 
@@ -81,10 +90,12 @@ class SettingsDialog(QDialog):
         parent: QWidget | None = None,
         manager: ConfigManager | None = None,
         theme: Theme | None = None,
+        key_validator: Callable[[str, str], str | None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("EcoMonitor — impostazioni")
         self._manager = manager or ConfigManager()
+        self._validate_key = key_validator or _default_key_validator
         config = self._manager.config
 
         self._saved_zone = config.em_zone
@@ -225,7 +236,59 @@ class SettingsDialog(QDialog):
             return False
         return True
 
+    def _check_api_key(self) -> bool:
+        #Prova la chiave nuova prima di scriverla
+        key = self.api_key_edit.text().strip()
+        if not key or key == self._saved_key:
+            #si torna alla chiave inclusa
+            return True
+        if os.environ.get(API_KEY_ENV_VAR):
+            return True
+
+        zone = self.zone_map.selected_zone or self._manager.config.em_zone
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            failure = self._validate_key(key, zone)
+        finally:
+            QGuiApplication.restoreOverrideCursor()
+
+        if failure is None:
+            return True
+
+        from ecomonitor.carbon.grid_intensity import LIVE_FAILURE_AUTH
+
+        if failure != LIVE_FAILURE_AUTH:
+            #senza rete non verificabile
+            logger.info(
+                "Chiave ElectricityMaps non verificabile prima del salvataggio (%s)",
+                failure,
+            )
+            return True
+        return self._confirm_rejected_key(zone)
+
+    def _confirm_rejected_key(self, zone: str) -> bool:
+        detail = (
+            "Salvandola, i dati in tempo reale resteranno spenti e l'applicazione "
+            "userà le medie di ripiego."
+        )
+        if packaged_api_key():
+            detail += " Lasciando il campo vuoto si usa la chiave inclusa nell'applicazione."
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Chiave API rifiutata")
+        box.setText(f"ElectricityMaps ha rifiutato questa chiave per la zona {zone}.")
+        box.setInformativeText(detail)
+        fix = box.addButton("Correggi", QMessageBox.ButtonRole.RejectRole)
+        box.addButton("Salva comunque", QMessageBox.ButtonRole.AcceptRole)
+        box.setDefaultButton(fix)
+        box.exec()
+        clicked = box.clickedButton()
+        return clicked is not None and clicked is not fix
+
     def accept(self) -> None:
+        if not self._check_api_key():
+            return
         if not self._apply_autostart():
             return
         config = self._manager.config

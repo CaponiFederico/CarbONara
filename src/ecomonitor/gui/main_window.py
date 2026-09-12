@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 
 from ecomonitor.gui.history_page import HistoryPage
 from ecomonitor.gui.icon import app_icon
-from ecomonitor.gui.labels import GRID_SOURCE_LABELS, SOURCE_LABELS
+from ecomonitor.gui.labels import SOURCE_LABELS, grid_source_detail
 from ecomonitor.gui.settings_dialog import SettingsDialog
 from ecomonitor.gui.theme import LIGHT, Theme, build_stylesheet
 from ecomonitor.reporting import (
@@ -31,7 +31,6 @@ from ecomonitor.reporting import (
 
 #le etichette
 _SOURCE_LABELS = SOURCE_LABELS
-_GRID_SOURCE_LABELS = GRID_SOURCE_LABELS
 
 _FIELD_HELP = {
     "power": (
@@ -470,6 +469,7 @@ class MainWindow(QMainWindow):
         source: str,
         is_estimated: bool,
         grid_source: str | None = None,
+        grid_failure: str | None = None,
         zone: str | None = None,
         coverage_ratio: float = 1.0,
     ) -> None:
@@ -481,7 +481,7 @@ class MainWindow(QMainWindow):
 
         if grid_source is not None:
             zone_suffix = f" — zona {zone}" if zone else ""
-            grid_label = _GRID_SOURCE_LABELS.get(grid_source, grid_source)
+            grid_label = grid_source_detail(grid_source, grid_failure)
             self.grid_source_label.setText(f"{grid_label}{zone_suffix}")
 
     def update_measurement_mode(self, mode) -> None:

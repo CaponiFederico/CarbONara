@@ -20,15 +20,22 @@ _GRID_SOURCE_LABELS = {
     "static_fallback": "media statica",
 }
 
+_GRID_FAILURE_LABELS = {
+    "auth": "chiave rifiutata",
+    "unreachable": "API non raggiungibile",
+}
+
 
 def _intensity_source(result: dict) -> str:
     attribution = result["attribution"]
     source = attribution.source.value
 
     if source == "grid_live":
-        grid_label = _GRID_SOURCE_LABELS.get(
-            result["grid_intensity_source"], result["grid_intensity_source"]
-        )
+        grid_source = result["grid_intensity_source"]
+        grid_label = _GRID_SOURCE_LABELS.get(grid_source, grid_source)
+        failure = result["grid_intensity_failure"]
+        if failure is not None:
+            grid_label += f", {_GRID_FAILURE_LABELS.get(failure, failure)}"
         return f"da rete ({grid_label})"
     if source == "battery_pool":
         return "da storico batteria"
