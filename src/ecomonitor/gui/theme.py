@@ -1,6 +1,8 @@
 from dataclasses import asdict, dataclass
 from string import Template
 
+from PySide6.QtGui import QColor, QPalette
+
 #Tavolozza e foglio di stile dell'applicazione.
 
 @dataclass(frozen=True)
@@ -59,6 +61,41 @@ DARK = Theme(
 
 def theme_for(is_dark: bool) -> Theme:
     return DARK if is_dark else LIGHT
+
+
+def build_palette(theme: Theme) -> QPalette:
+    palette = QPalette()
+    roles = {
+        QPalette.ColorRole.Window: theme.background,
+        QPalette.ColorRole.WindowText: theme.text,
+        QPalette.ColorRole.Base: theme.card,
+        QPalette.ColorRole.AlternateBase: theme.neutral_soft,
+        QPalette.ColorRole.Text: theme.text,
+        QPalette.ColorRole.Button: theme.card,
+        QPalette.ColorRole.ButtonText: theme.text,
+        QPalette.ColorRole.BrightText: theme.danger,
+        QPalette.ColorRole.Highlight: theme.accent,
+        QPalette.ColorRole.HighlightedText: theme.card,
+        QPalette.ColorRole.PlaceholderText: theme.text_muted,
+        QPalette.ColorRole.ToolTipBase: theme.card,
+        QPalette.ColorRole.ToolTipText: theme.text,
+        QPalette.ColorRole.Link: theme.accent,
+        QPalette.ColorRole.Light: theme.card,
+        QPalette.ColorRole.Midlight: theme.neutral_soft,
+        QPalette.ColorRole.Mid: theme.border,
+        QPalette.ColorRole.Dark: theme.border,
+        QPalette.ColorRole.Shadow: theme.border,
+    }
+    for role, color in roles.items():
+        palette.setColor(role, QColor(color))
+    #disattivato: il testo si spegne, lo sfondo resta quello del tema
+    for role in (
+        QPalette.ColorRole.WindowText,
+        QPalette.ColorRole.Text,
+        QPalette.ColorRole.ButtonText,
+    ):
+        palette.setColor(QPalette.ColorGroup.Disabled, role, QColor(theme.text_muted))
+    return palette
 
 _STYLESHEET = Template(
     """

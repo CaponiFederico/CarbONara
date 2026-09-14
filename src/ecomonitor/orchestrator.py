@@ -186,11 +186,16 @@ class Orchestrator:
         )
         return True
 
-    def apply_zone(self, zone: str) -> bool:
+    def apply_zone(self, zone: str, country_code: str | None = None) -> bool:
         #Cambia zona True se la zona e' cambiata
         config = self.config_manager.config
         config.em_zone = zone
-        if not self.grid_service.set_zone(zone):
+        #anche il paese, nella configurazione in memoria: e' un ConfigManager
+        #diverso da quello del dialogo, e un suo salvataggio successivo
+        #riscriverebbe il file col paese vecchio
+        if country_code:
+            config.country_code = country_code
+        if not self.grid_service.set_zone(zone, country_code):
             return False
 
         #il tick campiona subito
@@ -200,6 +205,10 @@ class Orchestrator:
         self.rolling_avg = RollingAverage()
         for value in self.db.recent_grid_intensities(self.rolling_avg.window_size, zone=zone):
             self.rolling_avg.add(value)
+        #il riferimento per l'energia di origine ignota e' la media del paese:
+        #se il paese e' cambiato, anche lui
+        if self._unknown_origin_source == "static_country_mean":
+            self._unknown_origin_intensity = self.grid_service.static_country_mean
 
         logger.info(
             "Zona ElectricityMaps aggiornata: %s, %d campioni gia' in archivio",

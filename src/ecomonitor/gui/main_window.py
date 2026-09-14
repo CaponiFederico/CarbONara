@@ -182,7 +182,7 @@ class MainWindow(QMainWindow):
         #lo collega app.py al thread di polling, che possiede il servizio di rete
         self.on_api_key_changed: Callable[[str | None], None] | None = None
         #lo stesso per la zona scelta sulla cartina
-        self.on_zone_changed: Callable[[str], None] | None = None
+        self.on_zone_changed: Callable[[str, str], None] | None = None
         #chiamata quando la finestra viene nascosta chiudendola: cosa
         #notificare lo decide app.py, la finestra non sa nulla della tray
 
@@ -430,7 +430,7 @@ class MainWindow(QMainWindow):
         if dialog.api_key_changed and self.on_api_key_changed is not None:
             self.on_api_key_changed(dialog.saved_user_api_key)
         if dialog.zone_changed and self.on_zone_changed is not None:
-            self.on_zone_changed(dialog.saved_zone)
+            self.on_zone_changed(dialog.saved_zone, dialog.saved_country)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if not self.hide_on_close:

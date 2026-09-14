@@ -272,6 +272,12 @@ def _apply_dark_aware_style(app: QApplication) -> None:
     previous = app.style().objectName()
     app.setStyle(chosen)
     app.setPalette(app.style().standardPalette())
+    window = app.palette().color(QPalette.ColorGroup.Active, QPalette.ColorRole.Window)
+    available = QStyleFactory.keys()
+    if window.lightness() >= 128 and chosen != "Fusion" and "Fusion" in available:
+        chosen = "Fusion"
+        app.setStyle(chosen)
+        app.setPalette(app.style().standardPalette())
     logger.info(
         "Sistema in tema scuro ma lo stile '%s' rende chiaro: passo a '%s'", previous, chosen
     )
@@ -308,7 +314,7 @@ class PollingWorker(QObject):
         #Richiesta di cambio chiave o zona
         self._pending_lock = threading.Lock()
         self._pending_user_api_key: tuple[str | None, ...] = ()
-        self._pending_zone: tuple[str, ...] = ()
+        self._pending_zone: tuple[str, str | None] | None = None
 
     def _backfill_grid_history(self) -> None:
         #Un errore non deve fermare il monitoraggio
@@ -344,23 +350,24 @@ class PollingWorker(QObject):
             #una chiave rifiutata non deve fermare la misura
             logger.exception("Chiave ElectricityMaps non applicata")
 
-    def request_zone(self, zone: str) -> None:
+    def request_zone(self, zone: str, country_code: str | None = None) -> None:
         #chiamata dal thread della GUI quando si sceglie una zona 
         with self._pending_lock:
-            self._pending_zone = (zone,)
+            self._pending_zone = (zone, country_code)
 
-    def _take_pending_zone(self) -> tuple[str, ...]:
+    def _take_pending_zone(self) -> tuple[str, str | None] | None:
         with self._pending_lock:
-            pending, self._pending_zone = self._pending_zone, ()
+            pending, self._pending_zone = self._pending_zone, None
         return pending
 
     def _apply_pending_zone(self) -> bool:
         #True se la zona e' cambiata
         pending = self._take_pending_zone()
-        if not pending or self._orchestrator is None:
+        if pending is None or self._orchestrator is None:
             return False
+        zone, country_code = pending
         try:
-            return self._orchestrator.apply_zone(pending[0])
+            return self._orchestrator.apply_zone(zone, country_code)
         except Exception:
             #una zona rifiutata non deve fermare la misura
             logger.exception("Zona ElectricityMaps non applicata")
@@ -368,7 +375,7 @@ class PollingWorker(QObject):
 
     def _has_pending_request(self) -> bool:
         with self._pending_lock:
-            return bool(self._pending_user_api_key or self._pending_zone)
+            return bool(self._pending_user_api_key) or self._pending_zone is not None
 
     @Slot()
     def run(self) -> None:

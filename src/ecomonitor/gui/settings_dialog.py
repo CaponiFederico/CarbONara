@@ -3,7 +3,7 @@ import os
 from collections.abc import Callable, Iterable
 
 from PySide6.QtCore import QRect, Qt
-from PySide6.QtGui import QGuiApplication, QIcon, QResizeEvent
+from PySide6.QtGui import QColor, QGuiApplication, QIcon, QResizeEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QStyleFactory,
     QVBoxLayout,
     QWidget,
 )
@@ -25,9 +26,9 @@ from ecomonitor.config import (
     ConfigManager,
     packaged_api_key,
 )
-from ecomonitor.gui.theme import LIGHT, Theme
-from ecomonitor.gui.zone_map import ZoneMapWidget
-from ecomonitor.gui.zone_map_data import ZONE_NAMES, ZONE_REGIONS
+from ecomonitor.gui.theme import LIGHT, Theme, build_palette
+from ecomonitor.gui.zone_map import ZoneMapWidget, country_of_zone, normalize_country
+from ecomonitor.gui.zone_map_data import COUNTRY_NAMES, COUNTRY_ZONES, ZONE_NAMES, ZONE_REGIONS
 
 logger = logging.getLogger(__name__)
 
@@ -100,20 +101,23 @@ class SettingsDialog(QDialog):
 
         self._saved_zone = config.em_zone
         self.saved_zone = config.em_zone
+        self._saved_country = normalize_country(config.country_code)
+        self.saved_country = self._saved_country
         self.zone_changed = False
-        self.zone_map = ZoneMapWidget(config.em_zone, theme=theme or LIGHT)
+        #il paese scritto nel campo decide quale cartina si vede
+        self.country_edit = QLineEdit(config.country_code)
+        self.zone_map = ZoneMapWidget(
+            config.em_zone, theme=theme or LIGHT, country=config.country_code
+        )
         self.zone_map.zone_changed.connect(self._on_zone_picked)
         self.zone_label = QLabel()
         self.zone_label.setWordWrap(True)
-        self._refresh_zone_label(config.em_zone)
         self.zone_caption = WrappedTextBox(self.zone_label)
-        self.zone_caption.set_reserved_texts(
-            [self._zone_description(zone) for zone in ZONE_NAMES] + [self.zone_label.text()]
-        )
+        self._refresh_zone_label()
+        self.country_edit.textChanged.connect(self._on_country_typed)
 
         form = QFormLayout()
 
-        self.country_edit = QLineEdit(config.country_code)
         form.addRow("Codice paese (ISO):", self.country_edit)
 
         self._saved_key = user_api_key(config)
@@ -181,7 +185,7 @@ class SettingsDialog(QDialog):
             )
 
         note = QLabel(
-            "La zona e la chiave hanno effetto subito. Le altre modifiche al "
+            "Paese, zona e chiave hanno effetto subito. Le altre modifiche al "
             "prossimo avvio dell'applicazione."
         )
         note.setWordWrap(True)
@@ -196,23 +200,57 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        self._apply_theme(theme or LIGHT)
+
+    def _apply_theme(self, theme: Theme) -> None:
+        #I colori li decide il tema dell'app
+        theme_is_dark = QColor(theme.background).lightness() < 128
+        style_is_dark = self.style().standardPalette().window().color().lightness() < 128
+        if theme_is_dark != style_is_dark:
+            fusion = QStyleFactory.create("Fusion")
+            if fusion is not None:
+                #Qt non ne prende possesso: senza un riferimento verrebbe raccolto
+                self._fusion_style = fusion
+                for widget in [self, *self.findChildren(QWidget)]:
+                    widget.setStyle(fusion)
+        self.setPalette(build_palette(theme))
 
     def _on_zone_picked(self, zone: str) -> None:
         #la scelta si vede subito, ma vale solo dal Save in poi
-        self._refresh_zone_label(zone)
+        self._refresh_zone_label()
+
+    def _on_country_typed(self, text: str) -> None:
+        self.zone_map.set_country(text)
+        self._refresh_zone_label()
 
     @staticmethod
     def _zone_description(zone: str) -> str:
         name = ZONE_NAMES.get(zone)
         if name is None:
             return (
-                f"Zona configurata: {zone} — non e' una delle sei zone italiane, "
-                "scegline una sulla cartina per sostituirla."
+                f"Zona configurata: {zone} — non e' fra le zone della cartina, "
+                "scegline una per sostituirla."
             )
-        return f"{name} ({zone}) — {ZONE_REGIONS[zone]}"
+        regions = ZONE_REGIONS.get(zone)
+        return f"{name} ({zone}) — {regions}" if regions else f"{name} ({zone})"
 
-    def _refresh_zone_label(self, zone: str) -> None:
-        self.zone_label.setText(self._zone_description(zone))
+    def _caption_text(self) -> str:
+        zone = self.zone_map.selected_zone
+        if zone is not None:
+            return self._zone_description(zone)
+        country = self.zone_map.country
+        if country is None:
+            return f"{self.zone_map.empty_message()} Resta la zona {self._saved_zone}."
+        if country_of_zone(self._saved_zone) is None:
+            return self._zone_description(self._saved_zone)
+        return f"{COUNTRY_NAMES[country]}: scegli la zona sulla cartina."
+
+    def _refresh_zone_label(self) -> None:
+        self.zone_label.setText(self._caption_text())
+        #lo spazio lo detta il testo piu' alto fra quelli del paese mostrato
+        texts = [self._zone_description(zone) for zone in self.zone_map.zones]
+        texts.append(self.zone_label.text())
+        self.zone_caption.set_reserved_texts(texts)
 
     def _api_key_placeholder(self) -> str:
         if packaged_api_key():
@@ -287,6 +325,19 @@ class SettingsDialog(QDialog):
         return clicked is not None and clicked is not fix
 
     def accept(self) -> None:
+        country = normalize_country(self.country_edit.text()) or self._saved_country
+        if (
+            country != self._saved_country
+            and country in COUNTRY_ZONES
+            and self.zone_map.selected_zone is None
+        ):
+            QMessageBox.information(
+                self,
+                "Scegli la zona",
+                f"Scegli sulla cartina la zona di {COUNTRY_NAMES[country]} in cui si trova "
+                "il computer: senza, resterebbe la zona di prima.",
+            )
+            return
         if not self._check_api_key():
             return
         if not self._apply_autostart():
@@ -294,8 +345,9 @@ class SettingsDialog(QDialog):
         config = self._manager.config
         config.em_zone = self.zone_map.selected_zone or config.em_zone
         self.saved_zone = config.em_zone
-        self.zone_changed = self.saved_zone != self._saved_zone
-        config.country_code = (self.country_edit.text().strip() or config.country_code).upper()
+        config.country_code = country
+        self.saved_country = country
+        self.zone_changed = self.saved_zone != self._saved_zone or country != self._saved_country
         config.electricitymaps_api_key = self.api_key_edit.text().strip() or None
         self.saved_user_api_key = config.electricitymaps_api_key
         self.api_key_changed = self.saved_user_api_key != self._saved_key

@@ -192,12 +192,15 @@ class GridCarbonIntensityService:
         self._last_live_failure = None
         return True
 
-    def set_zone(self, zone: str) -> bool:
-        #Cambia zona a caldo
-        if zone == self.zone:
+    def set_zone(self, zone: str, country_code: str | None = None) -> bool:
+        #Cambia zona a caldo, e paese se passato: il ripiego statico e' per paese
+        country_changed = bool(country_code) and country_code != self.country_code
+        if zone == self.zone and not country_changed:
             return False
 
         self.zone = zone
+        if country_code:
+            self.country_code = country_code
         #le cache sono della zona vecchia
         self._cached_value = None
         self._cached_at = None
