@@ -128,7 +128,9 @@ def _run(args: argparse.Namespace, parser: argparse.ArgumentParser, db_path: Pat
                 #sempre 0 Wh: e' atteso, non un errore
                 if ticks == 1:
                     print("  (il primo tick non ha ancora un intervallo da integrare)")
-                print(f"  ricarica: {result['advice'].message()}")
+                advice = result["advice"]
+                label = "ricarica" if advice.target.value == "charge" else "attività pesanti"
+                print(f"  {label}: {advice.message()}")
             time.sleep(interval)
     except KeyboardInterrupt:
         print()

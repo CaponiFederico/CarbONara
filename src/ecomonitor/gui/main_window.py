@@ -65,9 +65,14 @@ _FIELD_HELP = {
         "zona, oppure una media annuale del paese quando il dato in tempo reale non "
         "è disponibile."
     ),
-    "advisor": (
-        "Se conviene collegare l'alimentatore adesso oppure aspettare un momento in "
-        "cui l'elettricità sarà più pulita."
+    "advisor_charge": (
+        "Il computer sta andando a batteria: se conviene collegare l'alimentatore "
+        "adesso oppure aspettare un momento in cui l'elettricità sarà più pulita."
+    ),
+    "advisor_workload": (
+        "Il computer sta usando la rete elettrica adesso: se conviene far partire "
+        "ora le attività più pesanti, come compilazioni, rendering o giochi, oppure "
+        "spostarle a un momento in cui l'elettricità sarà più pulita."
     ),
     "power_state": (
         "Se il computer sta andando a corrente di rete o a batteria, e a che punto "
@@ -136,9 +141,10 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(18, 16, 18, 14)
         layout.setSpacing(14)
 
+        #il consiglio viene per primo
+        layout.addWidget(self._build_advice())
         layout.addLayout(self._build_hero())
         layout.addLayout(self._build_cards())
-        layout.addWidget(self._build_advice())
         layout.addLayout(self._build_details())
         layout.addStretch(1)
 
@@ -284,26 +290,41 @@ class MainWindow(QMainWindow):
         self.advice_banner = QFrame()
         self.advice_banner.setObjectName("adviceBanner")
         banner_layout = QVBoxLayout(self.advice_banner)
-        banner_layout.setContentsMargins(12, 10, 12, 10)
-        banner_layout.setSpacing(2)
+        banner_layout.setContentsMargins(14, 12, 14, 12)
+        banner_layout.setSpacing(4)
 
-        caption = QLabel("suggerimento ricarica")
-        caption.setObjectName("adviceDetail")
+        #la didascalia dipende dall'alimentazione 
+        self.advice_caption = QLabel("suggerimento")
+        self.advice_caption.setObjectName("adviceDetail")
 
         self.advisor_label = QLabel("—")
         self.advisor_label.setObjectName("adviceTitle")
         self.advisor_label.setWordWrap(True)
-        self.advisor_label.setAccessibleName("Suggerimento ricarica")
+        self.advisor_label.setAccessibleName("Suggerimento")
 
-        banner_layout.addWidget(caption)
+        banner_layout.addWidget(self.advice_caption)
         banner_layout.addWidget(self.advisor_label)
 
-        for widget in (self.advice_banner, caption, self.advisor_label):
-            self._describe(widget, _FIELD_HELP["advisor"])
+        self._advice_target: str | None = None
+        self._describe_advice("charge")
 
         #la proprieta' va impostata prima che il widget venga disegnato
         _set_state(self.advice_banner, "")
         return self.advice_banner
+
+    def _describe_advice(self, target: str) -> None:
+        #target e' il valore di AdviceTarget
+        if target == "workload":
+            caption = "quando spostare le attività pesanti"
+            help_text = _FIELD_HELP["advisor_workload"]
+        else:
+            caption = "quando ricaricare"
+            help_text = _FIELD_HELP["advisor_charge"]
+        if self._advice_target is not None:
+            self.advice_caption.setText(caption)
+            self.advisor_label.setAccessibleName(caption[0].upper() + caption[1:])
+        for widget in (self.advice_banner, self.advice_caption, self.advisor_label):
+            self._describe(widget, help_text)
 
     def _build_details(self) -> QGridLayout:
         grid = QGridLayout()
@@ -491,10 +512,14 @@ class MainWindow(QMainWindow):
             self.measurement_label.setText(f"{mode.detail} — {mode.advice}")
         _set_state(self.measurement_label, "" if mode.is_complete else "estimated")
 
-    def update_advisor(self, text: str, recommendation: str | None = None) -> None:
-        #recommendation e' il valore di ChargeRecommendation
+    def update_advisor(
+        self, text: str, recommendation: str | None = None, target: str | None = None
+    ) -> None:
         self.advisor_label.setText(text)
         _set_state(self.advice_banner, recommendation or "")
+        if target is not None and target != self._advice_target:
+            self._advice_target = target
+            self._describe_advice(target)
 
     def mark_startup_failed(self, reason: str) -> None:
         #il messaggio resta finche' non arriva un tick

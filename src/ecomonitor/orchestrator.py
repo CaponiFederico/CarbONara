@@ -3,7 +3,7 @@ import random
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
-from ecomonitor.advisor import CarbonAwareAdvisor, ChargeAdvice, RollingAverage
+from ecomonitor.advisor import AdviceTarget, CarbonAwareAdvisor, ChargeAdvice, RollingAverage
 from ecomonitor.carbon.attribution import CarbonAttributionService
 from ecomonitor.carbon.backfill import backfill_grid_history
 from ecomonitor.carbon.battery_pool import (
@@ -491,7 +491,8 @@ class Orchestrator:
             forecast=self.grid_service.get_forecast(),
             reference_intensity=self.rolling_avg.average,
             battery_percent=power_state.battery_percent,
-            has_battery=power_state.battery_percent is not None,
+            #a batteria o desktop
+            target=AdviceTarget.WORKLOAD if power_state.is_plugged_in else AdviceTarget.CHARGE,
             now=now,
         )
 

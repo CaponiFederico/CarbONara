@@ -230,7 +230,7 @@ def cmd_sensors(args: argparse.Namespace) -> None:
 def cmd_grid(args: argparse.Namespace) -> None:
     import platformdirs
 
-    from ecomonitor.advisor import CarbonAwareAdvisor, RollingAverage
+    from ecomonitor.advisor import AdviceTarget, CarbonAwareAdvisor, RollingAverage
     from ecomonitor.carbon.grid_intensity import (
         HOUR_FALLBACK_DAYS,
         HOUR_MEDIAN_SOURCE,
@@ -239,6 +239,7 @@ def cmd_grid(args: argparse.Namespace) -> None:
         GridCarbonIntensityService,
     )
     from ecomonitor.config import ConfigManager
+    from ecomonitor.power_context import read_power_source_state
 
     config = ConfigManager().config
     service = GridCarbonIntensityService(
@@ -355,10 +356,26 @@ def cmd_grid(args: argparse.Namespace) -> None:
         forecast_average = sum(p.g_per_kwh for p in forecast) / len(forecast)
         _line(OK, f"media prevista 24h: {forecast_average:.0f} gCO2/kWh (riferimento preferito)")
 
+    #stesso stato di alimentazione che legge l'orchestratore: senza, la
+    #diagnostica parlerebbe di ricarica anche a un desktop
+    power_state = read_power_source_state()
+    if power_state.battery_percent is None:
+        power_label = "da rete elettrica, senza batteria"
+    elif power_state.is_plugged_in:
+        power_label = f"da rete elettrica, batteria al {power_state.battery_percent:.0f}%"
+    else:
+        power_label = f"a batteria, carica al {power_state.battery_percent:.0f}%"
+    target = AdviceTarget.WORKLOAD if power_state.is_plugged_in else AdviceTarget.CHARGE
     advice = CarbonAwareAdvisor().advise(
-        current_intensity=intensity, forecast=forecast, reference_intensity=rolling.average
+        current_intensity=intensity,
+        forecast=forecast,
+        reference_intensity=rolling.average,
+        battery_percent=power_state.battery_percent,
+        target=target,
     )
-    print(f"{INFO} consiglio ora: {advice.message()} (fonte: {advice.source.value})")
+    subject = "ricarica" if target is AdviceTarget.CHARGE else "attività pesanti"
+    print(f"{INFO} alimentazione: {power_label}")
+    print(f"{INFO} consiglio ora ({subject}): {advice.message()} (fonte: {advice.source.value})")
 
 
 # -- pool: attribuzione e persistenza, senza hardware -----------------------

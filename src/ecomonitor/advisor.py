@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 
@@ -22,11 +22,19 @@ class AdviceSource(Enum):
     LOW_BATTERY = "low_battery"
     # carica sotto la soglia critica
 
-    NO_BATTERY = "no_battery"
-    # desktop: non c'e' nessuna ricarica da spostare nel tempo
-
     UNAVAILABLE = "unavailable"
     # ne' previsione ne' storico sufficiente
+
+
+class AdviceTarget(Enum):
+    #Che cosa conviene spostare nel tempo
+
+    CHARGE = "charge"
+    # a batteria: si consuma dal pool, quello che si sceglie e' quando riempirlo
+
+    WORKLOAD = "workload"
+    # collegato o desktop: si consuma dalla rete adesso, quindi si spostano le
+    # attivita' pesanti
 
 
 class ReferenceSource(Enum):
@@ -54,6 +62,7 @@ def _percent_phrase(value: float) -> str:
 class ChargeAdvice:
     recommendation: ChargeRecommendation
     source: AdviceSource
+    target: AdviceTarget = AdviceTarget.CHARGE
     current_intensity: float | None = None
     best_intensity: float | None = None
     best_time: datetime | None = None
@@ -93,32 +102,42 @@ class ChargeAdvice:
 
     def message(self) -> str:
         #testo pronto per l'interfaccia, una riga
-        if self.source is AdviceSource.NO_BATTERY:
-            return "non applicabile (dispositivo senza batteria)"
         if self.source is AdviceSource.UNAVAILABLE:
             return "dati di rete non ancora sufficienti"
         if self.source is AdviceSource.LOW_BATTERY:
             return "carica bassa: collega ora, indipendentemente dal mix elettrico"
 
+        is_charge = self.target is AdviceTarget.CHARGE
         current = f"{self.current_intensity:.0f}" if self.current_intensity is not None else "—"
         if self.recommendation is ChargeRecommendation.WAIT:
             if self.best_time is not None:
                 local_time = self.best_time.astimezone().strftime("%H:%M")
+                action = (
+                    f"conviene aspettare le {local_time}"
+                    if is_charge
+                    else f"sposta le attività pesanti alle {local_time}"
+                )
                 return (
-                    f"conviene aspettare le {local_time}: "
-                    f"{self.best_intensity:.0f} invece di {current} gCO2/kWh "
+                    f"{action}: {self.best_intensity:.0f} invece di {current} gCO2/kWh "
                     f"(-{self.saving_percent:.0f}%)"
                 )
             #previsione su quando andrà meglio
-            return f"conviene aspettare, se puoi ({current} gCO2/kWh{self._reference_clause()})"
+            action = "conviene aspettare, se puoi" if is_charge else "rimanda le attività pesanti, se puoi"
+            return f"{action} ({current} gCO2/kWh{self._reference_clause()})"
         if self.recommendation is ChargeRecommendation.CHARGE_NOW:
-            return f"buon momento per caricare ({current} gCO2/kWh{self._reference_clause()})"
+            action = "buon momento per caricare" if is_charge else "buon momento per le attività pesanti"
+            return f"{action} ({current} gCO2/kWh{self._reference_clause()})"
         if self.source is AdviceSource.FORECAST and self.best_time is not None:
             #NEUTRAL da previsione non vuol dire "nella media": vuol dire che
             #qualcosa di meglio c'e', ma non abbastanza da aspettare
             local_time = self.best_time.astimezone().strftime("%H:%M")
+            action = (
+                f"aspettare le {local_time}"
+                if is_charge
+                else f"spostare le attività pesanti alle {local_time}"
+            )
             return (
-                f"{current} gCO2/kWh{self._reference_clause()}: aspettare le {local_time} "
+                f"{current} gCO2/kWh{self._reference_clause()}: {action} "
                 f"farebbe risparmiare solo {_percent_phrase(self.saving_percent or 0.0)}"
             )
         return f"momento nella media ({current} gCO2/kWh{self._reference_clause()})"
@@ -193,19 +212,28 @@ class CarbonAwareAdvisor:
         forecast: list[IntensityPoint] | None = None,
         reference_intensity: float | None = None,
         battery_percent: float | None = None,
-        has_battery: bool = True,
+        target: AdviceTarget = AdviceTarget.CHARGE,
         now: datetime | None = None,
     ) -> ChargeAdvice:
         now = now or datetime.now(UTC)
+        advice = self._advise(current_intensity, forecast, reference_intensity, battery_percent, target, now)
+        return replace(advice, target=target)
 
-        if not has_battery:
-            return ChargeAdvice(
-                recommendation=ChargeRecommendation.NEUTRAL,
-                source=AdviceSource.NO_BATTERY,
-                current_intensity=current_intensity,
-            )
-
-        if battery_percent is not None and battery_percent <= self.critical_battery_percent:
+    def _advise(
+        self,
+        current_intensity: float,
+        forecast: list[IntensityPoint] | None,
+        reference_intensity: float | None,
+        battery_percent: float | None,
+        target: AdviceTarget,
+        now: datetime,
+    ) -> ChargeAdvice:
+        #la carica bassa conta solo a batteria: collegato si sta gia' caricando
+        if (
+            target is AdviceTarget.CHARGE
+            and battery_percent is not None
+            and battery_percent <= self.critical_battery_percent
+        ):
             return ChargeAdvice(
                 recommendation=ChargeRecommendation.CHARGE_NOW,
                 source=AdviceSource.LOW_BATTERY,

@@ -469,7 +469,9 @@ class WindowUpdater(QObject):
         advice: ChargeAdvice = result["advice"]
         #la raccomandazione viaggia accanto al testo: il messaggio da solo non
         #dice alla finestra di che colore dipingere il riquadro
-        self._window.update_advisor(advice.message(), advice.recommendation.value)
+        self._window.update_advisor(
+            advice.message(), advice.recommendation.value, advice.target.value
+        )
 
         self._window.update_measurement_mode(result["measurement_mode"])
         self._window.fit_to_content()
