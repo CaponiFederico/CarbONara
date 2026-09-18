@@ -8,6 +8,7 @@ __pycache__/
 config.json
 *.db
 docs/
+.DS_Store
 
 
 packaging/build/
