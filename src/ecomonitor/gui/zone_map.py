@@ -34,6 +34,7 @@ _MARGIN = 6.0
 _MIN_WIDTH_FOR_LABELS = 190
 _MIN_SIZE = QSize(200, 260)
 _LABEL_HEIGHT = 16.0
+_LABEL_PIXEL_SIZE = 10
 _LABEL_MIN_WIDTH_RATIO = 0.6
 
 
@@ -382,7 +383,7 @@ class ZoneMapWidget(QWidget):
         if self.width() < _MIN_WIDTH_FOR_LABELS:
             return
         label_font = QFont(self.font())
-        label_font.setPointSizeF(8.0)
+        label_font.setPixelSizeF(_LABEL_PIXEL_SIZE)
         painter.setFont(label_font)
         metrics = QFontMetricsF(label_font)
         visible = QRectF(self.rect()).adjusted(2.0, 2.0, -2.0, -2.0)

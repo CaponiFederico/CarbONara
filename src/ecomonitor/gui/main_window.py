@@ -2,7 +2,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QRect
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -103,6 +103,12 @@ _MINIMUM_WIDTH = 460
 
 _STARTING_WIDTH = 700
 
+_LONGEST_ADVICE = (
+    "207 gCO2/kWh, il 20% sotto la media prevista per le prossime 12 h: "
+    "spostare le attività pesanti alle 05:00 farebbe risparmiare solo il 25%"
+)
+
+_ADVICE_SIDE_MARGINS = 64
 
 def _format_age(seconds: float) -> str:
     #testo dell'ultimo aggiornamento nella barra di stato
@@ -160,7 +166,7 @@ class MainWindow(QMainWindow):
         self._build_status_bar()
         self.setMinimumWidth(_MINIMUM_WIDTH)
         self._show_page(self.dashboard_page)
-        self.resize(max(_STARTING_WIDTH, self.sizeHint().width()), self.sizeHint().height())
+        self.resize(max(_STARTING_WIDTH, self.sizeHint().width()), self._starting_height())
 
         #stato della barra di stato, aggiornata anche fra un tick e l'altro
         self._last_tick_at: float | None = None
@@ -556,6 +562,27 @@ class MainWindow(QMainWindow):
         self.status_label.setText(" · ".join(parts))
 
     # -- dimensioni --------------------------------------------------------
+
+    def _advice_height_for(self, text: str) -> int:
+        #quanto spazio serve per il consiglio, senza contare i margini
+        self.advisor_label.ensurePolished()  
+        return (
+            self.advisor_label.fontMetrics()
+            .boundingRect(
+                QRect(0, 0, _STARTING_WIDTH - _ADVICE_SIDE_MARGINS, 0),
+                int (Qt.TextFlag.TextWordWrap),
+                text,
+            )
+            .height()
+        )
+
+    def _starting_height(self) -> int:
+        #altezza iniziale della finestra, senza contare i margini
+        resolve = self._advice_height_for(_LONGEST_ADVICE) - self._advice_height_for(
+            self.advisor_label.text()
+        )
+        return self.sizeHint().height() + max(0, resolve)
+
 
     def _user_shrank_the_window(self) -> bool:
         #Vero se la finestra diversa da quella di default

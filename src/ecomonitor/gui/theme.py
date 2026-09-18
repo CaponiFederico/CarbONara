@@ -1,7 +1,8 @@
 from dataclasses import asdict, dataclass
 from string import Template
 
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtWidgets import QApplication
 
 #Tavolozza e foglio di stile dell'applicazione.
 
@@ -97,6 +98,34 @@ def build_palette(theme: Theme) -> QPalette:
         palette.setColor(QPalette.ColorGroup.Disabled, role, QColor(theme.text_muted))
     return palette
 
+_MINIMUM_POINT_SIZE = 10
+
+_FONT_SCALE = {
+    "font_small": 1.0,
+    "font_body": 1.1,
+    "font_unit": 1.25,
+    "font_title": 1.6,
+    "font_card_value": 1.7,
+    "font_hero": 2.2,
+}
+
+def system_point_size() -> float:
+    app = QApplication.instance()
+    size = app.font().pointSizeF() if isinstance(app, QApplication) else QFont().pointSizeF()
+    #pointsizeF() = -1 se il font di sistema e' in pixel
+    if size <= 0.0:
+        return _MINIMUM_POINT_SIZE
+    return max(size, _MINIMUM_POINT_SIZE)
+
+def font_sizes(base_point_size: float | None = None) -> dict[str, str]:
+    base = (
+        system_point_size()
+        if base_point_size is None
+        else max(base_point_size, _MINIMUM_POINT_SIZE)
+    )
+    return {name: f"{round(base * factor)}pt" for name, factor in _FONT_SCALE.items()}
+
+
 _STYLESHEET = Template(
     """
 QFrame#root { background: $background; }
@@ -106,7 +135,7 @@ QLabel#heroUnit { font-size: 11pt; color: $text_muted; }
 QLabel#heroCaption { font-size: 8pt; color: $text_muted; }
 
 QLabel#powerBadge {
-    font-size: 8pt;
+    font-size: $font_small;
     padding: 3px 10px;
     border-radius: 9px;
     background: $neutral_soft;
@@ -116,9 +145,9 @@ QLabel#powerBadge[state="plugged"] { background: $accent_soft; color: $accent; }
 QLabel#powerBadge[state="battery"] { background: $success_soft; color: $success; }
 
 QFrame#metricCard { background: $card; border: 1px solid $border; border-radius: 8px; }
-QLabel#cardLabel { font-size: 8pt; color: $text_muted; }
-QLabel#cardValue { font-size: 15pt; font-weight: 500; color: $text; }
-QLabel#cardUnit { font-size: 8pt; color: $text_muted; }
+QLabel#cardLabel { font-size: $font_small; color: $text_muted; }
+QLabel#cardValue { font-size: $font_card_value; font-weight: 500; color: $text; }
+QLabel#cardUnit { font-size: $font_small; color: $text_muted; }
 
 QFrame#adviceBanner { border-radius: 8px; background: $neutral_soft; }
 QFrame#adviceBanner QLabel { color: $text_muted; }
@@ -126,23 +155,23 @@ QFrame#adviceBanner[state="charge_now"] { background: $success_soft; }
 QFrame#adviceBanner[state="charge_now"] QLabel { color: $success; }
 QFrame#adviceBanner[state="wait"] { background: $warning_soft; }
 QFrame#adviceBanner[state="wait"] QLabel { color: $warning; }
-QLabel#adviceTitle { font-size: 14pt; font-weight: 600; }
-QLabel#adviceDetail { font-size: 9pt; }
+QLabel#adviceTitle { font-size: $font_title; font-weight: 600; }
+QLabel#adviceDetail { font-size: $font_small; }
 
-QLabel#detailKey { font-size: 8pt; color: $text_muted; }
-QLabel#detailValue { font-size: 8pt; color: $text; }
+QLabel#detailKey { font-size: $font_small; color: $text_muted; }
+QLabel#detailValue { font-size: $font_small; color: $text; }
 QLabel#detailValue[state="estimated"] { color: $warning; }
 
 QStatusBar { background: $background; border-top: 1px solid $border; }
 QStatusBar::item { border: none; }
-QStatusBar QLabel { font-size: 8pt; color: $text_muted; }
+QStatusBar QLabel { font-size: $font_small; color: $text_muted; }
 
 QLabel#statusDot { border-radius: 4px; background: $text_muted; }
 QLabel#statusDot[state="live"] { background: $success; }
 QLabel#statusDot[state="stale"] { background: $danger; }
 
 QPushButton#settingsButton, QPushButton#navButton {
-    font-size: 8pt;
+    font-size: $font_small;
     padding: 3px 10px;
     border: 1px solid $border;
     border-radius: 6px;
@@ -156,7 +185,7 @@ QPushButton#settingsButton:hover, QPushButton#navButton:hover { border-color: $t
 QFrame#historyRoot { background: $background; }
 
 QPushButton#periodButton {
-    font-size: 8pt;
+    font-size: $font_small;
     padding: 4px 14px;
     border: 1px solid $border;
     border-radius: 6px;
@@ -171,16 +200,18 @@ QPushButton#periodButton:checked {
     font-weight: 500;
 }
 
-QLabel#pageSubtitle { font-size: 8pt; color: $text_muted; }
-QLabel#sectionTitle { font-size: 9pt; font-weight: 500; color: $text; }
-QLabel#sectionNote { font-size: 8pt; color: $text_muted; }
-QLabel#legendText { font-size: 8pt; color: $text_muted; }
-QLabel#emptyState { font-size: 9pt; color: $text_muted; }
+QLabel#pageSubtitle { font-size: $font_small; color: $text_muted; }
+QLabel#sectionTitle { font-size: $font_body; font-weight: 500; color: $text; }
+QLabel#sectionNote { font-size: $font_small; color: $text_muted; }
+QLabel#legendText { font-size: $font_small; color: $text_muted; }
+QLabel#emptyState { font-size: $font_body; color: $text_muted; }
 """
 )
 
 
-def build_stylesheet(theme: Theme) -> str:
+def build_stylesheet(theme: Theme, base_point_size: float | None = None) -> str:
+    values: dict[str, str] = asdict(theme)
+    values.update(font_sizes(base_point_size))
     #substitute e non safe_substitute: un segnaposto scritto male deve fallire
     #subito, non produrre un foglio di stile a cui manca una regola in silenzio
-    return _STYLESHEET.substitute(asdict(theme))
+    return _STYLESHEET.substitute(values)
