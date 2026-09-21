@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QStyleFactory, QSystemT
 
 from ecomonitor import autostart
 from ecomonitor.config import ConfigManager
+from ecomonitor.gui import macos_dock
 from ecomonitor.gui.icon import app_icon
 from ecomonitor.gui.main_window import MainWindow
 from ecomonitor.gui.single_instance import SingleInstanceGuard
@@ -694,6 +695,7 @@ def main() -> None:
         )
 
     if start_hidden:
+        macos_dock.set_dock_icon_visible(False)
         logger.info(
             "Avvio in secondo piano: la misurazione parte senza aprire la finestra. "
             "Rilanciare EcoMonitor la riporta in primo piano"

@@ -383,7 +383,7 @@ class ZoneMapWidget(QWidget):
         if self.width() < _MIN_WIDTH_FOR_LABELS:
             return
         label_font = QFont(self.font())
-        label_font.setPixelSizeF(_LABEL_PIXEL_SIZE)
+        label_font.setPixelSize(_LABEL_PIXEL_SIZE)
         painter.setFont(label_font)
         metrics = QFontMetricsF(label_font)
         visible = QRectF(self.rect()).adjusted(2.0, 2.0, -2.0, -2.0)

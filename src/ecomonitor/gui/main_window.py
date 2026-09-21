@@ -3,7 +3,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QRect
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QHideEvent, QShowEvent
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ecomonitor.gui import macos_dock
 from ecomonitor.gui.history_page import HistoryPage
 from ecomonitor.gui.icon import app_icon
 from ecomonitor.gui.labels import SOURCE_LABELS, grid_source_detail
@@ -437,6 +438,20 @@ class MainWindow(QMainWindow):
             self.on_api_key_changed(dialog.saved_user_api_key)
         if dialog.zone_changed and self.on_zone_changed is not None:
             self.on_zone_changed(dialog.saved_zone, dialog.saved_country)
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        #l'icona nel Dock torna insieme alla finestra
+        macos_dock.set_dock_icon_visible(True)
+
+    def hideEvent(self, event: QHideEvent) -> None:
+        super().hideEvent(event)
+        if self.isMinimized():
+            #ridurre la finestra non rimuove l'icona
+            return
+        if not self.hide_on_close:
+            return
+        macos_dock.set_dock_icon_visible(False)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if not self.hide_on_close:

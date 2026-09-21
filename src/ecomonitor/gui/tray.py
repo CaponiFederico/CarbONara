@@ -8,7 +8,7 @@ from ecomonitor.gui.icon import app_icon
 
 
 def create_tray_icon(window: QMainWindow, on_quit: Callable[[], None]) -> QSystemTrayIcon:
-    tray = QSystemTrayIcon(app_icon(), parent=window)
+    tray = QSystemTrayIcon(app_icon(), parent=window)  #bug noto di qt
     tray.setToolTip("EcoMonitor")
 
     def show_window() -> None:
