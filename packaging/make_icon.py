@@ -1,7 +1,8 @@
 #Genera i file d'icona che servono agli installatori
 #   python packaging/make_icon.py
 #
-#packaging/ecomonitor.ico (Windows) e packaging/ecomonitor.png (Linux).
+#packaging/ecomonitor.ico (Windows), packaging/ecomonitor.png (Linux) e
+#packaging/ecomonitor.icns (macOS), senza iconutil
 
 from __future__ import annotations
 
@@ -23,6 +24,17 @@ from ecomonitor.gui.icon import _ICON_SVG
 
 ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
 PNG_SIZE = 256
+
+ICNS_TYPES = (
+    (b"ic11", 32),
+    (b"ic12", 64),
+    (b"ic07", 128),
+    (b"ic13", 256),
+    (b"ic08", 256),
+    (b"ic14", 512),
+    (b"ic09", 512),
+    (b"ic10", 1024),
+)
 
 
 def render_png(size: int) -> bytes:
@@ -65,6 +77,14 @@ def build_ico(frames: dict[int, bytes]) -> bytes:
     return header + directory + payload
 
 
+def build_icns(frames: dict[int, bytes]) -> bytes:
+    entries = b"".join(
+        icon_type + struct.pack(">I", 8 + len(frames[size])) + frames[size]
+        for icon_type, size in ICNS_TYPES
+    )
+    return b"icns" + struct.pack(">I", 8 + len(entries)) + entries
+
+
 def main() -> int:
     #QGuiApplication deve esistere prima di qualunque QImage/QPainter
     app = QGuiApplication.instance() or QGuiApplication(sys.argv)
@@ -78,8 +98,13 @@ def main() -> int:
     png_path = out_dir / "ecomonitor.png"
     png_path.write_bytes(frames[PNG_SIZE])
 
+    icns_frames = {size: render_png(size) for _, size in ICNS_TYPES}
+    icns_path = out_dir / "ecomonitor.icns"
+    icns_path.write_bytes(build_icns(icns_frames))
+
     print(f"scritto {ico_path} ({ico_path.stat().st_size} byte, {len(frames)} dimensioni)")
     print(f"scritto {png_path} ({png_path.stat().st_size} byte, {PNG_SIZE}px)")
+    print(f"scritto {icns_path} ({icns_path.stat().st_size} byte, {len(ICNS_TYPES)} voci)")
     return 0
 
 

@@ -23,12 +23,14 @@ windows = [
     "HardwareMonitor>=1.2",
 ]
 packaging = [
-    #serve su entrambi i sistemi: lo stesso spec costruisce Windows e Linux
+    #serve su tutti i sistemi: lo stesso spec costruisce Windows, Linux e macOS
     "pyinstaller>=6.22",
 ]
 validation = [
     "zeroconf>=0.132",
     "cryptography>=42.0",
+    #presa Voltcraft SEM6000
+    "bleak>=1.0",
 ]
 dev = [
     "ruff>=0.6",

@@ -1,0 +1,40 @@
+#!/bin/bash
+# Eseguito da Installer come root dopo aver copiato EcoMonitor.app
+
+
+set -u
+
+APP="${2:-/Applications}/EcoMonitor.app"
+[ -d "${APP}" ] || APP="${3:-}/Applications/EcoMonitor.app"
+PERMISSIONS_SCRIPT="${APP}/Contents/Resources/install_powermetrics_permissions.sh"
+
+#La regola vale per un utente
+TARGET_USER="${USER:-}"
+if [ -z "${TARGET_USER}" ] || [ "${TARGET_USER}" = root ]; then
+    TARGET_USER="$(stat -f %Su /dev/console 2>/dev/null || true)"
+fi
+
+#in caso di errore
+give_up() {
+    echo "EcoMonitor: autorizzazione a powermetrics NON installata: $*" >&2
+    echo "EcoMonitor: l'app misurera' per stima. Per rimediare:" >&2
+    echo "  sudo bash \"${PERMISSIONS_SCRIPT}\"" >&2
+    exit 0
+}
+
+[ -f "${PERMISSIONS_SCRIPT}" ] || give_up "manca ${PERMISSIONS_SCRIPT}"
+[ -n "${TARGET_USER}" ] || give_up "utente di destinazione non determinabile"
+[ "${TARGET_USER}" != root ] || give_up "installazione fatta da root, nessun utente a cui concederla"
+
+case "${TARGET_USER}" in
+*[!A-Za-z0-9._-]*) give_up "nome utente '${TARGET_USER}' non adatto a una regola sudoers" ;;
+esac
+
+echo "EcoMonitor: autorizzo powermetrics per l'utente ${TARGET_USER}"
+if bash "${PERMISSIONS_SCRIPT}" --user "${TARGET_USER}"; then
+    echo "EcoMonitor: autorizzazione installata, la misura sara' nativa"
+else
+    give_up "lo script e' uscito con ${?}"
+fi
+
+exit 0

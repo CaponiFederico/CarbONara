@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!-- Installer grafico di EcoMonitor
+
+    domains: solo installazione di sistema
+    hostArchitectures: solo Apple Silicon-->
+    
+<installer-gui-script minSpecVersion="2">
+    <title>EcoMonitor</title>
+    <organization>io.github.caponifederico</organization>
+    <options customize="never" require-scripts="true" hostArchitectures="arm64"/>
+    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+    <volume-check>
+        <allowed-os-versions>
+            <os-version min="12.0"/>
+        </allowed-os-versions>
+    </volume-check>
+    <welcome file="welcome.txt" mime-type="text/plain"/>
+    <conclusion file="conclusion.txt" mime-type="text/plain"/>
+    <choices-outline>
+        <line choice="default"/>
+    </choices-outline>
+    <choice id="default" visible="false">
+        <pkg-ref id="io.github.caponifederico.ecomonitor"/>
+    </choice>
+    <pkg-ref id="io.github.caponifederico.ecomonitor" version="__VERSION__">__COMPONENT__</pkg-ref>
+</installer-gui-script>

@@ -1,4 +1,4 @@
-#   Specifiche PyInstaller condivisa fra Windows e Linux
+#   Specifiche PyInstaller condivisa fra Windows, Linux e macOS
 #
 #   pyinstaller --clean --noconfirm packaging/ecomonitor.spec
 #
@@ -16,6 +16,10 @@ SRC_PATH = str(PROJECT_ROOT / "src")
 
 IS_WINDOWS = sys.platform == "win32"
 IS_LINUX = sys.platform.startswith("linux")
+IS_MACOS = sys.platform == "darwin"
+
+#lo stesso di autostart.LAUNCH_AGENT_LABEL
+BUNDLE_IDENTIFIER = "io.github.caponifederico.ecomonitor"
 
 #Su Windows i sensori veri richiedono un processo elevato. 
 #build con permessi alti obbligati: ECOMONITOR_UAC_ADMIN=1
@@ -24,6 +28,16 @@ REQUEST_UAC_ADMIN = os.environ.get("ECOMONITOR_UAC_ADMIN") == "1"
 ICON_PATH = PROJECT_ROOT / "packaging" / "ecomonitor.ico"
 if IS_WINDOWS and not ICON_PATH.exists():
     raise SystemExit("Manca packaging/ecomonitor.ico: eseguire prima python packaging/make_icon.py")
+ICNS_PATH = PROJECT_ROOT / "packaging" / "ecomonitor.icns"
+if IS_MACOS and not ICNS_PATH.exists():
+    raise SystemExit("Manca packaging/ecomonitor.icns: eseguire prima python packaging/make_icon.py")
+
+if IS_WINDOWS:
+    EXE_ICON = str(ICON_PATH)
+elif IS_MACOS:
+    EXE_ICON = str(ICNS_PATH)
+else:
+    EXE_ICON = None
 
 #Moduli caricati solo a runtime in base al sistema
 sensor_hidden_imports = ["ecomonitor.sensors.fallback_model"]
@@ -80,15 +94,37 @@ gui_exe = EXE(  # noqa: F821
     exclude_binaries=True,
     name="EcoMonitor",
     console=False,  # applicazione grafica
-    icon=str(ICON_PATH) if IS_WINDOWS else None,
+    icon=EXE_ICON,
     uac_admin=REQUEST_UAC_ADMIN,
 )
-COLLECT(  # noqa: F821
+gui_collect = COLLECT(  # noqa: F821
     gui_exe,
     gui_analysis.binaries,
     gui_analysis.datas,
     name="EcoMonitor",
 )
+
+#Su macOS l'applicazione e' la cartella EcoMonitor.app accanto a EcoMonitor/
+if IS_MACOS:
+    import tomllib
+
+    VERSION = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
+        "project"
+    ]["version"]
+    BUNDLE(  # noqa: F821
+        gui_collect,
+        name="EcoMonitor.app",
+        icon=str(ICNS_PATH),
+        bundle_identifier=BUNDLE_IDENTIFIER,
+        info_plist={
+            "CFBundleName": "EcoMonitor",
+            "CFBundleDisplayName": "EcoMonitor",
+            "CFBundleShortVersionString": VERSION,
+            "CFBundleVersion": VERSION,
+            "NSHighResolutionCapable": True,
+            "LSApplicationCategoryType": "public.app-category.utilities",
+        },
+    )
 
 #La versione a riga di comando non tocca Qt
 cli_analysis = Analysis(  # noqa: F821
@@ -109,5 +145,5 @@ EXE(  # noqa: F821
     [],
     name="ecomonitor-cli",
     console=True,
-    icon=str(ICON_PATH) if IS_WINDOWS else None,
+    icon=EXE_ICON,
 )

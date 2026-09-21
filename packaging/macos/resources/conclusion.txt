@@ -1,0 +1,18 @@
+EcoMonitor e' in Applicazioni ed e' autorizzato a misurare.
+
+Alla prima apertura la finestra dice che cosa sta misurando davvero: deve
+riportare "misura nativa". Se dice che sta stimando, l'autorizzazione non e'
+andata a buon fine: il dettaglio e' in /var/log/install.log, e il consiglio
+mostrato dall'app stessa indica il comando per rimediare.
+
+Per togliere l'autorizzazione senza disinstallare l'app:
+
+  sudo bash "/Applications/EcoMonitor.app/Contents/Resources/install_powermetrics_permissions.sh" --uninstall
+
+Per disinstallare del tutto, in Applicazioni c'e' accanto all'app:
+
+  EcoMonitorUninstall.command
+
+Doppio clic. Chiede la password, toglie l'app, l'autorizzazione e l'avvio
+automatico, e domanda se cancellare anche le misure raccolte. Trascinare l'app
+nel Cestino non basta: l'autorizzazione resterebbe in /etc/sudoers.d.

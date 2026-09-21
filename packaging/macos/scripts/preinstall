@@ -1,0 +1,31 @@
+#!/bin/bash
+# Eseguito da Installer come root prima di sostituire i file
+#
+# Equivalente di debian/prerm e di InitializeUninstall nell'installer Windows.
+
+set -u
+
+APP_EXECUTABLE="/Applications/EcoMonitor.app/Contents/MacOS/EcoMonitor"
+
+running_pids() {
+    pgrep -f "^${APP_EXECUTABLE}$" 2>/dev/null || true
+}
+
+pids="$(running_pids)"
+if [ -n "${pids}" ]; then
+    echo "EcoMonitor: chiusura dell'app in esecuzione (${pids})"
+    # shellcheck disable=SC2086
+    kill -TERM ${pids} 2>/dev/null || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        [ -z "$(running_pids)" ] && break
+        sleep 0.5
+    done
+    pids="$(running_pids)"
+    if [ -n "${pids}" ]; then
+        echo "EcoMonitor: non si e' chiusa, la termino"
+        # shellcheck disable=SC2086
+        kill -KILL ${pids} 2>/dev/null || true
+    fi
+fi
+
+exit 0
