@@ -130,9 +130,9 @@ _STYLESHEET = Template(
     """
 QFrame#root { background: $background; }
 
-QLabel#heroValue { font-size: 20pt; font-weight: 500; color: $text; }
-QLabel#heroUnit { font-size: 11pt; color: $text_muted; }
-QLabel#heroCaption { font-size: 8pt; color: $text_muted; }
+QLabel#heroValue { font-size: $font_hero; font-weight: 500; color: $text; }
+QLabel#heroUnit { font-size: $font_unit; color: $text_muted; }
+QLabel#heroCaption { font-size: $font_small; color: $text_muted; }
 
 QLabel#powerBadge {
     font-size: $font_small;
@@ -156,7 +156,7 @@ QFrame#adviceBanner[state="charge_now"] QLabel { color: $success; }
 QFrame#adviceBanner[state="wait"] { background: $warning_soft; }
 QFrame#adviceBanner[state="wait"] QLabel { color: $warning; }
 QLabel#adviceTitle { font-size: $font_title; font-weight: 600; }
-QLabel#adviceDetail { font-size: $font_small; }
+QLabel#adviceDetail { font-size: $font_body; }
 
 QLabel#detailKey { font-size: $font_small; color: $text_muted; }
 QLabel#detailValue { font-size: $font_small; color: $text; }

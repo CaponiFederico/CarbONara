@@ -1,8 +1,9 @@
+import platform
 import time
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QRect
+from PySide6.QtCore import QRect, Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QHideEvent, QShowEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -89,6 +90,10 @@ _FIELD_HELP = {
         "consumo del processore viene stimato, e la stima diventa molto più "
         "precisa dopo che l'app ha potuto misurare almeno una volta."
     ),
+    "measurement_macos": (
+        "Che cosa l'app sta misurando davvero e che cosa sta stimando. "
+        "I sensori della CPU richiedono che powermetrics sia autorizzato"
+    ),
     "history": (
         "I totali di oggi, degli ultimi 7 giorni e degli ultimi 30 giorni, con il "
         "consumo medio per fascia oraria."
@@ -110,6 +115,9 @@ _LONGEST_ADVICE = (
 )
 
 _ADVICE_SIDE_MARGINS = 64
+
+def measurement_help(system: str) -> str:
+    return _FIELD_HELP["measurement_macos" if system == "Darwin" else "measurement"]
 
 def _format_age(seconds: float) -> str:
     #testo dell'ultimo aggiornamento nella barra di stato
@@ -347,7 +355,7 @@ class MainWindow(QMainWindow):
             grid, 1, "Dati rete elettrica:", _FIELD_HELP["grid_source"]
         )
         self.measurement_label = self._add_detail_row(
-            grid, 2, "Misura:", _FIELD_HELP["measurement"]
+            grid, 2, "Misura:", measurement_help(platform.system())
         )
         return grid
 
@@ -450,6 +458,7 @@ class MainWindow(QMainWindow):
             #ridurre la finestra non rimuove l'icona
             return
         if not self.hide_on_close:
+            #qui chiudere termina l'applicazione
             return
         macos_dock.set_dock_icon_visible(False)
 
@@ -579,13 +588,15 @@ class MainWindow(QMainWindow):
     # -- dimensioni --------------------------------------------------------
 
     def _advice_height_for(self, text: str) -> int:
-        #quanto spazio serve per il consiglio, senza contare i margini
-        self.advisor_label.ensurePolished()  
+        #quanto e' alto quel testo nel riquadro del consiglio, alla larghezza
+        #di partenza: la misura la fa il font che il foglio di stile ha dato
+        #all'etichetta, non un numero di righe fisso
+        self.advisor_label.ensurePolished()
         return (
             self.advisor_label.fontMetrics()
             .boundingRect(
                 QRect(0, 0, _STARTING_WIDTH - _ADVICE_SIDE_MARGINS, 0),
-                int (Qt.TextFlag.TextWordWrap),
+                int(Qt.TextFlag.TextWordWrap),
                 text,
             )
             .height()
@@ -593,11 +604,10 @@ class MainWindow(QMainWindow):
 
     def _starting_height(self) -> int:
         #altezza iniziale della finestra, senza contare i margini
-        resolve = self._advice_height_for(_LONGEST_ADVICE) - self._advice_height_for(
+        reserve = self._advice_height_for(_LONGEST_ADVICE) - self._advice_height_for(
             self.advisor_label.text()
         )
-        return self.sizeHint().height() + max(0, resolve)
-
+        return self.sizeHint().height() + max(0, reserve)
 
     def _user_shrank_the_window(self) -> bool:
         #Vero se la finestra diversa da quella di default

@@ -2,6 +2,7 @@ import json
 import logging
 import math
 import os
+import platform
 import sys
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
@@ -57,6 +58,8 @@ class AppConfig:
 
     autostart_default_applied: bool = False
     #l'avvio automatico nasce attivo, ma una volta sola
+    study_endpoint: str | None = None
+    study_token: str | None = None
 
     @property
     def api_key(self) -> str | None:
@@ -67,16 +70,24 @@ class AppConfig:
         )
 
 
-def packaged_api_key() -> str | None:
+def _packaged_text(name: str) -> str | None:
     if not getattr(sys, "frozen", False):
         return None
-    try:
-        key = (Path(sys.executable).parent / PACKAGED_API_KEY_FILE).read_text(
-            encoding="utf-8-sig"
-        )
-    except (OSError, UnicodeDecodeError):
-        return None
-    return key.strip() or None
+    executable_dir = Path(sys.executable).parent
+    candidates = [executable_dir / name]
+    if platform.system() == "Darwin":
+        candidates.insert(0, executable_dir.parent / "Resources" / name)
+    for candidate in candidates:
+        try:
+            text = candidate.read_text(encoding="utf-8-sig").strip()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if text:
+            return text
+    return None
+
+def packaged_api_key() -> str | None:
+    return _packaged_text(PACKAGED_API_KEY_FILE)
 
 
 def default_config_path() -> Path:
@@ -165,7 +176,15 @@ def _sanitised(config: AppConfig) -> AppConfig:
     config.autostart_default_applied = bool(config.autostart_default_applied)
     if config.electricitymaps_api_key is not None:
         config.electricitymaps_api_key = str(config.electricitymaps_api_key).strip() or None
+    config.study_token = _optional_text(config.study_token)
+    config.study_endpoint = _optional_text(config.study_endpoint)
     return config
+
+
+def _optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value).strip() or None
 
 
 class ConfigManager:
@@ -195,7 +214,7 @@ class ConfigManager:
         )
 
     def _create_default(self) -> AppConfig:
-        #il file va creato 
+        #il file va creato
         self.config = AppConfig()
         try:
             self.save()

@@ -1,7 +1,7 @@
 import ctypes
 import ctypes.util
 import logging
-import platform 
+import platform
 
 #icona nel doc macOS deve accendersi e spegnersi con la finestra
 
@@ -13,8 +13,9 @@ ACCESSORY = 1 #resta solo la barra
 _runtime: "_ObjectiveCRuntime | None" = None
 _runtime_loaded = False
 
-class _ObjectiveCRuntime:
 
+class _ObjectiveCRuntime:
+    #chiamate di NSApplication
     def __init__(self, objc: ctypes.CDLL) -> None:
         objc.objc_getClass.restype = ctypes.c_void_p
         objc.objc_getClass.argtypes = [ctypes.c_char_p]
@@ -60,6 +61,7 @@ class _ObjectiveCRuntime:
 
 
 def _load_runtime() -> "_ObjectiveCRuntime | None":
+    #una volta sola
     global _runtime, _runtime_loaded
     if _runtime_loaded:
         return _runtime
@@ -71,6 +73,7 @@ def _load_runtime() -> "_ObjectiveCRuntime | None":
         logger.debug("Runtime Objective-C non trovato: l'icona nel Dock resta com'e'")
         return None
     try:
+        #AppKit 
         ctypes.cdll.LoadLibrary(appkit_path)
         _runtime = _ObjectiveCRuntime(ctypes.cdll.LoadLibrary(objc_path))
     except OSError as error:

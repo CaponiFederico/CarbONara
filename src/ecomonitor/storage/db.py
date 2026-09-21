@@ -157,6 +157,7 @@ class EnergySample:
     is_estimated: bool
     is_plugged: bool
     attribution_source: str | None
+    cpu_wh: float = 0.0
 
 
 #Un campione letto davvero dalla rete
@@ -583,7 +584,7 @@ class LocalDatabase:
         with closing(self._connect()) as conn:
             rows = conn.execute(
                 "SELECT timestamp, wh, gco2, duration_seconds, is_estimated, is_plugged, "
-                "attribution_source FROM energy_events "
+                "attribution_source, cpu_wh FROM energy_events "
                 "WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp",
                 (to_utc_iso(start), to_utc_iso(end)),
             ).fetchall()
@@ -597,6 +598,7 @@ class LocalDatabase:
                 is_estimated=bool(row[4]),
                 is_plugged=bool(row[5]),
                 attribution_source=row[6],
+                cpu_wh=row[7] or 0.0,
             )
             for row in rows
         ]
@@ -887,6 +889,15 @@ class LocalDatabase:
         with closing(self._connect()) as conn:
             rows = conn.execute(query, params).fetchall()
         return [row[0] for row in reversed(rows)]
+
+    def grid_zones_between(self, start: datetime, end: datetime) -> list[tuple[datetime, str]]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT timestamp, zone FROM grid_intensity_samples "
+                "WHERE timestamp >= ? AND timestamp < ? AND source != ? ORDER BY timestamp",
+                (to_utc_iso(start), to_utc_iso(end), RECONSTRUCTED_SOURCE),
+            ).fetchall()
+        return [(datetime.fromisoformat(row[0]), row[1]) for row in rows]
 
     # -- aggregati giornalieri ---------------------------------------------
 

@@ -4,10 +4,13 @@ import ctypes
 import logging
 import os
 import platform
+import plistlib
 import subprocess
 import sys
 from ctypes import wintypes
 from pathlib import Path
+from typing import Any
+from xml.parsers.expat import ExpatError
 
 #Avvio automatico all'accesso a Windows
 logger = logging.getLogger(__name__)
@@ -17,6 +20,9 @@ SCRIPT_NAME = "autostart.ps1"
 
 XDG_AUTOSTART_ENTRY = "ecomonitor.desktop"
 
+#lo stesso identificativo del bundle in packaging/ecomonitor.spec
+LAUNCH_AGENT_LABEL = "io.github.caponifederico.ecomonitor"
+
 HIDDEN_START_FLAG = "--background"
 
 #niente finestra di console dietro l'interfaccia grafica
@@ -25,12 +31,14 @@ _SW_HIDE = 0
 _SEE_MASK_NOCLOSEPROCESS = 0x00000040
 _WAIT_TIMEOUT_MS = 120_000
 
+_windows_ctypes: Any = ctypes
+
 
 class AutostartError(RuntimeError):
     pass
 
 
-SUPPORTED_SYSTEMS = ("Windows", "Linux")
+SUPPORTED_SYSTEMS = ("Windows", "Linux", "Darwin")
 
 
 def is_supported() -> bool:
@@ -39,10 +47,14 @@ def is_supported() -> bool:
 
 def unsupported_reason() -> str:
     if platform.system() not in SUPPORTED_SYSTEMS:
-        return "L'avvio automatico e' disponibile solo su Windows e Linux."
+        return "L'avvio automatico e' disponibile solo su Windows, Linux e macOS."
     if not getattr(sys, "frozen", False):
         return "L'avvio automatico e' disponibile solo sull'applicazione installata."
     return ""
+
+
+def launch_agent_path() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{LAUNCH_AGENT_LABEL}.plist"
 
 
 def autostart_entry_path() -> Path:
@@ -62,7 +74,7 @@ def is_elevated() -> bool:
     if platform.system() != "Windows":
         return False
     try:
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        return bool(_windows_ctypes.windll.shell32.IsUserAnAdmin())
     except (AttributeError, OSError):
         return False
 
@@ -75,6 +87,8 @@ def is_enabled() -> bool:
     #Interrogare non richiede privilegi
     if platform.system() == "Linux":
         return _linux_is_enabled()
+    if platform.system() == "Darwin":
+        return _macos_is_enabled()
     if platform.system() != "Windows":
         return False
     try:
@@ -95,6 +109,8 @@ def starts_hidden() -> bool:
     #Se la voce esistente chiede di partire in secondo piano
     if platform.system() == "Linux":
         return _linux_starts_hidden()
+    if platform.system() == "Darwin":
+        return _macos_starts_hidden()
     if platform.system() != "Windows":
         return False
     return HIDDEN_START_FLAG in _windows_task_xml()
@@ -130,6 +146,9 @@ def set_enabled(enabled: bool, start_hidden: bool = False) -> None:
 
     if platform.system() == "Linux":
         _linux_set_enabled(enabled, start_hidden)
+        return
+    if platform.system() == "Darwin":
+        _macos_set_enabled(enabled, start_hidden)
         return
 
     script = script_path()
@@ -225,13 +244,14 @@ def _run_elevated(script: Path, arguments: list[str]) -> None:
     )
     info.nShow = _SW_HIDE
 
-    if not ctypes.windll.shell32.ShellExecuteExW(ctypes.byref(info)):
-        code = ctypes.get_last_error() or ctypes.GetLastError()
+    windll = _windows_ctypes.windll
+    if not windll.shell32.ShellExecuteExW(ctypes.byref(info)):
+        code = _windows_ctypes.get_last_error() or _windows_ctypes.GetLastError()
         if code == 1223:
             raise AutostartError("Elevazione rifiutata: l'avvio automatico non e' stato cambiato.")
         raise AutostartError(f"Elevazione non riuscita (codice {code}).")
 
-    kernel32 = ctypes.windll.kernel32
+    kernel32 = windll.kernel32
     try:
         kernel32.WaitForSingleObject(info.hProcess, _WAIT_TIMEOUT_MS)
         exit_code = wintypes.DWORD()
@@ -306,6 +326,75 @@ def _linux_set_enabled(enabled: bool, start_hidden: bool = False) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(_linux_entry_text(start_hidden), encoding="utf-8")
+        path.chmod(0o644)
+    except OSError as exc:
+        raise AutostartError(f"Non riesco a scrivere {path}: {exc}") from exc
+
+
+def macos_temporary_location(target: str) -> bool:
+    return target.startswith("/Volumes/") or "/AppTranslocation/" in target
+
+
+def _macos_launch_agent(start_hidden: bool) -> dict:
+    arguments = [_target_path()]
+    if start_hidden:
+        arguments.append(HIDDEN_START_FLAG)
+    return {
+        "Label": LAUNCH_AGENT_LABEL,
+        "ProgramArguments": arguments,
+        "RunAtLoad": True,
+        "ProcessType": "Interactive",
+        #solo nella sessione grafica
+        "LimitLoadToSessionType": "Aqua",
+    }
+
+
+def _macos_program_arguments() -> list[str] | None:
+    try:
+        with launch_agent_path().open("rb") as stream:
+            data = plistlib.load(stream)
+    except (OSError, plistlib.InvalidFileException, ExpatError, ValueError):
+        return None
+    arguments = data.get("ProgramArguments") if isinstance(data, dict) else None
+    if not isinstance(arguments, list) or not arguments:
+        return None
+    if not all(isinstance(argument, str) for argument in arguments):
+        return None
+    return arguments
+
+
+def _macos_is_enabled() -> bool:
+    arguments = _macos_program_arguments()
+    return arguments is not None and arguments[0] == _target_path()
+
+
+def _macos_starts_hidden() -> bool:
+    arguments = _macos_program_arguments()
+    if arguments is None or arguments[0] != _target_path():
+        return False
+    return HIDDEN_START_FLAG in arguments[1:]
+
+
+def _macos_set_enabled(enabled: bool, start_hidden: bool = False) -> None:
+    path = launch_agent_path()
+    if not enabled:
+        #niente launchctl bootout
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise AutostartError(f"Non riesco a rimuovere {path}: {exc}") from exc
+        return
+
+    if macos_temporary_location(_target_path()):
+        raise AutostartError(
+            "EcoMonitor e' aperto dall'immagine disco o da una copia temporanea: "
+            "spostalo in Applicazioni, riaprilo da li' e riattiva l'avvio automatico."
+        )
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("wb") as stream:
+            plistlib.dump(_macos_launch_agent(start_hidden), stream)
         path.chmod(0o644)
     except OSError as exc:
         raise AutostartError(f"Non riesco a scrivere {path}: {exc}") from exc

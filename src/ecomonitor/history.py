@@ -468,7 +468,7 @@ def _mean_power(wh: float, seconds: float) -> float | None:
     return wh / (seconds / SECONDS_IN_HOUR)
 
 
-def _covered_seconds(samples: list[EnergySample]) -> list[float]:
+def covered_seconds_per_row(samples: list[EnergySample]) -> list[float]:
     #Secondi che ogni riga copre
     covered: list[float] = []
     previous: datetime | None = None
@@ -528,7 +528,7 @@ def build_range_summary(
         now = now.astimezone()
     start, end = period_bounds(period, now.date())
     samples = db.energy_samples_between(start, end)
-    covered = _covered_seconds(samples)
+    covered = covered_seconds_per_row(samples)
 
     buckets: dict[tuple[date, int], _HourBucket] = {}
     source_wh: dict[str, float] = {}

@@ -64,7 +64,12 @@ def cmd_env(args: argparse.Namespace) -> None:
     print(f"{INFO} python       : {sys.version.split()[0]} ({sys.executable})")
 
     elevated = _has_elevated_privileges()
-    if elevated is True:
+    if platform.system() == "Darwin":
+        from ecomonitor.sensors.macos_powermetrics import permissions_command
+
+        print(f"{INFO} privilegi elevati: non servono - conta la regola sudoers")
+        print(f"{INFO} se la misura ripiega: {permissions_command()}")
+    elif elevated is True:
         _line(OK, "privilegi elevati: si (amministratore/root)")
     elif elevated is False:
         _line(

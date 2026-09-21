@@ -22,7 +22,21 @@ def _tagged(backend: SensorBackend, mode: MeasurementMode) -> SensorBackend:
     return backend
 
 
-def _mode_for(kind: str, calibration) -> MeasurementMode:
+def _advice_for(system: str | None, calibrated: bool) -> str:
+    if system != "Darwin":
+        return _ELEVATE if calibrated else _ELEVATE_ONCE
+    #su macOS si autorizza powermetrics
+    from ecomonitor.sensors.macos_powermetrics import permissions_command
+
+    if calibrated:
+        return f"Autorizza powermetrics per misurare invece di stimare: {permissions_command()}"
+    return (
+        f"Autorizza powermetrics una volta ({permissions_command()}): l'app impara il "
+        "consumo di questa macchina e da allora le stime saranno molto piu' vicine al vero."
+    )
+
+
+def _mode_for(kind: str, calibration, system: str | None = None) -> MeasurementMode:
     #La descrizione dice cosa e' misurato, il consiglio dice cosa manca
     calibrated = calibration is not None
     detail = {
@@ -35,9 +49,7 @@ def _mode_for(kind: str, calibration) -> MeasurementMode:
     elif kind == "generic":
         detail += " da TDP generico"
 
-    return MeasurementMode(
-        kind=kind, detail=detail, advice=_ELEVATE if calibrated else _ELEVATE_ONCE
-    )
+    return MeasurementMode(kind=kind, detail=detail, advice=_advice_for(system, calibrated))
 from ecomonitor.sensors.calibration import (
     calibration_from_database,
     cpu_calibration_from_database,
@@ -93,10 +105,10 @@ def get_backend(db=None) -> SensorBackend:
         if calibration is not None:
             return _tagged(
                 CalibratedFallbackBackend(calibration),
-                _mode_for("calibrated", calibration),
+                _mode_for("calibrated", calibration, system),
             )
 
     logger.warning(
         "Nessuno storico misurato su cui calibrare: uso la stima a TDP generico"
     )
-    return _tagged(FallbackModelBackend(), _mode_for("generic", None))
+    return _tagged(FallbackModelBackend(), _mode_for("generic", None, system))
