@@ -2,6 +2,7 @@
 #   sudo bash scripts/install_powermetrics_permissions.sh
 #   sudo bash scripts/install_powermetrics_permissions.sh --uninstall
 #                     toglie la regola a tutti; con --user NOME solo a lui
+#   sudo bash scripts/install_powermetrics_permissions.sh --print-rule
 #   ... --user NOME   regola per un utente diverso da chi ha lanciato sudo:
 #                     lo usa il postinstall del .pkg, dove SUDO_USER non c'e'
 #
@@ -32,6 +33,12 @@ while [[ $# -gt 0 ]]; do
     --user)
         TARGET_USER="${2:-}"
         shift
+        ;;
+    --print-rule)
+        #per il controllo in build_macos.sh
+        command_spec
+        echo
+        exit 0
         ;;
     *)
         echo "ERRORE: argomento sconosciuto '${1}'." >&2

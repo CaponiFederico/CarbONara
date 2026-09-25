@@ -51,6 +51,17 @@ rm -f "${PKG}"
 #prima della build
 API_KEY="$(bash "${PACKAGING_DIR}/read_api_key.sh")"
 
+PERMISSIONS_SCRIPT="${PROJECT_ROOT}/scripts/install_powermetrics_permissions.sh"
+RULE_SPEC="$(bash "${PERMISSIONS_SCRIPT}" --print-rule)"
+APP_SPEC="$(PYTHONPATH="${PROJECT_ROOT}/src" "${PYTHON}" -c \
+    'from ecomonitor.sensors.macos_powermetrics import sudoers_command_spec; print(sudoers_command_spec())')"
+if [[ ${RULE_SPEC} != "${APP_SPEC}" ]]; then
+    echo "ERRORE: la regola sudoers e l'app non lanciano la stessa riga di comando." >&2
+    echo "  regola: ${RULE_SPEC}" >&2
+    echo "  app   : ${APP_SPEC}" >&2
+    exit 2
+fi
+
 "${PYTHON}" "${PACKAGING_DIR}/make_icon.py"
 "${PYTHON}" -m PyInstaller --clean --noconfirm \
     --distpath "${DIST_DIR}" --workpath "${BUILD_DIR}" \
@@ -64,7 +75,7 @@ fi
 RESOURCES="${APP}/Contents/Resources"
 printf '%s' "${API_KEY}" >"${RESOURCES}/api_key"
 chmod 0644 "${RESOURCES}/api_key"
-cp "${PROJECT_ROOT}/scripts/install_powermetrics_permissions.sh" "${RESOURCES}/"
+cp "${PERMISSIONS_SCRIPT}" "${RESOURCES}/"
 
 #aggiungere file dopo PyInstaller invalida la sua firma
 codesign --force --deep --sign - "${APP}"
