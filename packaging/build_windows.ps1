@@ -14,8 +14,9 @@
 
 [CmdletBinding()]
 param(
-    # Chiede l'elevazione all'avvio invece di ripiegare sulla stima
-    [switch]$RequireAdmin
+    # Di default l'eseguibile chiede sempre di essere amministratore, che serve
+    # ai sensori della CPU: con questo parte normale e ripiega sulla stima
+    [switch]$AllowNonAdmin
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,7 +44,11 @@ $BuildDir = Join-Path $PackagingDir "build"
 $DistDir = Join-Path $PackagingDir "dist"
 $OutDir = Join-Path $PackagingDir "out"
 
-if ($RequireAdmin) { $env:ECOMONITOR_UAC_ADMIN = "1" } else { Remove-Item Env:\ECOMONITOR_UAC_ADMIN -ErrorAction SilentlyContinue }
+foreach ($dir in $BuildDir, $DistDir) {
+    if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+}
+
+if ($AllowNonAdmin) { Remove-Item Env:\ECOMONITOR_UAC_ADMIN -ErrorAction SilentlyContinue } else { $env:ECOMONITOR_UAC_ADMIN = "1" }
 
 & $Python (Join-Path $PackagingDir "make_icon.py")
 if ($LASTEXITCODE -ne 0) { throw "generazione dell'icona fallita" }
@@ -53,6 +58,9 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller fallito" }
 
 & (Join-Path $DistDir "ecomonitor-cli.exe") --help | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "l'eseguibile costruito non parte" }
+
+$foreign = Get-ChildItem -Recurse -File $DistDir | Where-Object { $_.Name -match '\.so(\.\d+)*$|^libpython' }
+if ($foreign) { throw "dist contiene file di una build Linux ($($foreign[0].Name)): pacchetto non costruito" }
 
 & powershell.exe -NoProfile -ExecutionPolicy Bypass `
     -File (Join-Path $PackagingDir "read_api_key.ps1") `

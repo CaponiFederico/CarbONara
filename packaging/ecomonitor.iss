@@ -13,6 +13,9 @@
 #define AppName "EcoMonitor"
 #define AppExeName "EcoMonitor.exe"
 
+#define PawnIOUrl "https://github.com/namazso/PawnIO.Setup/releases/download/2.2.0/PawnIO_setup.exe"
+#define PawnIOSha256 "1f519a22e47187f70a1379a48ca604981c4fcf694f4e65b734aaa74a9fba3032"
+
 [Setup]
 AppId={{ef2ed1a8-13dd-4d13-8813-a84e088939a6}
 AppName={#AppName}
@@ -24,6 +27,7 @@ DisableProgramGroupPage=yes
 ; nessun amministratore
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=out
 OutputBaseFilename={#AppName}-{#AppVersion}-windows-x64-setup
 SetupIconFile=ecomonitor.ico
@@ -40,12 +44,16 @@ Name: "italiano"; MessagesFile: "compiler:Languages\Italian.isl"
 
 [InstallDelete]
 Type: filesandordirs; Name: "{app}\_internal"
+Type: files; Name: "{autoprograms}\{#AppName} (amministratore).lnk"
 
 [Files]
 Source: "dist\{#AppName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "autostart.ps1"; DestDir: "{app}"
+Source: "elevated_setup.ps1"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Tasks]
+Name: "pawnio"; Description: "Installa il driver PawnIO, che serve a misurare la CPU"; \
+    GroupDescription: "Misura:"; Check: not PawnIOInstalled
 Name: "autostart"; Description: "Avvia EcoMonitor all'accesso"; \
     GroupDescription: "Avvio automatico:"
 Name: "autostart\background"; Description: "Parti nell'area di notifica, senza aprire la finestra"; \
@@ -54,21 +62,53 @@ Name: "autostart\background"; Description: "Parti nell'area di notifica, senza a
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; \
     Comment: "Monitoraggio di energia e CO2eq"
-Name: "{autoprograms}\{#AppName} (amministratore)"; Filename: "{app}\{#AppExeName}"; \
-    Comment: "Monitoraggio di energia e CO2eq"
 
 [Registry]
 Root: HKCU; Subkey: "Software\EcoMonitor"; ValueType: dword; ValueName: "Autostart"; \
     ValueData: 1; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: autostart
+Root: HKCU; Subkey: "Software\EcoMonitor"; ValueType: dword; ValueName: "Autostart"; \
+    ValueData: 0; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: not autostart
 
 [Run]
-Filename: "{sys}\schtasks.exe"; Parameters: "/run /tn ""{#AppName}"""; \
+Filename: "{sys}\schtasks.exe"; Parameters: "/run /tn ""{code:TaskName}"""; \
     Description: "Avvia {#AppName}"; Flags: postinstall skipifsilent runhidden; \
     Check: AutostartTaskExists
 Filename: "{app}\{#AppExeName}"; Description: "Avvia {#AppName}"; \
-    Flags: nowait postinstall skipifsilent; Check: not AutostartTaskExists
+    Flags: nowait postinstall skipifsilent shellexec; Check: not AutostartTaskExists
 
 [Code]
+var
+  DownloadPage: TDownloadWizardPage;
+  PawnIODownloaded: Boolean;
+
+procedure InitializeWizard;
+begin
+  DownloadPage := CreateDownloadPage(SetupMessage(msgWizardPreparing), SetupMessage(msgPreparingDesc), nil);
+  DownloadPage.ShowBaseNameInsteadOfUrl := True;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if (CurPageID <> wpReady) or not WizardIsTaskSelected('pawnio') then
+    exit;
+
+  PawnIODownloaded := False;
+  DownloadPage.Clear;
+  DownloadPage.Add('{#PawnIOUrl}', 'PawnIO_setup.exe', '{#PawnIOSha256}');
+  DownloadPage.Show;
+  try
+    try
+      DownloadPage.Download;
+      PawnIODownloaded := True;
+    except
+      Log('PawnIO non scaricato: ' + GetExceptionMessage);
+    end;
+  finally
+    DownloadPage.Hide;
+  end;
+end;
+
 function EcoMonitorIsRunning: Boolean;
 var
   ResultCode: Integer;
@@ -78,47 +118,69 @@ begin
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
 end;
 
-function AutostartTaskExists: Boolean;
+function CurrentUserId: string;
+begin
+  Result := ExpandConstant('{%USERDOMAIN}') + '\' + ExpandConstant('{username}');
+end;
+
+function TaskName(Param: string): string;
+begin
+  Result := 'EcoMonitor (' + ExpandConstant('{%USERDOMAIN}') + '-' + ExpandConstant('{username}') + ')';
+end;
+
+function TaskExists(const Name: string): Boolean;
 var
   ResultCode: Integer;
 begin
-  Result := Exec(ExpandConstant('{sys}\schtasks.exe'), '/query /tn "EcoMonitor"',
+  Result := Exec(ExpandConstant('{sys}\schtasks.exe'), '/query /tn "' + Name + '"',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
 end;
 
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+function AutostartTaskExists: Boolean;
+begin
+  Result := TaskExists(TaskName(''));
+end;
+
+function PawnIOInstalled: Boolean;
+begin
+  Result := RegKeyExists(HKLM64, 'SYSTEM\CurrentControlSet\Services\PawnIO');
+end;
+
+
+function PowerShellPath: string;
+begin
+  Result := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+end;
+
+// L'app gira elevata e Setup no
+procedure CloseEcoMonitor;
 var
   ResultCode: Integer;
+begin
+  ShellExec('runas', 'taskkill.exe', '/f /im {#AppExeName}', '', SW_HIDE,
+    ewWaitUntilTerminated, ResultCode);
+  Sleep(1500);
+end;
+
+function CloseQuestion(const Action: string): string;
+begin
+  Result := 'EcoMonitor e'' in esecuzione e i suoi file non si possono ' + Action + '.'
+    + #13#10#13#10 + 'Chiuderlo ora? I dati non ancora scritti, al massimo un minuto,'
+    + #13#10 + 'andranno persi. In alternativa: Esci dall''area di notifica, poi riprova.';
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
   if not EcoMonitorIsRunning then
     exit;
 
-  if SuppressibleMsgBox('EcoMonitor e'' in esecuzione e i suoi file non si possono sostituire.'
-      + #13#10#13#10 + 'Chiuderlo ora? I dati non ancora scritti, al massimo un minuto,'
-      + #13#10 + 'andranno persi. In alternativa: Esci dall''area di notifica, poi riprova.',
-      mbConfirmation, MB_YESNO, IDYES) = IDYES then
-  begin
-    ShellExec('runas', 'taskkill.exe', '/f /im {#AppExeName}', '', SW_HIDE,
-      ewWaitUntilTerminated, ResultCode);
-    Sleep(1500);
-  end;
+  if SuppressibleMsgBox(CloseQuestion('sostituire'), mbConfirmation, MB_YESNO, IDYES) = IDYES then
+    CloseEcoMonitor;
 
   if EcoMonitorIsRunning then
     Result := 'EcoMonitor e'' ancora in esecuzione. Chiuderlo con Esci dall''area di notifica'
       + #13#10 + 'e riavviare l''installazione.';
-end;
-
-procedure MarkShortcutAsElevated(const LinkPath: string);
-var
-  Content: AnsiString;
-begin
-  if not LoadStringFromFile(LinkPath, Content) then
-    exit;
-  if Length(Content) < 22 then
-    exit;
-  Content[22] := Chr(Ord(Content[22]) or $20);
-  SaveStringToFile(LinkPath, Content, False);
 end;
 
 // Registrazione e rimozione dell'avvio automatico
@@ -128,7 +190,7 @@ var
   ScriptPath: string;
 begin
   ScriptPath := ExpandConstant('{app}\autostart.ps1');
-  Result := ShellExec('runas', 'powershell.exe',
+  Result := ShellExec('runas', PowerShellPath,
     '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath + '" ' + Arguments,
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
 end;
@@ -136,48 +198,89 @@ end;
 function HiddenStartArgument: string;
 begin
   if WizardIsTaskSelected('autostart\background') then
-    Result := ' -Arguments "--background"'
+    Result := ' -AutostartArguments "--background"'
   else
     Result := '';
 end;
 
-function CurrentUserId: string;
+const
+  PawnIOFailed = 1;
+  AutostartFailed = 2;
+
+procedure ReportPawnIOFailure;
 begin
-  Result := ExpandConstant('{%USERDOMAIN}') + '\' + ExpandConstant('{username}');
+  SuppressibleMsgBox('Driver PawnIO non installato.' + #13#10 +
+    'EcoMonitor stimera' + #39 + ' il consumo della CPU invece di misurarlo;' + #13#10 +
+    'il driver si puo' + #39 + ' installare in seguito da pawnio.eu.',
+    mbInformation, MB_OK, IDOK);
+end;
+
+procedure ReportAutostartFailure;
+begin
+  SuppressibleMsgBox('Avvio automatico non configurato.' + #13#10 +
+    'L' + #39 + 'applicazione resta installata e avviabile dal menu Start.',
+    mbInformation, MB_OK, IDOK);
+end;
+
+procedure RunElevatedSetup;
+var
+  Arguments: string;
+  ResultCode: Integer;
+  WantsPawnIO, WantsAutostart: Boolean;
+begin
+  WantsPawnIO := WizardIsTaskSelected('pawnio') and not PawnIOInstalled;
+  WantsAutostart := WizardIsTaskSelected('autostart');
+  if not WantsPawnIO and not WantsAutostart then
+    exit;
+
+  Arguments := '';
+  if WantsPawnIO then
+  begin
+    Arguments := Arguments + ' -InstallPawnIO';
+    if PawnIODownloaded then
+      Arguments := Arguments + ' -PawnIOSetup "' + ExpandConstant('{tmp}\PawnIO_setup.exe') + '"';
+  end;
+  if WantsAutostart then
+    Arguments := Arguments + ' -RegisterAutostart'
+      + ' -AutostartScript "' + ExpandConstant('{app}\autostart.ps1') + '"'
+      + ' -TargetPath "' + ExpandConstant('{app}\{#AppExeName}') + '"'
+      + ' -UserId "' + CurrentUserId + '"' + HiddenStartArgument;
+
+  if not ShellExec('runas', PowerShellPath,
+      '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\elevated_setup.ps1') + '"' + Arguments,
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  begin
+    // elevazione rifiutata: non e' stato fatto niente
+    if WantsPawnIO then
+      ReportPawnIOFailure;
+    if WantsAutostart then
+      ReportAutostartFailure;
+    exit;
+  end;
+
+  if WantsPawnIO and (((ResultCode and PawnIOFailed) <> 0) or not PawnIOInstalled) then
+    ReportPawnIOFailure;
+  if WantsAutostart and (((ResultCode and AutostartFailed) <> 0) or not AutostartTaskExists) then
+    ReportAutostartFailure;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
-    MarkShortcutAsElevated(ExpandConstant('{autoprograms}\{#AppName} (amministratore).lnk'));
-    if WizardIsTaskSelected('autostart') then
-      if not RunAutostartScript('-Register -TargetPath "' + ExpandConstant('{app}\{#AppExeName}')
-          + '" -UserId "' + CurrentUserId + '"' + HiddenStartArgument) then
-        SuppressibleMsgBox('Avvio automatico non configurato: elevazione rifiutata o non riuscita.' + #13#10 +
-          'L' + #39 + 'applicazione resta installata e avviabile dal menu Start.',
-          mbInformation, MB_OK, IDOK);
+    RunElevatedSetup;
   end;
 end;
 
 // la disinstallazione lasciava vivi i processi in esecuzione
 function InitializeUninstall: Boolean;
-var
-  ResultCode: Integer;
 begin
   Result := True;
   if not EcoMonitorIsRunning then
     exit;
 
-  if SuppressibleMsgBox('EcoMonitor e'' in esecuzione e i suoi file non si possono rimuovere.'
-      + #13#10#13#10 + 'Chiuderlo ora? I dati non ancora scritti, al massimo un minuto,'
-      + #13#10 + 'andranno persi. In alternativa: Esci dall''area di notifica, poi riprova.',
-      mbConfirmation, MB_YESNO, IDYES) = IDYES then
-  begin
-    ShellExec('runas', 'taskkill.exe', '/f /im {#AppExeName}', '', SW_HIDE,
-      ewWaitUntilTerminated, ResultCode);
-    Sleep(1500);
-  end;
+  if SuppressibleMsgBox(CloseQuestion('rimuovere'), mbConfirmation, MB_YESNO, IDYES) = IDYES then
+    CloseEcoMonitor;
 
   if EcoMonitorIsRunning then
   begin
@@ -191,10 +294,10 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
-    if RegValueExists(HKCU, 'Software\EcoMonitor', 'Autostart') then
-      if not RunAutostartScript('-Unregister') then
+    if AutostartTaskExists then
+      if not RunAutostartScript('-Unregister -UserId "' + CurrentUserId + '"') then
         SuppressibleMsgBox('Non sono riuscito a togliere l' + #39 + 'avvio automatico.' + #13#10 +
-          'Rimuoverlo da Utilita' + #39 + ' di pianificazione, attivita' + #39 + ' EcoMonitor.',
+          'Rimuoverlo da Utilita' + #39 + ' di pianificazione, attivita' + #39 + ' ' + TaskName('') + '.',
           mbInformation, MB_OK, IDOK);
 
   if CurUninstallStep = usPostUninstall then

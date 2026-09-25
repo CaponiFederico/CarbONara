@@ -5,11 +5,14 @@ import logging
 import os
 import platform
 import plistlib
+import re
 import subprocess
 import sys
 from ctypes import wintypes
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
 from xml.parsers.expat import ExpatError
 
 #Avvio automatico all'accesso a Windows
@@ -91,18 +94,8 @@ def is_enabled() -> bool:
         return _macos_is_enabled()
     if platform.system() != "Windows":
         return False
-    try:
-        result = subprocess.run(
-            ["schtasks.exe", "/query", "/tn", TASK_NAME],
-            capture_output=True,
-            check=False,
-            creationflags=_CREATE_NO_WINDOW,
-            timeout=15,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        logger.warning("Non riesco a interrogare l'avvio automatico: %s", exc)
-        return False
-    return result.returncode == 0
+    task = _windows_current_task()
+    return task is not None and _same_executable(task.command, _target_path())
 
 
 def starts_hidden() -> bool:
@@ -113,13 +106,36 @@ def starts_hidden() -> bool:
         return _macos_starts_hidden()
     if platform.system() != "Windows":
         return False
-    return HIDDEN_START_FLAG in _windows_task_xml()
+    task = _windows_current_task()
+    if task is None or not _same_executable(task.command, _target_path()):
+        return False
+    return HIDDEN_START_FLAG in task.arguments.split()
 
 
-def _windows_task_xml() -> str:
+def task_name(user_id: str | None = None) -> str:
+    #"EcoMonitor (DOMINIO-utente)"
+    user = (user_id or _current_user_id()).replace("\\", "-")
+    return f"{TASK_NAME} ({user})"
+
+
+@dataclass(frozen=True)
+class WindowsTask:
+    command: str
+    arguments: str
+
+
+def _windows_current_task() -> WindowsTask | None:
+    return _windows_task(task_name())
+
+
+def _windows_task(name: str) -> WindowsTask | None:
+    return parse_task_xml(_windows_task_xml(name))
+
+
+def _windows_task_xml(name: str) -> str:
     try:
         result = subprocess.run(
-            ["schtasks.exe", "/query", "/tn", TASK_NAME, "/xml"],
+            ["schtasks.exe", "/query", "/tn", name, "/xml"],
             capture_output=True,
             check=False,
             creationflags=_CREATE_NO_WINDOW,
@@ -137,6 +153,29 @@ def decode_task_xml(raw: bytes) -> str:
     if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
         return raw.decode("utf-16", errors="replace")
     return raw.decode("utf-8", errors="replace")
+
+
+def parse_task_xml(text: str) -> WindowsTask | None:
+    #None se l'attivita' non c'e' o l'XML non si legge
+    if not text.strip():
+        return None
+    body = re.sub(r"^\s*<\?xml[^>]*\?>", "", text)
+    try:
+        root = ElementTree.fromstring(body)
+    except ElementTree.ParseError:
+        logger.warning("Attivita' pianificata con XML illeggibile")
+        return None
+    command = root.findtext(".//{*}Actions/{*}Exec/{*}Command") or ""
+    arguments = root.findtext(".//{*}Actions/{*}Exec/{*}Arguments") or ""
+    return WindowsTask(command.strip().strip('"'), arguments.strip())
+
+
+def _same_executable(registered: str, current: str) -> bool:
+    if not registered:
+        return False
+    return os.path.normcase(os.path.normpath(registered)) == os.path.normcase(
+        os.path.normpath(current)
+    )
 
 
 def set_enabled(enabled: bool, start_hidden: bool = False) -> None:
@@ -157,7 +196,7 @@ def set_enabled(enabled: bool, start_hidden: bool = False) -> None:
             f"Manca {SCRIPT_NAME} accanto all'applicazione: reinstallare EcoMonitor."
         )
 
-    arguments = ["-Unregister"]
+    arguments = ["-Unregister", "-UserId", _current_user_id()]
     if enabled:
         arguments = [
             "-Register",
@@ -173,6 +212,22 @@ def set_enabled(enabled: bool, start_hidden: bool = False) -> None:
         _run_here(script, arguments)
     else:
         _run_elevated(script, arguments)
+
+INSTALLER_KEY = r"Software\EcoMonitor"
+INSTALLER_VALUE = "Autostart"
+
+def installer_declined() -> bool:
+    if sys.platform == "win32":
+        import winreg
+
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, INSTALLER_KEY) as key:
+                value, _ = winreg.QueryValueEx(key, INSTALLER_VALUE)
+        except OSError:
+            return False
+        return value == 0
+    else:
+        return False
 
 
 def _current_user_id() -> str:

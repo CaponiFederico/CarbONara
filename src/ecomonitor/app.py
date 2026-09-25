@@ -18,7 +18,7 @@ from PySide6.QtGui import QIcon, QPalette
 from PySide6.QtWidgets import QApplication, QMessageBox, QStyleFactory, QSystemTrayIcon
 
 from ecomonitor import autostart
-from ecomonitor.config import ConfigManager
+from ecomonitor.config import AppConfig, ConfigManager
 from ecomonitor.gui import macos_dock
 from ecomonitor.gui.icon import app_icon
 from ecomonitor.gui.main_window import MainWindow
@@ -199,11 +199,17 @@ DefaultAutostartAction = Literal["enable", "record", "wait", "skip"]
 
 
 def default_autostart_action(
-    supported: bool, already_applied: bool, already_enabled: bool, needs_elevation: bool
+    supported: bool,
+    already_applied: bool,
+    already_enabled: bool,
+    needs_elevation: bool,
+    declined_by_installer: bool = False,
 ) -> DefaultAutostartAction:
     #L'avvio automatico nasce attivo, ma l'utente puo' disattivarlo
     if not supported or already_applied:
         return "skip"
+    if declined_by_installer:
+        return "record"
     if already_enabled:
         #gia' attivo
         return "record"
@@ -212,8 +218,7 @@ def default_autostart_action(
     return "enable"
 
 
-def apply_default_autostart(config_manager: ConfigManager) -> None:
-    config = config_manager.config
+def run_default_autostart(config: AppConfig) -> bool:
     supported = autostart.is_supported()
     already_applied = config.autostart_default_applied
     decided = not supported or already_applied
@@ -222,21 +227,60 @@ def apply_default_autostart(config_manager: ConfigManager) -> None:
         already_applied=already_applied,
         already_enabled=False if decided else autostart.is_enabled(),
         needs_elevation=False if decided else autostart.needs_elevation(),
+        declined_by_installer=False if decided else autostart.installer_declined(),
     )
     if action in ("skip", "wait"):
-        return
+        return False
 
     if action == "enable":
         try:
             autostart.set_enabled(True)
         except autostart.AutostartError as exc:
             logger.warning("Non riesco ad attivare l'avvio automatico: %s", exc)
-            return
+            return False
         logger.info(
             "Avvio automatico attivato: EcoMonitor si aprira' all'accesso, in primo "
             "piano. Si disattiva dalle impostazioni"
         )
+    return True
 
+def apply_default_autostart(config_manager: ConfigManager) -> None:
+    if run_default_autostart(config_manager.config):
+        record_default_autostart(config_manager)
+
+
+class DefaultAutostartRunner(QObject):
+    recorded = Signal()
+
+    def __init__(self, config_manager: ConfigManager) -> None:
+        super().__init__()
+        self._config_manager = config_manager
+        self.recorded.connect(self._record)
+
+    def start(self) -> None:
+        #chi lo crea deve tenerlo vivo fino alla fine
+        config = self._config_manager.config
+        threading.Thread(
+            target=self._run, args=(config,), name="default-autostart", daemon=True
+        ).start()
+
+    def _run(self, config: AppConfig) -> None:
+        try:
+            if run_default_autostart(config):
+                self.recorded.emit()
+        except RuntimeError:
+            #applicazione gia' chiusa: si riprova al prossimo avvio
+            logger.debug("Avvio automatico predefinito concluso ad applicazione chiusa")
+        except Exception:
+            logger.exception("Avvio automatico predefinito non applicato")
+
+    @Slot()
+    def _record(self) -> None:
+        record_default_autostart(self._config_manager)
+
+
+def record_default_autostart(config_manager: ConfigManager) -> None:
+    config = config_manager.config
     config.autostart_default_applied = True
     try:
         config_manager.save()
@@ -744,7 +788,8 @@ def main() -> None:
 
     app.applicationStateChanged.connect(reopen_if_requested)
 
-    QTimer.singleShot(0, lambda: apply_default_autostart(config_manager))
+    default_autostart = DefaultAutostartRunner(config_manager)
+    default_autostart.start()
 
     tray = create_tray_icon(window, on_quit=app.quit) if tray_available else None
     if tray is None and not background_available:

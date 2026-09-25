@@ -2,7 +2,7 @@
 #Amministratore
 #   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Register -TargetPath "...\EcoMonitor.exe" -UserId "DOMINIO\utente"
 #   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Register -TargetPath "..." -UserId "..." -Arguments "--background"
-#   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Unregister
+#   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Unregister -UserId "DOMINIO\utente"
 #
 [CmdletBinding()]
 param(
@@ -14,11 +14,16 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$TaskName = "EcoMonitor"
 
 $isElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isElevated) { throw "Serve un processo elevato" }
+
+# UAC puo' elevare con un account amministratore diverso
+if (-not $UserId) { $UserId = "$env:USERDOMAIN\$env:USERNAME" }
+
+#un'attivita' per utente
+$TaskName = "EcoMonitor ($($UserId.Replace('\', '-')))"
 
 if ($Unregister) {
     if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
@@ -33,9 +38,6 @@ if ($Unregister) {
 if (-not $Register) { throw "Indicare -Register oppure -Unregister." }
 if (-not $TargetPath) { throw "-Register richiede -TargetPath." }
 if (-not (Test-Path $TargetPath)) { throw "Non trovo l'eseguibile: $TargetPath" }
-
-# UAC puo' elevare con un account amministratore diverso 
-if (-not $UserId) { $UserId = "$env:USERDOMAIN\$env:USERNAME" }
 
 #-Argument con una stringa vuota registrerebbe un argomento vuoto invece di nessuno
 if ($Arguments) {

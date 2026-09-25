@@ -1,8 +1,9 @@
 import logging
 import os
+import threading
 from collections.abc import Callable, Iterable
 
-from PySide6.QtCore import QRect, Qt
+from PySide6.QtCore import QCoreApplication, QRect, Qt
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QResizeEvent
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -266,13 +267,43 @@ class SettingsDialog(QDialog):
         if wanted == autostart.is_enabled() and wanted_hidden == autostart.starts_hidden():
             return True
         try:
-            autostart.set_enabled(wanted, start_hidden=wanted_hidden)
+            self._run_without_freezing(
+                lambda: autostart.set_enabled(wanted, start_hidden=wanted_hidden)
+            )
         except autostart.AutostartError as exc:
             QMessageBox.warning(self, "Avvio automatico non modificato", str(exc))
             self.autostart_check.setChecked(autostart.is_enabled())
             self.hidden_start_check.setChecked(autostart.starts_hidden())
             return False
         return True
+
+    def _run_without_freezing(self, work: Callable[[], None]) -> None:
+        outcome: list[BaseException] = []
+        done = threading.Event()
+
+        def job() -> None:
+            try:
+                work()
+            except BaseException as exc:
+                outcome.append(exc)
+            finally:
+                done.set()
+
+        self.setEnabled(False)
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            threading.Thread(target=job, name="autostart", daemon=True).start()
+            while not done.wait(0.02):
+                QCoreApplication.processEvents()
+        finally:
+            QGuiApplication.restoreOverrideCursor()
+            self.setEnabled(True)
+        if outcome:
+            error = outcome.pop()
+            try:
+                raise error
+            finally:
+                del error
 
     def _check_api_key(self) -> bool:
         #Prova la chiave nuova prima di scriverla
