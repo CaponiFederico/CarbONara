@@ -87,7 +87,8 @@ def read_power_source_state() -> PowerSourceState:
     battery_state = psutil.sensors_battery()
     if battery_state is None:
         return PowerSourceState(is_plugged_in=True, battery_percent=None)  # desktop
+    plugged = battery_state.power_plugged
     return PowerSourceState(
-        is_plugged_in=battery_state.power_plugged,
+        is_plugged_in=True if plugged is None else bool(plugged),
         battery_percent=battery_state.percent,
     )

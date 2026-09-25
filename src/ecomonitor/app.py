@@ -142,6 +142,24 @@ BACKGROUND_NOTICE_TEXT = (
     "misurazione, usa il pulsante «Esci» in fondo alla finestra."
 )
 
+DATABASE_BUSY_TITLE = "EcoMonitor è già in esecuzione"
+
+
+def database_busy_text(system: str) -> str:
+    text = (
+        "Un'altra copia di EcoMonitor sta già misurando su questo computer, quindi "
+        "questa si chiude senza toccare i dati."
+    )
+    if system == "Windows":
+        #la voce «(amministratore)» nel menu Start non c'e' piu': l'eseguibile
+        #impacchettato chiede sempre l'elevazione
+        text += (
+            "\n\nSe è partita all'accesso, riaprila dall'icona nell'area di "
+            "notifica."
+        )
+    return text
+
+
 NoticeChannel = Literal["tray", "dialog", "none"]
 
 
@@ -744,6 +762,7 @@ def main() -> None:
             "Il database e' gia' in uso da un altro processo: "
             " questa istanza esce senza toccarlo"
         )
+        QMessageBox.information(None, DATABASE_BUSY_TITLE, database_busy_text(platform.system()))
         return
 
     #Letta qui, perche' la GUI ne ha bisogno, costa pochi millisecondi

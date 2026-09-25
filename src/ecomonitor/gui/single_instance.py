@@ -41,6 +41,7 @@ class SingleInstanceGuard(QObject):
         QLocalServer.removeServer(self._name)
 
         server = QLocalServer(self)
+        server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
         if not server.listen(self._name):
             logger.warning(
                 "Impossibile creare il lock di istanza singola (%s): l'applicazione parte "
