@@ -194,6 +194,8 @@ class MainWindow(QMainWindow):
         #nascondersi significherebbe restare vivi e irraggiungibili
 
         self.on_hidden: Callable[[], None] | None = None
+        #quando la finestra e' stata nascosta chiudendola, None se mai
+        self.hidden_at: float | None = None
         #lo collega app.py al thread di polling, che possiede il servizio di rete
         self.on_api_key_changed: Callable[[str | None], None] | None = None
         #lo stesso per la zona scelta sulla cartina
@@ -460,6 +462,7 @@ class MainWindow(QMainWindow):
         if not self.hide_on_close:
             #qui chiudere termina l'applicazione
             return
+        self.hidden_at = time.monotonic()
         macos_dock.set_dock_icon_visible(False)
 
     def closeEvent(self, event: QCloseEvent) -> None:

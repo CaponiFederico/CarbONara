@@ -85,6 +85,27 @@ def should_start_hidden(requested: bool, tray_available: bool, background_availa
         return False
     return tray_available or background_available
 
+#open --args --background attiva l'app all'avvio
+HIDDEN_START_ACTIVATION_GRACE_SECONDS = 3.0
+
+HIDE_ACTIVATION_GRACE_SECONDS = 1.0
+
+
+def reopens_on_activation(
+    system: str,
+    window_visible: bool,
+    started_hidden: bool,
+    seconds_since_start: float,
+    seconds_since_hidden: float | None,
+) -> bool:
+    #Dock, Finder e Spotlight non lanciano una seconda istanza su macOS:
+    #riattivano quella in esecuzione
+    if system != "Darwin" or window_visible:
+        return False
+    if started_hidden and seconds_since_start < HIDDEN_START_ACTIVATION_GRACE_SECONDS:
+        return False
+    return seconds_since_hidden is None or seconds_since_hidden >= HIDE_ACTIVATION_GRACE_SECONDS
+
 TRAY_WAIT_SECONDS = 30.0
 TRAY_WAIT_STEP_SECONDS = 0.25
 
@@ -705,7 +726,24 @@ def main() -> None:
         window.raise_()
         window.activateWindow()
 
- 
+    started_at = time.monotonic()
+
+    def reopen_if_requested(state: Qt.ApplicationState) -> None:
+        #Qt segnala la riapertura dal Dock come stato attivo
+        if state != Qt.ApplicationState.ApplicationActive:
+            return
+        now = time.monotonic()
+        if reopens_on_activation(
+            platform.system(),
+            window.isVisible(),
+            start_hidden,
+            now - started_at,
+            None if window.hidden_at is None else now - window.hidden_at,
+        ):
+            show_window()
+
+    app.applicationStateChanged.connect(reopen_if_requested)
+
     QTimer.singleShot(0, lambda: apply_default_autostart(config_manager))
 
     tray = create_tray_icon(window, on_quit=app.quit) if tray_available else None
