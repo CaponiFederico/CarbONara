@@ -7,6 +7,13 @@ from ecomonitor.sensors.base import (
     SensorBackend,
     SensorUnavailableError,
 )
+from ecomonitor.sensors.calibration import (
+    calibration_from_database,
+    cpu_calibration_from_database,
+)
+from ecomonitor.sensors.fallback_model import CalibratedFallbackBackend, FallbackModelBackend
+
+logger = logging.getLogger(__name__)
 
 #Azione che sblocca la misura vera
 _ELEVATE = "Avvia l'app come amministratore per misurare la CPU invece di stimarla."
@@ -50,13 +57,6 @@ def _mode_for(kind: str, calibration, system: str | None = None) -> MeasurementM
         detail += " da TDP generico"
 
     return MeasurementMode(kind=kind, detail=detail, advice=_advice_for(system, calibrated))
-from ecomonitor.sensors.calibration import (
-    calibration_from_database,
-    cpu_calibration_from_database,
-)
-from ecomonitor.sensors.fallback_model import CalibratedFallbackBackend, FallbackModelBackend
-
-logger = logging.getLogger(__name__)
 
 
 def get_backend(db=None) -> SensorBackend:

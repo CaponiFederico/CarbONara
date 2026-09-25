@@ -6,13 +6,29 @@
 #   ecomonitor-cli(.exe)   eseguibile di collaudo, non spedito nel pacchetto
 
 import os
+import re
 import sys
+import tomllib
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all
 
-PROJECT_ROOT = Path(SPECPATH).parent  
+PROJECT_ROOT = Path(SPECPATH).parent
 SRC_PATH = str(PROJECT_ROOT / "src")
+
+VERSION = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
+    "project"
+]["version"]
+_init_version = re.search(
+    r'^__version__ = "([^"]+)"',
+    (PROJECT_ROOT / "src" / "ecomonitor" / "__init__.py").read_text(encoding="utf-8"),
+    re.MULTILINE,
+)
+if _init_version is None or _init_version.group(1) != VERSION:
+    raise SystemExit(
+        f"Versioni diverse: pyproject.toml dice {VERSION}, src/ecomonitor/__init__.py "
+        f"dice {_init_version.group(1) if _init_version else 'niente'}. Aggiornarle entrambe."
+    )
 
 IS_WINDOWS = sys.platform == "win32"
 IS_LINUX = sys.platform.startswith("linux")
@@ -106,11 +122,6 @@ gui_collect = COLLECT(  # noqa: F821
 
 #Su macOS l'applicazione e' la cartella EcoMonitor.app accanto a EcoMonitor/
 if IS_MACOS:
-    import tomllib
-
-    VERSION = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
-        "project"
-    ]["version"]
     BUNDLE(  # noqa: F821
         gui_collect,
         name="EcoMonitor.app",

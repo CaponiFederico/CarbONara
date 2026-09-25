@@ -26,6 +26,9 @@ ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
 PNG_SIZE = 256
 
 ICNS_TYPES = (
+    #icp4/icp5: 16 e 32 px a 1x, senza Finder rimpicciolisce le grandi
+    (b"icp4", 16),
+    (b"icp5", 32),
     (b"ic11", 32),
     (b"ic12", 64),
     (b"ic07", 128),
