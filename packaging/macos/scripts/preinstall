@@ -8,7 +8,8 @@ set -u
 APP_EXECUTABLE="/Applications/EcoMonitor.app/Contents/MacOS/EcoMonitor"
 
 running_pids() {
-    pgrep -f "^${APP_EXECUTABLE}$" 2>/dev/null || true
+    #( |$): l'avvio automatico nascosto la lancia con --background
+    pgrep -f "^${APP_EXECUTABLE}( |$)" 2>/dev/null || true
 }
 
 pids="$(running_pids)"

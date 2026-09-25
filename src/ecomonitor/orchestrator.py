@@ -16,8 +16,14 @@ from ecomonitor.config import ConfigManager
 from ecomonitor.energy.integrator import EnergyIntegrator
 from ecomonitor.power_context import PowerSourceState, read_power_source_state
 from ecomonitor.reporting import ReportingEngine
-from ecomonitor.sensors.base import NATIVE_MODE, SensorBackend, now_utc
-from ecomonitor.sensors.factory import get_backend
+from ecomonitor.sensors.base import (
+    NATIVE_MODE,
+    PowerReading,
+    SensorBackend,
+    SensorLostError,
+    now_utc,
+)
+from ecomonitor.sensors.factory import get_backend, get_fallback_backend
 from ecomonitor.storage.db import LocalDatabase, default_database_path
 from ecomonitor.storage.event_buffer import EnergyEventBuffer, EnergySample
 
@@ -410,8 +416,22 @@ class Orchestrator:
             return
         self._refresh_unknown_origin_reference(self._last_seen_at, now)
 
+    def _read_sensor(self) -> PowerReading:
+        try:
+            return self.backend.read()
+        except SensorLostError as exc:
+            #senza cambio di backend ogni tick fallirebbe e le ore resterebbero vuote
+            logger.warning(
+                "Sensore nativo perso (%s): stimo il consumo fino al prossimo avvio", exc
+            )
+            close = getattr(self.backend, "close", None)
+            if callable(close):
+                close()
+            self.backend = get_fallback_backend(self.db)
+            return self.backend.read()
+
     def tick(self) -> dict:
-        reading = self.backend.read()
+        reading = self._read_sensor()
         delta_wh = self.integrator.add_reading(reading)
         power_state: PowerSourceState = self._read_power_source()
         now = reading.timestamp

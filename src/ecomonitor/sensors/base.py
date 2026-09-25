@@ -54,6 +54,10 @@ class SensorUnavailableError(RuntimeError):
     pass
 
 
+class SensorLostError(SensorUnavailableError):
+    pass
+
+
 class SensorBackend(Protocol):
     mode: MeasurementMode
     #Un backend implementa read()  viene chiamato a ogni tick di polling

@@ -55,7 +55,8 @@ echo "EcoMonitor — disinstallazione"
 echo
 
 #un'applicazione viva continuerebbe a scrivere su file gia' cancellati
-running_pids() { pgrep -f "^${EXECUTABLE}$" 2>/dev/null || true; }
+#( |$): l'avvio automatico nascosto la lancia con --background
+running_pids() { pgrep -f "^${EXECUTABLE}( |$)" 2>/dev/null || true; }
 pids="$(running_pids)"
 if [[ -n ${pids} ]]; then
     report "chiudo l'applicazione in esecuzione"

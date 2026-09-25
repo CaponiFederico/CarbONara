@@ -79,6 +79,12 @@ def get_backend(db=None) -> SensorBackend:
     except SensorUnavailableError as exc:
         logger.warning("Backend nativo (%s) non disponibile: %s", system, exc)
 
+    return get_fallback_backend(db)
+
+
+def get_fallback_backend(db=None) -> SensorBackend:
+    system = platform.system()
+
     if system == "Windows":
         #Senza privilegi la GPU si legge lo stesso
         try:

@@ -18,6 +18,7 @@ from xml.parsers.expat import ExpatError
 from ecomonitor.sensors.base import (
     NATIVE_MODE,
     PowerReading,
+    SensorLostError,
     SensorUnavailableError,
     now_utc,
     sample_cpu_percent,
@@ -44,6 +45,8 @@ PERMISSIONS_SCRIPT = "install_powermetrics_permissions.sh"
 
 STARTUP_TIMEOUT_SECONDS = 8.0
 STALE_AFTER_SECONDS = 5.0
+#riavvi di fila senza un campione prima di arrendersi al ripiego
+MAX_RESTARTS_WITHOUT_SAMPLE = 3
 
 MAX_BUFFER_BYTES = 1_000_000
 MAX_PLAUSIBLE_W = 1000.0
@@ -275,6 +278,7 @@ class MacosPowermetricsBackend:
         self._first_event = threading.Event()
         self._process: Any = None
         self._finalizer: weakref.finalize | None = None
+        self._restarts_without_sample = 0
 
         self._start()
         self._first_event.wait(startup_timeout)
@@ -389,6 +393,8 @@ class MacosPowermetricsBackend:
         average = self._accumulator.take()
         if average is None:
             average = self._recent_sample_or_raise()
+        else:
+            self._restarts_without_sample = 0
 
         return PowerReading(
             #il SoC meno la GPU: CPU e Neural Engine stanno sullo stesso package
@@ -407,6 +413,12 @@ class MacosPowermetricsBackend:
         process = self._process
         if process is None or process.poll() is not None:
             reason = self._failure_reason(timeout=0)
+            if self._restarts_without_sample >= MAX_RESTARTS_WITHOUT_SAMPLE:
+                self.close()
+                raise SensorLostError(
+                    f"{reason}; {self._restarts_without_sample} riavvi di fila senza campioni"
+                )
+            self._restarts_without_sample += 1
             self._restart()
             raise SensorUnavailableError(f"{reason}; riavviato, la misura riprende al prossimo tick")
 
