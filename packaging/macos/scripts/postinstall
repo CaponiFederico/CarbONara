@@ -28,7 +28,7 @@ relaunch() {
 }
 trap relaunch EXIT
 
-#La regola vale per un utente
+#La regola si aggiunge per chi installa: chi l'aveva gia' la conserva
 TARGET_USER="${USER:-}"
 if [ -z "${TARGET_USER}" ] || [ "${TARGET_USER}" = root ]; then
     TARGET_USER="$(stat -f %Su /dev/console 2>/dev/null || true)"

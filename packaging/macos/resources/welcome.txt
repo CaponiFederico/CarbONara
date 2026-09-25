@@ -11,4 +11,5 @@ non fallisce, ma stima il consumo invece di misurarlo, e dai numeri non si
 vede la differenza.
 
 L'autorizzazione concede una sola riga di comando, argomenti compresi, e solo
-all'utente che sta installando. Si puo' togliere in qualunque momento.
+all'utente che sta installando; chi l'aveva gia' da un'installazione precedente
+la conserva. Si puo' togliere in qualunque momento.

@@ -5,9 +5,11 @@ riportare "misura nativa". Se dice che sta stimando, l'autorizzazione non e'
 andata a buon fine: il dettaglio e' in /var/log/install.log, e il consiglio
 mostrato dall'app stessa indica il comando per rimediare.
 
-Per togliere l'autorizzazione senza disinstallare l'app:
+Per togliere l'autorizzazione senza disinstallare l'app, a tutti gli account:
 
   sudo bash "/Applications/EcoMonitor.app/Contents/Resources/install_powermetrics_permissions.sh" --uninstall
+
+Solo a uno, aggiungendo in fondo:  --user NOME
 
 Per disinstallare del tutto, in Applicazioni c'e' accanto all'app:
 
