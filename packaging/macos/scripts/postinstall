@@ -7,6 +7,26 @@ set -u
 APP="${2:-/Applications}/EcoMonitor.app"
 [ -d "${APP}" ] || APP="${3:-}/Applications/EcoMonitor.app"
 PERMISSIONS_SCRIPT="${APP}/Contents/Resources/install_powermetrics_permissions.sh"
+#scritto da preinstall
+RELAUNCH_LIST=/private/var/run/io.github.caponifederico.ecomonitor.relaunch
+
+#preinstall ha chiuso l'app
+relaunch() {
+    [ -f "${RELAUNCH_LIST}" ] || return 0
+    local uid mode name
+    while read -r uid mode; do
+        name="$(id -un "${uid}" 2>/dev/null)" || continue
+        #senza Dock quell'utente non ha piu' una sessione grafica aperta
+        pgrep -u "${uid}" -x Dock >/dev/null 2>&1 || continue
+        if [ "${mode}" = background ]; then
+            launchctl asuser "${uid}" sudo -u "${name}" open -a "${APP}" --args --background
+        else
+            launchctl asuser "${uid}" sudo -u "${name}" open -a "${APP}"
+        fi && echo "EcoMonitor: riaperta per ${name}"
+    done < <(sort -u "${RELAUNCH_LIST}")
+    rm -f "${RELAUNCH_LIST}"
+}
+trap relaunch EXIT
 
 #La regola vale per un utente
 TARGET_USER="${USER:-}"

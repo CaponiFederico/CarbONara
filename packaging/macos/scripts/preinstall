@@ -7,13 +7,29 @@ set -u
 
 APP_EXECUTABLE="/Applications/EcoMonitor.app/Contents/MacOS/EcoMonitor"
 
+RELAUNCH_LIST=/private/var/run/io.github.caponifederico.ecomonitor.relaunch
+
 running_pids() {
     #( |$): l'avvio automatico nascosto la lancia con --background
     pgrep -f "^${APP_EXECUTABLE}( |$)" 2>/dev/null || true
 }
 
+#un elenco rimasto da un'installazione interrotta non deve riaprire niente
+rm -f "${RELAUNCH_LIST}"
+
 pids="$(running_pids)"
 if [ -n "${pids}" ]; then
+    (
+        umask 077
+        for pid in ${pids}; do
+            uid="$(ps -o uid= -p "${pid}" 2>/dev/null | tr -d ' ')"
+            [ -n "${uid}" ] || continue
+            case " $(ps -o command= -p "${pid}" 2>/dev/null) " in
+            *" --background "*) echo "${uid} background" ;;
+            *) echo "${uid} normal" ;;
+            esac
+        done >"${RELAUNCH_LIST}"
+    )
     echo "EcoMonitor: chiusura dell'app in esecuzione (${pids})"
     # shellcheck disable=SC2086
     kill -TERM ${pids} 2>/dev/null || true
