@@ -20,7 +20,7 @@ gui = [
     "PySide6>=6.6",
 ]
 windows = [
-    "HardwareMonitor>=1.2",
+    "HardwareMonitor>=1.2.1,<1.3",
 ]
 packaging = [
     #serve su tutti i sistemi: lo stesso spec costruisce Windows, Linux e macOS

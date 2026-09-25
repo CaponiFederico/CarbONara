@@ -86,7 +86,8 @@ _FIELD_HELP = {
     ),
     "measurement": (
         "Che cosa l'app sta misurando davvero e che cosa sta stimando. "
-        "I sensori della CPU richiedono privilegi di amministratore: senza, il "
+        "I sensori della CPU richiedono privilegi di amministratore e, su "
+        "Windows, il driver PawnIO: senza, il "
         "consumo del processore viene stimato, e la stima diventa molto più "
         "precisa dopo che l'app ha potuto misurare almeno una volta."
     ),

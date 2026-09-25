@@ -80,6 +80,22 @@ def cmd_env(args: argparse.Namespace) -> None:
     else:
         print(f"{INFO} privilegi elevati: non determinabile")
 
+    if platform.system() == "Windows":
+        #da LibreHardwareMonitor 0.9.5 la CPU si legge solo col driver PawnIO
+        from ecomonitor.sensors.windows_lhm import pawnio_installed
+
+        pawnio = pawnio_installed()
+        if pawnio is True:
+            _line(OK, "driver PawnIO: installato")
+        elif pawnio is False:
+            _line(
+                WARN,
+                "driver PawnIO: assente - la CPU restera' stimata anche da "
+                "amministratore (installarlo da pawnio.eu o dall'installer)",
+            )
+        else:
+            print(f"{INFO} driver PawnIO: non determinabile")
+
     power = read_power_source_state()
     if power.battery_percent is None:
         _line(INFO, "batteria: assente -> scenario DESKTOP (attribuzione sempre da rete)")

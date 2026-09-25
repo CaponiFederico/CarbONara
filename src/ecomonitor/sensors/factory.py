@@ -29,7 +29,31 @@ def _tagged(backend: SensorBackend, mode: MeasurementMode) -> SensorBackend:
     return backend
 
 
+_INSTALL_PAWNIO = (
+    "Manca il driver PawnIO, che serve a leggere la CPU: installalo "
+    "(l'installer di EcoMonitor lo propone, oppure da pawnio.eu), poi avvia l'app "
+    "come amministratore."
+)
+_CPU_UNSUPPORTED = (
+    "Questa CPU non espone la propria potenza a LibreHardwareMonitor: il consumo "
+    "del processore resta stimato."
+)
+
+
+def _windows_advice(calibrated: bool) -> str:
+    from ecomonitor.autostart import is_elevated
+    from ecomonitor.sensors.windows_lhm import pawnio_installed
+
+    if pawnio_installed() is False:
+        return _INSTALL_PAWNIO
+    if is_elevated():
+        return _CPU_UNSUPPORTED
+    return _ELEVATE if calibrated else _ELEVATE_ONCE
+
+
 def _advice_for(system: str | None, calibrated: bool) -> str:
+    if system == "Windows":
+        return _windows_advice(calibrated)
     if system != "Darwin":
         return _ELEVATE if calibrated else _ELEVATE_ONCE
     #su macOS si autorizza powermetrics
@@ -95,11 +119,11 @@ def get_fallback_backend(db=None) -> SensorBackend:
             )
             backend = _tagged(
                 WindowsPartialLhmBackend(cpu_calibration=cpu_calibration),
-                _mode_for("partial", cpu_calibration),
+                _mode_for("partial", cpu_calibration, system),
             )
             logger.warning(
-                "CPU non leggibile senza privilegi: uso la GPU misurata e stimo la CPU (%s). "
-                "Per una misura completa serve un processo elevato",
+                "CPU non leggibile: uso la GPU misurata e stimo la CPU (%s). "
+                "Per una misura completa servono un processo elevato e il driver PawnIO",
                 cpu_calibration.describe() if cpu_calibration else "TDP generico",
             )
             return backend

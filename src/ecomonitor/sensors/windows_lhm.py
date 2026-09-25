@@ -1,10 +1,12 @@
 import re
+import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 
 from ecomonitor.sensors.base import (
     NATIVE_MODE,
     PowerReading,
+    SensorLostError,
     SensorUnavailableError,
     now_utc,
     sample_cpu_percent,
@@ -15,6 +17,28 @@ from ecomonitor.sensors.fallback_model import DEFAULT_TDP_W
 #Backend Windows via il pacchetto HardwareMonitor (PyPI), che include gia' la
 #DLL di LibreHardwareMonitor e il wrapper pythonnet
 #  Richiede .NET 4.7+.
+
+#Da LibreHardwareMonitor 0.9.5 i registri della CPU si leggono col driver
+#PawnIO
+
+PAWNIO_SERVICE_KEY = r"SYSTEM\CurrentControlSet\Services\PawnIO"
+
+LOST_AFTER_FAILED_READS = 3
+
+
+def pawnio_installed() -> bool | None:
+    if sys.platform == "win32":
+        import winreg
+
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, PAWNIO_SERVICE_KEY):
+                return True
+        except FileNotFoundError:
+            return False
+        except OSError:
+            return None
+    else:
+        return None
 
 
 #Nomi osservati per le GPU integrate: la libreria non distingue integrata e
@@ -39,6 +63,24 @@ def _is_integrated_gpu_name(hardware_name: str) -> bool:
     if any(hint in name for hint in _INTEGRATED_GPU_NAME_HINTS):
         return True
     return any(pattern.search(name) for pattern in _INTEGRATED_GPU_NAME_PATTERNS)
+
+
+#Il totale della scheda
+_GPU_TOTAL_SENSORS = ("GPU Total", "GPU Package", "12VHPWR Connector", "GPU PPT")
+
+
+def _gpu_power(sensors: Iterable, sensor_type) -> float:
+    powers = [
+        (sensor.Name, float(sensor.Value))
+        for sensor in sensors
+        if sensor.SensorType == sensor_type.Power and sensor.Value is not None
+    ]
+    #un totale a zero e' un sensore non supportato, non una scheda spenta
+    for total_name in _GPU_TOTAL_SENSORS:
+        totals = [value for name, value in powers if name == total_name and value > 0.0]
+        if totals:
+            return sum(totals)
+    return sum(value for _, value in powers)
 
 
 @dataclass
@@ -83,11 +125,7 @@ def _classify_hardware(hardware_iterable: Iterable, hardware_type, sensor_type) 
             hardware_type.GpuAmd,
             hardware_type.GpuIntel,
         ):
-            gpu_power = sum(
-                float(sensor.Value)
-                for sensor in hardware.Sensors
-                if sensor.SensorType == sensor_type.Power and sensor.Value is not None
-            )
+            gpu_power = _gpu_power(hardware.Sensors, sensor_type)
             if gpu_power == 0.0:
                 continue
 
@@ -142,12 +180,13 @@ class WindowsLhmBackend:
     mode = NATIVE_MODE
     def __init__(self) -> None:
         self._computer, self._HardwareType, self._SensorType = _open_lhm()
+        self._failed_reads = 0
 
         if not self._has_cpu_package_sensor():
             self._computer.Close()
             raise SensorUnavailableError(
-                "Nessun sensore 'CPU Package' trovato — CPU non supportata o "
-                "privilegi insufficienti per leggere gli MSR"
+                "Nessun sensore 'CPU Package' trovato — privilegi insufficienti, "
+                "driver PawnIO assente o CPU non supportata"
             )
 
     def _has_cpu_package_sensor(self) -> bool:
@@ -175,10 +214,18 @@ class WindowsLhmBackend:
         result = _classify_hardware(self._computer.Hardware, self._HardwareType, self._SensorType)
 
         if not result.found_package:
+            self._failed_reads += 1
+            if self._failed_reads >= LOST_AFTER_FAILED_READS:
+                #senza cambio di backend ogni tick fallirebbe per sempre
+                raise SensorLostError(
+                    f"'CPU Package' vuoto per {self._failed_reads} letture di fila "
+                    "(driver PawnIO fermato o permessi persi)"
+                )
             raise SensorUnavailableError(
                 "Il sensore 'CPU Package' non ha restituito un valore in questo tick "
                 "(hardware non supportato o permessi persi a runtime)"
             )
+        self._failed_reads = 0
 
         return PowerReading(
             package_w=result.package_w,

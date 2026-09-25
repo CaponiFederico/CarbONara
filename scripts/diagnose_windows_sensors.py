@@ -3,11 +3,27 @@
 #
 # Da eseguire in un terminale da amministratore con pip install -e ".[windows]":
 #     python scripts/diagnose_windows_sensors.py
+import ctypes
+
 from HardwareMonitor.Hardware import HardwareType
 from HardwareMonitor.Util import OpenComputer
 
+from ecomonitor.sensors.windows_lhm import pawnio_installed
+
+
+def print_prerequisites() -> None:
+    elevated = bool(ctypes.windll.shell32.IsUserAnAdmin())
+    print(f"processo elevato: {'si' if elevated else 'NO - CPU Package restera vuoto'}")
+    pawnio = pawnio_installed()
+    if pawnio is None:
+        print("driver PawnIO: non determinabile")
+    else:
+        print(f"driver PawnIO: {'installato' if pawnio else 'ASSENTE - CPU Package restera vuoto'}")
+    print()
+
 
 def main() -> None:
+    print_prerequisites()
     computer = OpenComputer(cpu=True, gpu=True, memory=True, motherboard=True)
     try:
         for hardware in computer.Hardware:
