@@ -81,8 +81,7 @@ def run_session(name: str, order: tuple[float, ...], args: argparse.Namespace,
         cwd=ROOT,
     )
     recorder = subprocess.Popen(
-        [sys.executable, str(Path(__file__).with_name("read_plug.py")),
-         "--keys", args.keys, "--id", args.id,
+        [sys.executable, *recorder_arguments(args),
          "--minutes", str(total), "--output", str(plug_csv)],
         cwd=ROOT,
     )
@@ -112,6 +111,15 @@ def run_session(name: str, order: tuple[float, ...], args: argparse.Namespace,
     return {"db": database, "plug": plug_csv}
 
 
+def recorder_arguments(args: argparse.Namespace) -> list[str]:
+    #lo script che registra la presa, con le sole opzioni che la identificano
+    if args.plug == "sem6000":
+        return [str(Path(__file__).with_name("read_sem6000.py")),
+                "--address", args.address, "--pin", args.pin]
+    return [str(Path(__file__).with_name("read_plug.py")),
+            "--keys", args.keys, "--id", args.id]
+
+
 def compare(name: str, files: dict[str, Path], output_dir: str) -> None:
     pairs = Path(output_dir) / f"{name}_pairs.csv"
     subprocess.run(
@@ -128,8 +136,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Esegue l'intera campagna di validazione senza interazione"
     )
-    parser.add_argument("--keys", default="measurements/keys.json", help="JSON id->devicekey")
-    parser.add_argument("--id", required=True, help="id del dispositivo da registrare")
+    parser.add_argument("--plug", choices=("sonoff", "sem6000"), default="sonoff",
+                        help="quale presa registra la potenza")
+    parser.add_argument("--keys", default="measurements/keys.json",
+                        help="sonoff: JSON id->devicekey")
+    parser.add_argument("--id", default=None, help="sonoff: id del dispositivo da registrare")
+    parser.add_argument("--address", default=None, help="sem6000: indirizzo Bluetooth")
+    parser.add_argument("--pin", default="0000", help="sem6000: PIN della presa")
     parser.add_argument("--sessions", type=int, default=3, help="quante ripetizioni")
     parser.add_argument("--step-minutes", type=float, default=10.0)
     parser.add_argument("--rest-minutes", type=float, default=10.0)
@@ -146,8 +159,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.sessions < 1:
         parser.error("--sessions deve essere almeno 1")
-    if not Path(args.keys).exists():
-        parser.error(f"{args.keys} non esiste: eseguire prima device_key.py")
+    if args.plug == "sem6000":
+        if not args.address:
+            parser.error("con --plug sem6000 serve --address (read_sem6000.py --list)")
+    else:
+        if not args.id:
+            parser.error("con --plug sonoff serve --id")
+        if not Path(args.keys).exists():
+            parser.error(f"{args.keys} non esiste: eseguire prima device_key.py")
 
     elevated = is_elevated()
     if elevated is False and not args.skip_elevation_check:
