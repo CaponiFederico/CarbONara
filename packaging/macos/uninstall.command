@@ -99,9 +99,46 @@ case "${answer}" in
 esac
 echo
 
+forget_in_dock() {
+    local name="$1" uid="$2" plist array count index identifier removed=0
+    pgrep -u "${uid}" -x Dock >/dev/null 2>&1 || return 0
+    plist="$(mktemp)" || return 0
+    if ! launchctl asuser "${uid}" sudo -u "${name}" defaults export com.apple.dock - \
+        >"${plist}" 2>/dev/null; then
+        rm -f "${plist}"
+        return 0
+    fi
+    for array in recent-apps persistent-apps; do
+        count="$(plutil -extract "${array}" raw -o - "${plist}" 2>/dev/null)" || continue
+        [[ ${count} =~ ^[0-9]+$ ]] || continue
+        for ((index = count - 1; index >= 0; index--)); do
+            identifier="$(plutil -extract "${array}.${index}.tile-data.bundle-identifier" raw \
+                -o - "${plist}" 2>/dev/null)" || continue
+            if [[ ${identifier} == "${RECEIPT}" ]]; then
+                plutil -remove "${array}.${index}" "${plist}" && removed=$((removed + 1))
+            fi
+        done
+    done
+    if [[ ${removed} -gt 0 ]] &&
+        launchctl asuser "${uid}" sudo -u "${name}" defaults import com.apple.dock - \
+            <"${plist}" 2>/dev/null; then
+        #launchd rilancia il Dock
+        pkill -u "${uid}" -x Dock 2>/dev/null
+        report "${name}: tolta l'icona dal Dock"
+    fi
+    rm -f "${plist}"
+}
+
 remove_user_files() {
     local home="$1" name="$2"
     [[ -d ${home} ]] || return 0
+    local uid
+    uid="$(id -u "${name}" 2>/dev/null)" || uid=""
+    if [[ -n ${uid} ]] && launchctl bootout "gui/${uid}/${RECEIPT}" >/dev/null 2>&1; then
+        #altrimenti resta caricato
+        report "${name}: avvio automatico scaricato da launchd"
+    fi
+    [[ -n ${uid} ]] && forget_in_dock "${name}" "${uid}"
     if [[ -f ${home}/${AGENT_RELATIVE} ]]; then
         rm -f "${home}/${AGENT_RELATIVE}" && report "${name}: rimosso l'avvio automatico"
     fi
