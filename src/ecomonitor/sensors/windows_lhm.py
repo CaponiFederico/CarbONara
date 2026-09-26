@@ -53,7 +53,8 @@ _INTEGRATED_GPU_NAME_HINTS = (
 _INTEGRATED_GPU_NAME_PATTERNS = (
     #"AMD Radeon(TM) Graphics"
     re.compile(r"radeon(\(tm\))?\s+graphics"),
-    re.compile(r"radeon\s+\d{3}m\b"),  # modello a tre cifre + M subito dopo "Radeon"
+    #modello subito dopo "Radeon"
+    re.compile(r"radeon(\(tm\))?\s+\d{3,4}[ms]\b"),
     re.compile(r"vega\s+\d+\s+graphics"),  # "Vega 8 Graphics", "Vega 11 Graphics"
 )
 
@@ -63,6 +64,31 @@ def _is_integrated_gpu_name(hardware_name: str) -> bool:
     if any(hint in name for hint in _INTEGRATED_GPU_NAME_HINTS):
         return True
     return any(pattern.search(name) for pattern in _INTEGRATED_GPU_NAME_PATTERNS)
+
+_INTEL_INTEGRATED_CLASS = "IntelIntegratedGpu"
+_INTEL_DISCRETE_CLASS = "IntelDiscreteGpu"
+
+
+def _net_class_name(hardware) -> str | None:
+    get_type = getattr(hardware, "GetType", None)
+    if get_type is None:
+        return None
+    try:
+        return str(get_type().Name)
+    except Exception:
+        return None
+
+
+def _is_integrated_gpu(hardware, hardware_type) -> bool:
+    #NVIDIAsempre dedicata
+    if hardware.HardwareType == hardware_type.GpuNvidia:
+        return False
+    class_name = _net_class_name(hardware)
+    if class_name == _INTEL_INTEGRATED_CLASS:
+        return True
+    if class_name == _INTEL_DISCRETE_CLASS:
+        return False
+    return _is_integrated_gpu_name(hardware.Name)
 
 
 #Il totale della scheda
@@ -129,11 +155,7 @@ def _classify_hardware(hardware_iterable: Iterable, hardware_type, sensor_type) 
             if gpu_power == 0.0:
                 continue
 
-            #NVIDIA non produce grafica integrata in CPU: e' sempre dedicata
-            is_integrated = hardware.HardwareType != hardware_type.GpuNvidia and (
-                _is_integrated_gpu_name(hardware.Name)
-            )
-            if is_integrated:
+            if _is_integrated_gpu(hardware, hardware_type):
                 if hardware.HardwareType == hardware_type.GpuAmd:
                     continue
 
