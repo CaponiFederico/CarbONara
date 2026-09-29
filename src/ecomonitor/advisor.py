@@ -1,3 +1,4 @@
+from collections import deque
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -312,12 +313,11 @@ class RollingAverage:
     def __init__(self, window_size: int = 288, min_samples: int = 12) -> None:
         self.window_size = window_size  # 288 campioni = 24 h a uno ogni 5 minuti
         self.min_samples = min_samples  # 12 campioni = un'ora di campionamento
-        self._samples: list[float] = []
+        #il piu' vecchio esce da solo quando la finestra e' piena
+        self._samples: deque[float] = deque(maxlen=window_size)
 
     def add(self, value: float) -> None:
         self._samples.append(value)
-        if len(self._samples) > self.window_size:
-            self._samples.pop(0)
 
     @property
     def sample_count(self) -> int:

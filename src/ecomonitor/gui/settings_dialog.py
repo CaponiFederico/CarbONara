@@ -143,8 +143,12 @@ class SettingsDialog(QDialog):
 
         self.autostart_check = QCheckBox("Avvia EcoMonitor all'accesso")
         self._autostart_supported = autostart.is_supported()
+        #letti una volta: su Windows ognuno e' un processo schtasks sul thread
+        #della finestra, e al Save si confronta con questi invece di rileggerli
+        self._autostart_enabled = self._autostart_supported and autostart.is_enabled()
+        self._autostart_hidden = self._autostart_supported and autostart.starts_hidden()
         if self._autostart_supported:
-            self.autostart_check.setChecked(autostart.is_enabled())
+            self.autostart_check.setChecked(self._autostart_enabled)
             self.autostart_check.setToolTip(
                 "Avvio con i sensori hardware leggibili"
             )
@@ -156,7 +160,7 @@ class SettingsDialog(QDialog):
 
         self.hidden_start_check = QCheckBox("Parti in secondo piano, senza aprire la finestra")
         if self._autostart_supported:
-            self.hidden_start_check.setChecked(autostart.starts_hidden())
+            self.hidden_start_check.setChecked(self._autostart_hidden)
             #senza avvio automatico non c'e' niente da far partire nascosto
             self.hidden_start_check.setEnabled(self.autostart_check.isChecked())
             self.autostart_check.toggled.connect(self.hidden_start_check.setEnabled)
@@ -264,7 +268,7 @@ class SettingsDialog(QDialog):
             return True
         wanted = self.autostart_check.isChecked()
         wanted_hidden = wanted and self.hidden_start_check.isChecked()
-        if wanted == autostart.is_enabled() and wanted_hidden == autostart.starts_hidden():
+        if wanted == self._autostart_enabled and wanted_hidden == self._autostart_hidden:
             return True
         try:
             self._run_without_freezing(
@@ -272,9 +276,13 @@ class SettingsDialog(QDialog):
             )
         except autostart.AutostartError as exc:
             QMessageBox.warning(self, "Avvio automatico non modificato", str(exc))
-            self.autostart_check.setChecked(autostart.is_enabled())
-            self.hidden_start_check.setChecked(autostart.starts_hidden())
+            #qui si rilegge: la voce puo' essere rimasta a meta'
+            self._autostart_enabled = autostart.is_enabled()
+            self._autostart_hidden = autostart.starts_hidden()
+            self.autostart_check.setChecked(self._autostart_enabled)
+            self.hidden_start_check.setChecked(self._autostart_hidden)
             return False
+        self._autostart_enabled, self._autostart_hidden = wanted, wanted_hidden
         return True
 
     def _run_without_freezing(self, work: Callable[[], None]) -> None:
@@ -357,6 +365,17 @@ class SettingsDialog(QDialog):
 
     def accept(self) -> None:
         country = normalize_country(self.country_edit.text()) or self._saved_country
+        if country != self._saved_country and country not in COUNTRY_ZONES:
+            #senza cartina non si sceglie la zona: resterebbe quella di prima,
+            #e paese nuovo con zona vecchia misurerebbero la rete sbagliata
+            QMessageBox.information(
+                self,
+                "Paese senza cartina",
+                f"Per «{country}» non c'è la cartina delle zone, quindi non si può "
+                "scegliere una zona di quel paese. Scrivi il codice di un paese europeo "
+                f"oppure lascia {self._saved_country}.",
+            )
+            return
         if (
             country != self._saved_country
             and country in COUNTRY_ZONES

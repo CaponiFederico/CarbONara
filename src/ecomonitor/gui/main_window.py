@@ -21,13 +21,15 @@ from PySide6.QtWidgets import (
 from ecomonitor.gui import macos_dock
 from ecomonitor.gui.history_page import HistoryPage
 from ecomonitor.gui.icon import app_icon
-from ecomonitor.gui.labels import SOURCE_LABELS, grid_source_detail
 from ecomonitor.gui.settings_dialog import SettingsDialog
 from ecomonitor.gui.theme import LIGHT, Theme, build_stylesheet
+from ecomonitor.labels import SOURCE_LABELS, grid_source_detail
 from ecomonitor.reporting import (
     G_CO2_PER_EMAIL,
     WH_PER_PHONE_CHARGE,
     format_email_count,
+    format_energy,
+    format_gco2,
     format_phone_charges,
 )
 
@@ -82,7 +84,8 @@ _FIELD_HELP = {
     ),
     "settings": (
         "Zona elettrica, chiave di accesso ai dati in tempo reale e modello di "
-        "attribuzione. Le modifiche valgono dal prossimo avvio."
+        "attribuzione. Paese, zona e chiave valgono subito, il resto dal "
+        "prossimo avvio."
     ),
     "measurement": (
         "Che cosa l'app sta misurando davvero e che cosa sta stimando. "
@@ -94,6 +97,13 @@ _FIELD_HELP = {
     "measurement_macos": (
         "Che cosa l'app sta misurando davvero e che cosa sta stimando. "
         "I sensori della CPU richiedono che powermetrics sia autorizzato"
+    ),
+    "measurement_linux": (
+        "Che cosa l'app sta misurando davvero e che cosa sta stimando. "
+        "I contatori della CPU (RAPL) vanno resi leggibili una volta con la regola "
+        "udev, che i pacchetti .deb e .rpm installano da soli: senza, il consumo del "
+        "processore viene stimato, e la stima diventa molto più precisa dopo che "
+        "l'app ha potuto misurare almeno una volta."
     ),
     "history": (
         "I totali di oggi, degli ultimi 7 giorni e degli ultimi 30 giorni, con il "
@@ -118,7 +128,8 @@ _LONGEST_ADVICE = (
 _ADVICE_SIDE_MARGINS = 64
 
 def measurement_help(system: str) -> str:
-    return _FIELD_HELP["measurement_macos" if system == "Darwin" else "measurement"]
+    key = {"Darwin": "measurement_macos", "Linux": "measurement_linux"}.get(system, "measurement")
+    return _FIELD_HELP[key]
 
 def _format_age(seconds: float) -> str:
     #testo dell'ultimo aggiornamento nella barra di stato
@@ -127,6 +138,14 @@ def _format_age(seconds: float) -> str:
     if seconds < 90:
         return f"aggiornato {seconds:.0f} s fa"
     return f"aggiornato {seconds / 60:.0f} min fa"
+
+
+def _set_value_and_unit(value: QLabel, unit: QLabel | None, formatted: str) -> None:
+    #"12.3 Wh" -> numero nella cifra grande, unita' accanto in piccolo
+    number, _, suffix = formatted.rpartition(" ")
+    value.setText(number)
+    if unit is not None:
+        unit.setText(suffix)
 
 
 def _set_state(widget: QWidget, state: str) -> None:
@@ -245,7 +264,9 @@ class MainWindow(QMainWindow):
         hero.addWidget(self.power_caption)
         return hero
 
-    def _build_card(self, caption: str, unit: str, help_text: str) -> tuple[QFrame, QLabel]:
+    def _build_card(
+        self, caption: str, unit: str, help_text: str
+    ) -> tuple[QFrame, QLabel, QLabel | None]:
         card = QFrame()
         card.setObjectName("metricCard")
         card_layout = QVBoxLayout(card)
@@ -264,6 +285,7 @@ class MainWindow(QMainWindow):
         value_row.addWidget(value, 0, Qt.AlignmentFlag.AlignBottom)
 
         described = [card, label, value]
+        unit_label: QLabel | None = None
         #unit vuoto per le grandezze che non hanno senso in unità fisiche
         if unit:
             unit_label = QLabel(unit)
@@ -277,22 +299,22 @@ class MainWindow(QMainWindow):
 
         for widget in described:
             self._describe(widget, help_text)
-        return card, value
+        return card, value, unit_label
 
     def _build_cards(self) -> QGridLayout:
         grid = QGridLayout()
         grid.setSpacing(10)
 
-        energy_card, self.energy_label = self._build_card(
+        energy_card, self.energy_label, self.energy_unit_label = self._build_card(
             "energia oggi", "Wh", _FIELD_HELP["energy"]
         )
-        charges_card, self.phone_charges_label = self._build_card(
+        charges_card, self.phone_charges_label, _ = self._build_card(
             "ricariche di smartphone", "", _FIELD_HELP["phone_charges"]
         )
-        gco2_card, self.operational_gco2_label = self._build_card(
+        gco2_card, self.operational_gco2_label, self.gco2_unit_label = self._build_card(
             "CO2eq oggi", "g", _FIELD_HELP["operational_gco2"]
         )
-        emails_card, self.emails_label = self._build_card(
+        emails_card, self.emails_label, _ = self._build_card(
             "mail inviate", "", _FIELD_HELP["emails"]
         )
 
@@ -507,8 +529,10 @@ class MainWindow(QMainWindow):
             _set_state(self.power_badge, "battery")
 
     def update_daily_totals(self, energy_wh: float, operational_gco2: float) -> None:
-        self.energy_label.setText(f"{energy_wh:.1f}")
-        self.operational_gco2_label.setText(f"{operational_gco2:.1f}")
+        _set_value_and_unit(self.energy_label, self.energy_unit_label, format_energy(energy_wh))
+        _set_value_and_unit(
+            self.operational_gco2_label, self.gco2_unit_label, format_gco2(operational_gco2)
+        )
         #dall'energia e non dai grammi: l'equivalenza non deve muoversi quando
         #si muove l'intensita' della rete
         self.phone_charges_label.setText(format_phone_charges(energy_wh / WH_PER_PHONE_CHARGE))

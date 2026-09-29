@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from ecomonitor.sensors.base import (
     NATIVE_MODE,
+    MeasurementMode,
     PowerReading,
     SensorLostError,
     SensorUnavailableError,
@@ -266,7 +267,8 @@ class WindowsLhmBackend:
 
 
 class WindowsPartialLhmBackend:
-    mode = NATIVE_MODE
+    #la factory lo sostituisce con quello che porta il consiglio
+    mode = MeasurementMode(kind="partial", detail="GPU misurata, CPU stimata")
     #GPU dedicata MISURATA, CPU stimata
 
     def __init__(

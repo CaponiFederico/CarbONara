@@ -51,9 +51,32 @@ def _windows_advice(calibrated: bool) -> str:
     return _ELEVATE if calibrated else _ELEVATE_ONCE
 
 
+_NO_RAPL = (
+    "Questa CPU non espone i contatori RAPL: il consumo del processore resta stimato."
+)
+
+
+def _linux_advice(calibrated: bool) -> str:
+    #su Linux il cancello e' la regola udev, non un processo elevato: dire
+    #"avvia come amministratore" manderebbe a lanciare una GUI da root
+    from ecomonitor.sensors.linux_rapl import permissions_command, rapl_counters_present
+
+    if not rapl_counters_present():
+        return _NO_RAPL
+    if calibrated:
+        return f"Rendi leggibili i contatori RAPL per misurare invece di stimare: {permissions_command()}"
+    return (
+        f"Rendi leggibili i contatori RAPL una volta ({permissions_command()}): l'app "
+        "impara il consumo di questa macchina e da allora le stime saranno molto piu' "
+        "vicine al vero."
+    )
+
+
 def _advice_for(system: str | None, calibrated: bool) -> str:
     if system == "Windows":
         return _windows_advice(calibrated)
+    if system == "Linux":
+        return _linux_advice(calibrated)
     if system != "Darwin":
         return _ELEVATE if calibrated else _ELEVATE_ONCE
     #su macOS si autorizza powermetrics

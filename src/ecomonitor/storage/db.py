@@ -863,21 +863,6 @@ class LocalDatabase:
             for row in rows
         ]
 
-    def grid_intensity_window(
-        self,
-        start: datetime,
-        end: datetime,
-        max_gap_seconds: float,
-        zone: str | None = None,
-        max_reconstructed_gap_seconds: float = SECONDS_IN_HOUR,
-    ) -> GridIntensityWindow:
-        #Media pesata sul tempo dei campioni fra start ed end
-        rows = self.grid_intensity_samples_between(start, end, zone)
-        return grid_window_from_samples(
-            rows, end, max_gap_seconds, max_reconstructed_gap_seconds
-        )
-
-
     def recent_grid_intensities(
         self,
         limit: int = 288,

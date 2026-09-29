@@ -24,7 +24,6 @@ from PySide6.QtWidgets import (
 )
 
 from ecomonitor.gui.charts import Bar, BarChart, CompositionBar, Segment
-from ecomonitor.gui.labels import short_source_label
 from ecomonitor.gui.theme import LIGHT, Theme
 from ecomonitor.history import (
     MIN_AVOIDED_ROWS,
@@ -34,6 +33,7 @@ from ecomonitor.history import (
     RangeSummary,
     build_range_summary,
 )
+from ecomonitor.labels import short_source_label
 from ecomonitor.reporting import (
     WH_PER_PHONE_CHARGE,
     format_duration,
@@ -378,12 +378,6 @@ class HistoryPage(QWidget):
         return frame
 
     # -- interazione
-    def set_theme(self, theme: Theme) -> None:
-        self._theme = theme
-        self.profile_chart.set_theme(theme)
-        self.quality_bar.set_theme(theme)
-        self.provenance_bar.set_theme(theme)
-
     def set_refresh_interval(self, seconds: float) -> None:
         #la passa la finestra, presa da db_flush_interval_seconds
         self._refresh_interval_ms = max(1000, int(seconds * 1000))

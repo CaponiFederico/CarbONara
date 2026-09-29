@@ -69,6 +69,12 @@ def cmd_env(args: argparse.Namespace) -> None:
 
         print(f"{INFO} privilegi elevati: non servono - conta la regola sudoers")
         print(f"{INFO} se la misura ripiega: {permissions_command()}")
+    elif platform.system() == "Linux":
+        from ecomonitor.sensors.linux_rapl import permissions_command as rapl_command
+
+        #come su macOS: la misura non chiede root, chiede la regola udev
+        print(f"{INFO} privilegi elevati: non servono - conta la regola udev per RAPL")
+        print(f"{INFO} se la misura ripiega: {rapl_command()}")
     elif elevated is True:
         _line(OK, "privilegi elevati: si (amministratore/root)")
     elif elevated is False:

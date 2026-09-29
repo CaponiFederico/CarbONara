@@ -56,10 +56,6 @@ class BarChart(QWidget):
         #serve al passaggio del mouse
         self.setMouseTracking(True)
 
-    def set_theme(self, theme: Theme) -> None:
-        self._theme = theme
-        self.update()
-
     def set_bars(self, bars: list[Bar], label_every: int = 1) -> None:
         self._bars = bars
         self._label_every = max(1, label_every)
@@ -246,10 +242,6 @@ class CompositionBar(QWidget):
         self._segments: list[Segment] = []
         self.setFixedHeight(self._HEIGHT)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-
-    def set_theme(self, theme: Theme) -> None:
-        self._theme = theme
-        self.update()
 
     def set_segments(self, segments: list[Segment]) -> None:
         self._segments = [segment for segment in segments if segment.value > 0]

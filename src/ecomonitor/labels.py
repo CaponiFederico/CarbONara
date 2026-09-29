@@ -1,5 +1,5 @@
-#Etichette
-#in un modulo perche' le usano sia la finestra principale che di storico
+#Etichette delle provenienze
+
 
 SOURCE_LABELS = {
     "grid_live": "consumo da rete elettrica",
@@ -26,10 +26,6 @@ SHORT_SOURCE_LABELS = {
     "battery_pool_partial": "storico parziale",
     "battery_pool_fallback": "senza storico",
 }
-
-
-def source_label(source: str) -> str:
-    return SOURCE_LABELS.get(source, source)
 
 
 def short_source_label(source: str) -> str:

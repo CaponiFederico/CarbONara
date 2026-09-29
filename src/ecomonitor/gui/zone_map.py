@@ -170,10 +170,6 @@ class ZoneMapWidget(QWidget):
         self.update()
         self.zone_changed.emit(zone)
 
-    def set_theme(self, theme: Theme) -> None:
-        self._theme = theme
-        self.update()
-
     def empty_message(self) -> str:
         if not self._requested_country:
             return "Scrivi il codice di un paese europeo per vedere la sua cartina."

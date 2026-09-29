@@ -16,7 +16,7 @@ DEFAULT_FLUSH_INTERVAL_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
-class EnergySample:
+class EnergyTick:
     #un tick, prima dell'aggregazione
 
     timestamp: datetime
@@ -75,7 +75,7 @@ class EnergyEventBuffer:
     def __init__(self, flush_interval_seconds: float = DEFAULT_FLUSH_INTERVAL_SECONDS) -> None:
         self.flush_interval_seconds = flush_interval_seconds
         self._started_at: datetime | None = None
-        self._last: EnergySample | None = None
+        self._last: EnergyTick | None = None
         self._n = 0
         self._wh = 0.0
         self._gco2 = 0.0
@@ -104,7 +104,7 @@ class EnergyEventBuffer:
 
     # -- accumulo ----------------------------------------------------------
 
-    def add(self, sample: EnergySample) -> BufferedEnergyRow | None:
+    def add(self, sample: EnergyTick) -> BufferedEnergyRow | None:
         #ritorna la riga da scrivere quando la finestra si chiude
         completed: BufferedEnergyRow | None = None
 
@@ -160,7 +160,7 @@ class EnergyEventBuffer:
 
     # -- interni -----------------------------------------------------------
 
-    def _regime_changed(self, sample: EnergySample) -> bool:
+    def _regime_changed(self, sample: EnergyTick) -> bool:
         assert self._last is not None
         return (
             sample.is_plugged != self._last.is_plugged
@@ -177,7 +177,7 @@ class EnergyEventBuffer:
             return 0.0
         return (self._last.timestamp - self._started_at).total_seconds()
 
-    def _accumulate(self, sample: EnergySample) -> None:
+    def _accumulate(self, sample: EnergyTick) -> None:
         if self._n == 0:
             self._started_at = sample.timestamp
         self._n += 1

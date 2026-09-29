@@ -75,10 +75,6 @@ class PowerCalibration:
                 return y0 + (y1 - y0) * (cpu_percent - x0) / (x1 - x0)
         return self.points[-1][1]
 
-    @property
-    def has_slope(self) -> bool:
-        return self.slope_w > 0.0
-
     def describe(self) -> str:
         if self.kind == "curve":
             return (

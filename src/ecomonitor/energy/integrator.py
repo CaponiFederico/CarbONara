@@ -20,11 +20,7 @@ class EnergyIntegrator:
         self.max_interval_seconds = max_interval_seconds
         self.max_plausible_w = max_plausible_w
         self._last_reading: PowerReading | None = None
-        self.cumulative_wh: float = 0.0
         self.skipped_gap_seconds: float = 0.0  # durata scartata dall'ultima chiamata
-        self.skipped_intervals: int = 0
-        self.total_skipped_seconds: float = 0.0
-        self.rejected_readings: int = 0  # letture fuori scala scartate
 
         self.last_interval_seconds: float = 0.0
         #Durata dell'intervallo effettivamente integrato dall'ultima chiamata
@@ -51,12 +47,9 @@ class EnergyIntegrator:
         crosses_gap = previous is not None and delta_seconds > self.max_interval_seconds
         if crosses_gap:
             self.skipped_gap_seconds = delta_seconds
-            self.skipped_intervals += 1
-            self.total_skipped_seconds += delta_seconds
 
         #Lettura fuori scala
         if not self._is_plausible(reading):
-            self.rejected_readings += 1
             self._last_reading = None
             return 0.0
 
@@ -82,7 +75,6 @@ class EnergyIntegrator:
         avg_package_w = (reading.package_w + previous.package_w) / 2.0
         self.last_package_wh = avg_package_w * (delta_seconds / 3600.0)
 
-        self.cumulative_wh += delta_wh
         self.last_interval_seconds = delta_seconds
         self._last_reading = reading
         return delta_wh
@@ -92,13 +84,3 @@ class EnergyIntegrator:
         #del contatore: in entrambi i casi la lettura non e' una misura
         total_w = reading.total_w
         return 0.0 <= total_w <= self.max_plausible_w
-
-    def reset(self) -> None:
-        self._last_reading = None
-        self.cumulative_wh = 0.0
-        self.skipped_gap_seconds = 0.0
-        self.skipped_intervals = 0
-        self.total_skipped_seconds = 0.0
-        self.rejected_readings = 0
-        self.last_interval_seconds = 0.0
-        self.last_package_wh = 0.0

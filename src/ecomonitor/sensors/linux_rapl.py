@@ -1,3 +1,5 @@
+import shlex
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +22,25 @@ from ecomonitor.sensors.linux_gpu import (
 #Servono permessi su /sys/class/powercap/intel-rapl*/energy_uj (root o udev)
 
 RAPL_ROOT = Path("/sys/class/powercap")
+
+PERMISSIONS_SCRIPT = "install_rapl_permissions.sh"
+
+
+def rapl_counters_present() -> bool:
+    try:
+        return any(RAPL_ROOT.glob("intel-rapl:*/energy_uj"))
+    except OSError:
+        return False
+
+
+def permissions_command() -> str:
+    if getattr(sys, "frozen", False):
+        return (
+            f"sudo bash scripts/{PERMISSIONS_SCRIPT}, dalla cartella in cui hai "
+            "estratto il pacchetto"
+        )
+    script = Path(__file__).resolve().parents[3] / "scripts" / PERMISSIONS_SCRIPT
+    return f"sudo bash {shlex.quote(str(script))}"
 
 
 @dataclass

@@ -321,9 +321,26 @@ def _run_elevated(script: Path, arguments: list[str]) -> None:
         )
 
 
+#caratteri che nella chiave Exec obbligano a mettere l'argomento fra virgolette
+_DESKTOP_RESERVED = re.compile(r"[\s\"'\\><~|&;$*?#()`]")
+
+
+def _desktop_exec_argument(argument: str) -> str:
+    #Desktop Entry Specification
+    argument = argument.replace("%", "%%")
+    if not _DESKTOP_RESERVED.search(argument):
+        return argument
+    quoted = re.sub(r'(["`$\\])', r"\\\1", argument).replace("\\", "\\\\")
+    return f'"{quoted}"'
+
+
+def _linux_exec_target() -> str:
+    return _desktop_exec_argument(_target_path())
+
+
 def _linux_entry_text(start_hidden: bool) -> str:
     #X-GNOME-Autostart-enabled
-    command = _target_path()
+    command = _linux_exec_target()
     if start_hidden:
         command += " " + HIDDEN_START_FLAG
     return (
@@ -358,8 +375,8 @@ def _linux_is_enabled() -> bool:
     value = _linux_exec_value()
     if value is None:
         return False
-    #l'argomento si toglie dalla coda 
-    return value.removesuffix(HIDDEN_START_FLAG).strip() == _target_path()
+    #l'argomento si toglie dalla coda
+    return value.removesuffix(HIDDEN_START_FLAG).strip() == _linux_exec_target()
 
 
 def _linux_starts_hidden() -> bool:

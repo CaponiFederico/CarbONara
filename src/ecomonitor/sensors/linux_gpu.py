@@ -10,13 +10,43 @@ from pathlib import Path, PurePosixPath
 #(IntelArcGpuReader). Non verificato su hardware Arc reale
 
 DRM_ROOT = Path("/sys/class/drm")
+PCI_ROOT = Path("/sys/bus/pci/devices")
 _CARD_DIR_PATTERN = re.compile(r"^card\d+$")
 _PCI_BDF_PATTERN = re.compile(r"^[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-9a-fA-F]$")
+
+_NVIDIA_VENDOR = "0x10de"
+#classe PCI 0x03xxxx: controller video (VGA, 3D)
+_DISPLAY_CLASS_PREFIX = "0x03"
+
+
+def _read_sysfs(path: Path) -> str | None:
+    try:
+        return path.read_text().strip()
+    except OSError:
+        return None
+
+
+def nvidia_gpus_all_suspended(pci_root: Path | None = None) -> bool:
+    states = []
+    try:
+        devices = list((pci_root or PCI_ROOT).iterdir())
+    except OSError:
+        return False
+    for device in devices:
+        if _read_sysfs(device / "vendor") != _NVIDIA_VENDOR:
+            continue
+        if not (_read_sysfs(device / "class") or "").startswith(_DISPLAY_CLASS_PREFIX):
+            continue
+        states.append(_read_sysfs(device / "power" / "runtime_status"))
+    return bool(states) and all(state == "suspended" for state in states)
 
 
 def read_nvidia_gpu_power_w() -> float | None:
     #Somma la potenza di tutte le GPU NVIDIA. None se il comando non esiste
-    #(nessun driver) o fallisce
+    #(nessun driver) o fallisce, e se le schede sono sospese: il loro consumo e'
+    #trascurabile, e chiederlo lo farebbe salire
+    if nvidia_gpus_all_suspended():
+        return None
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=power.draw", "--format=csv,noheader,nounits"],

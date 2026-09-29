@@ -156,6 +156,8 @@ class GridHourSlot:
     samples: int
     #quanti campioni della fascia sono letture vive e quanti ricostruiti
     observed_samples: int = 0
+    #i giorni che formano la media: ognuno pesa uguale
+    days: int = 0
 
     @property
     def has_value(self) -> bool:
@@ -169,31 +171,39 @@ class GridHourSlot:
         origin = "osservata" if self.observed_samples else "ricostruita"
         if self.observed_samples and self.observed_samples < self.samples:
             origin = "osservata in parte"
+        days_word = "giorno" if self.days == 1 else "giorni"
         return (
             f"{self.hour:02d}:00 — {self.mean_g_per_kwh:.0f} gCO2/kWh medi "
-            f"su {self.samples} campioni, {origin}"
+            f"su {self.days} {days_word} ({self.samples} campioni), {origin}"
         )
 
 
 def _grid_hour_slots(samples: list[GridSample]) -> tuple[GridHourSlot, ...]:
-    #Media semplice dei campioni della fascia
-    totals: dict[int, list[float]] = {}
+    #Media dei giorni
+    per_day: dict[tuple[date, int], list[float]] = {}
+    counts: dict[int, int] = {}
     observed: dict[int, int] = {}
     for sample in samples:
-        hour = sample.timestamp.astimezone().hour
-        totals.setdefault(hour, []).append(sample.g_per_kwh)
+        local = sample.timestamp.astimezone()
+        per_day.setdefault((local.date(), local.hour), []).append(sample.g_per_kwh)
+        counts[local.hour] = counts.get(local.hour, 0) + 1
         if sample.source == LIVE_SAMPLE_SOURCE:
-            observed[hour] = observed.get(hour, 0) + 1
+            observed[local.hour] = observed.get(local.hour, 0) + 1
+
+    daily_means: dict[int, list[float]] = {}
+    for (_, hour), values in per_day.items():
+        daily_means.setdefault(hour, []).append(sum(values) / len(values))
 
     slots = []
     for hour in range(HOURS_IN_DAY):
-        values = totals.get(hour, [])
+        means = daily_means.get(hour, [])
         slots.append(
             GridHourSlot(
                 hour=hour,
-                mean_g_per_kwh=(sum(values) / len(values)) if values else None,
-                samples=len(values),
+                mean_g_per_kwh=(sum(means) / len(means)) if means else None,
+                samples=counts.get(hour, 0),
                 observed_samples=observed.get(hour, 0),
+                days=len(means),
             )
         )
     return tuple(slots)

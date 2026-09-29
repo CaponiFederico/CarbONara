@@ -25,7 +25,7 @@ from ecomonitor.sensors.base import (
 )
 from ecomonitor.sensors.factory import get_backend, get_fallback_backend
 from ecomonitor.storage.db import LIVE_SAMPLE_SOURCE, LocalDatabase, default_database_path
-from ecomonitor.storage.event_buffer import BufferedEnergyRow, EnergyEventBuffer, EnergySample
+from ecomonitor.storage.event_buffer import BufferedEnergyRow, EnergyEventBuffer, EnergyTick
 
 #legge i sensori e integra W -> Wh, legge lo stato di
 #alimentazione, campiona l'intensita' di rete con la sua cadenza, delega
@@ -474,7 +474,7 @@ class Orchestrator:
         #gli eventi di consumo passano dal buffer, che chiude la riga da solo
         #quando cambia regime o dopo una finestra non osservata
         completed = self.buffer.add(
-            EnergySample(
+            EnergyTick(
                 timestamp=now,
                 wh=delta_wh,
                 gco2=result.gco2,

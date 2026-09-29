@@ -111,9 +111,7 @@ class BatteryCarbonPool:
             else:
                 self._fifo_layers[0] = (layer_percent, layer_intensity)
 
-        #se non ci sono layer, ma stored_percent > 0, la carica residua e' stata
-        #persa
-        self.stored_percent = max(0.0, self.stored_percent - consumed_total)
+        self.stored_percent = sum(percent for percent, _ in self._fifo_layers)
         if consumed_total <= MIN_SIGNIFICANT_DELTA_PERCENT:
             return DischargeOutcome(self.current_intensity_g_per_kwh, requested, 0.0)
         return DischargeOutcome(weighted_sum / consumed_total, requested, consumed_total)

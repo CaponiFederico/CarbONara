@@ -5,50 +5,37 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from ecomonitor.labels import grid_source_detail, short_source_label
 from ecomonitor.orchestrator import Orchestrator
-from ecomonitor.reporting import format_phone_charges
+from ecomonitor.reporting import format_energy, format_gco2, format_phone_charges
 from ecomonitor.storage.db import LocalDatabase, default_database_path
 from ecomonitor.storage.lock import DatabaseLock
 
 #Prototipo da riga di comando
 logger = logging.getLogger(__name__)
 
-#serve a testare il backend e l'orchestrator senza GUI, e a raccogliere dati
-_GRID_SOURCE_LABELS = {
-    "live": "dati live",
-    "local_hour_median": "mediana della fascia oraria",
-    "static_fallback": "media statica",
-}
-
-_GRID_FAILURE_LABELS = {
-    "auth": "chiave rifiutata",
-    "unreachable": "API non raggiungibile",
-}
-
 
 def _intensity_source(result: dict) -> str:
+    #le stesse etichette della finestra, da ecomonitor.labels
     attribution = result["attribution"]
     source = attribution.source.value
+    label = short_source_label(source)
 
     if source == "grid_live":
-        grid_source = result["grid_intensity_source"]
-        grid_label = _GRID_SOURCE_LABELS.get(grid_source, grid_source)
-        failure = result["grid_intensity_failure"]
-        if failure is not None:
-            grid_label += f", {_GRID_FAILURE_LABELS.get(failure, failure)}"
-        return f"da rete ({grid_label})"
-    if source == "battery_pool":
-        return "da storico batteria"
-    if source == "battery_pool_partial":
-        return f"da storico parziale ({attribution.pool_coverage_ratio * 100:.0f}% tracciato)"
-    if source == "battery_pool_fallback":
-        reference_label = (
+        detail = grid_source_detail(
+            result["grid_intensity_source"], result["grid_intensity_failure"]
+        )
+    elif source == "battery_pool_partial":
+        detail = f"{attribution.pool_coverage_ratio * 100:.0f}% tracciato"
+    elif source == "battery_pool_fallback":
+        detail = (
             "media nazionale"
             if result["unknown_origin_source"] == "static_country_mean"
             else "media finestra scoperta"
         )
-        return f"senza storico ({reference_label})"
-    return source
+    else:
+        return label
+    return f"{label} ({detail})"
 
 
 def _format_tick(result: dict) -> str:
@@ -117,10 +104,17 @@ def _run(args: argparse.Namespace, parser: argparse.ArgumentParser, db_path: Pat
     print(f"intervallo      : {interval:g}s — Ctrl+C per uscire\n")
 
     deadline = time.monotonic() + args.minutes * 60 if args.minutes is not None else None
-    ticks = 0
+    ticks = failed = 0
     try:
         while deadline is None or time.monotonic() < deadline:
-            result = orchestrator.tick()
+            try:
+                result = orchestrator.tick()
+            except Exception as exc:
+                #come la GUI
+                failed += 1
+                logger.warning("Tick fallito, si riprova al prossimo intervallo: %s", exc)
+                time.sleep(interval)
+                continue
             ticks += 1
             if not args.quiet:
                 print(_format_tick(result))
@@ -138,8 +132,12 @@ def _run(args: argparse.Namespace, parser: argparse.ArgumentParser, db_path: Pat
         orchestrator.flush()
 
     report = orchestrator.build_daily_report()
-    print(f"\ntick eseguiti   : {ticks}")
-    print(f"oggi            : {report.energy_wh:.2f} Wh, {report.operational_gco2:.2f} gCO2eq")
+    print(f"\ntick eseguiti   : {ticks}" + (f" ({failed} falliti)" if failed else ""))
+    #gli stessi formati di finestra e storico
+    print(
+        f"oggi            : {format_energy(report.energy_wh)}, "
+        f"{format_gco2(report.operational_gco2)} CO2eq"
+    )
     print(f"ore attive      : {report.active_hours:.2f} h")
     charges = format_phone_charges(report.equivalent_phone_charges)
     print(f"equivalente     : {charges} ricariche di smartphone")
