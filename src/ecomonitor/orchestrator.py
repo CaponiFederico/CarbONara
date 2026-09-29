@@ -1,6 +1,6 @@
 import logging
 import random
-from collections.abc import Callable
+from collections import deque
 from datetime import date, datetime, timedelta
 
 from ecomonitor.advisor import AdviceTarget, CarbonAwareAdvisor, ChargeAdvice, RollingAverage
@@ -25,7 +25,7 @@ from ecomonitor.sensors.base import (
 )
 from ecomonitor.sensors.factory import get_backend, get_fallback_backend
 from ecomonitor.storage.db import LIVE_SAMPLE_SOURCE, LocalDatabase, default_database_path
-from ecomonitor.storage.event_buffer import EnergyEventBuffer, EnergySample
+from ecomonitor.storage.event_buffer import BufferedEnergyRow, EnergyEventBuffer, EnergySample
 
 #legge i sensori e integra W -> Wh, legge lo stato di
 #alimentazione, campiona l'intensita' di rete con la sua cadenza, delega
@@ -39,14 +39,6 @@ GRID_SAMPLE_JITTER_RATIO = 0.1
 #senza GUI, senza hardware e senza rete
 
 logger = logging.getLogger(__name__)
-
-
-def _best_effort(action: Callable[[], None], lost: str) -> None:
-    #Usato solo nel salvataggio di chiusura
-    try:
-        action()
-    except Exception:
-        logger.exception("Salvataggio finale non riuscito: %s", lost)
 
 
 def load_rolling_average(db: LocalDatabase, zone: str) -> RollingAverage:
@@ -180,6 +172,8 @@ class Orchestrator:
 
         self._written_wh = 0.0
         self._written_gco2 = 0.0
+        #righe chiuse dal buffer ma non ancora sul database
+        self._unwritten: deque[BufferedEnergyRow] = deque()
         self._last_totals_resync_at: datetime | None = None
         self._resync_totals(self._active_day)
 
@@ -238,14 +232,18 @@ class Orchestrator:
 
     # -- totali del giorno -------------------------------------------------
 
-    def _write_energy_row(self, row) -> None:
-        #unico punto in cui una riga finisce sul database, cosi' il totale in
-        #memoria non puo' divergere per una scrittura dimenticata
-        self.db.record_buffered_energy_row(row)
-        if row.timestamp.astimezone().date() != self._active_day:
-            return
-        self._written_wh += row.wh
-        self._written_gco2 += row.gco2
+    def _write_energy_row(self, row: BufferedEnergyRow) -> None:
+        self._unwritten.append(row)
+        self._write_unwritten()
+
+    def _write_unwritten(self) -> None:
+        while self._unwritten:
+            pending = self._unwritten[0]
+            self.db.record_buffered_energy_row(pending)
+            self._unwritten.popleft()
+            if pending.timestamp.astimezone().date() == self._active_day:
+                self._written_wh += pending.wh
+                self._written_gco2 += pending.gco2
 
     def _resync_totals(self, day: date) -> None:
         totals = self.db.sum_energy_events_for_day(day)
@@ -262,9 +260,13 @@ class Orchestrator:
             self._resync_totals(self._active_day)
             self._last_totals_resync_at = now
 
+        #le righe in coda non sono sul database ma sono energia di oggi
+        unwritten = [
+            row for row in self._unwritten if row.timestamp.astimezone().date() == self._active_day
+        ]
         return (
-            self._written_wh + self.buffer.pending_wh,
-            self._written_gco2 + self.buffer.pending_gco2,
+            self._written_wh + self.buffer.pending_wh + sum(row.wh for row in unwritten),
+            self._written_gco2 + self.buffer.pending_gco2 + sum(row.gco2 for row in unwritten),
         )
 
     def _accumulate_active_time(self, now: datetime) -> None:
@@ -348,35 +350,31 @@ class Orchestrator:
             return None, False, live_source  # finestra scoperta ma nessuna ricarica
 
         uses_whole_window = gap > SINGLE_CHARGE_WINDOW_SECONDS
-        if uses_whole_window and self._unknown_origin_source != "static_country_mean":
-            #_handle_uncovered_window() ha gia' misurato questa stessa finestra
-            #in questo tick: riusarla evita una seconda chiamata identica all'API
+        if uses_whole_window:
+            if self._unknown_origin_source == "static_country_mean":
+                return self._no_history_for_charge(gap)
             return (
                 self._unknown_origin_intensity,
                 True,
                 f"{self._unknown_origin_source}_window",
             )
 
-        window_end = now if uses_whole_window else self._charge_window_end(
-            self._last_seen_at, now, charged_percent
-        )
+        window_end = self._charge_window_end(self._last_seen_at, now, charged_percent)
         mean = self.grid_service.get_mean_intensity_between(self._last_seen_at, window_end)
         if mean is None:
-            #La media nazionale non dipende dall'ora
-            country_mean = self.grid_service.static_country_mean
-            logger.info(
-                "Ricarica avvenuta ad app chiusa (%.0f min) senza storico di rete: "
-                "attribuita alla media nazionale (%.0f gCO2/kWh)",
-                gap / 60.0,
-                country_mean,
-            )
-            return country_mean, True, "static_country_mean"
+            return self._no_history_for_charge(gap)
+        return mean, True, self.grid_service.last_mean_source or "reconstructed_local"
 
-        #il suffisso _window distingue le righe prodotte dalla media sull'intera
-        #finestra da quelle con la finestra stretta ancorata all'inizio, senza
-        #perdere la provenienza 
-        source = self.grid_service.last_mean_source or "reconstructed_local"
-        return mean, True, f"{source}_window" if uses_whole_window else source
+    def _no_history_for_charge(self, gap: float) -> tuple[float, bool, str]:
+        #La media nazionale non dipende dall'ora
+        country_mean = self.grid_service.static_country_mean
+        logger.info(
+            "Ricarica avvenuta ad app chiusa (%.0f min) senza storico di rete: "
+            "attribuita alla media nazionale (%.0f gCO2/kWh)",
+            gap / 60.0,
+            country_mean,
+        )
+        return country_mean, True, "static_country_mean"
 
     def _expire_pool(self, gap_seconds: float) -> None:
         #Il pool va svuotato 
@@ -470,6 +468,8 @@ class Orchestrator:
             charge_intensity_g_per_kwh=charge_intensity,
             unknown_origin_intensity_g_per_kwh=self._unknown_origin_intensity,
         )
+        self._last_battery_percent = power_state.battery_percent
+        self._last_seen_at = now
 
         #gli eventi di consumo passano dal buffer, che chiude la riga da solo
         #quando cambia regime o dopo una finestra non osservata
@@ -514,8 +514,6 @@ class Orchestrator:
                 intensity_source=intensity_source,
             )
 
-        self._last_battery_percent = power_state.battery_percent
-        self._last_seen_at = now
         battery_moved = (
             result.charged_percent > MIN_SIGNIFICANT_DELTA_PERCENT
             or result.discharged_percent > MIN_SIGNIFICANT_DELTA_PERCENT
@@ -572,26 +570,28 @@ class Orchestrator:
         self._last_pool_save_at = now
 
     def flush(self) -> None:
-        #Salvataggio finale, alla chiusura dell'applicazione.
-        pending = None
-
-        def _take_pending() -> None:
-            nonlocal pending
+        #Salvataggio finale
+        try:
             pending = self.buffer.flush()
-
-        _best_effort(_take_pending, "l'ultimo intervallo non e' stato estratto dal buffer")
-        if pending is not None:
-            _best_effort(
-                lambda: self._write_energy_row(pending),
-                "l'ultimo intervallo di consumo non e' stato registrato",
+            if pending is not None:
+                self._unwritten.append(pending)
+            #anche le righe rimaste indietro da un errore precedente
+            self._write_unwritten()
+        except Exception:
+            logger.exception(
+                "Salvataggio finale non riuscito: %d intervalli di consumo non registrati",
+                len(self._unwritten),
             )
-        _best_effort(
-            lambda: self.db.save_pool_state(
+        try:
+            self.db.save_pool_state(
                 self.battery_pool, self._last_battery_percent, self._last_seen_at or now_utc()
-            ),
-            "lo stato del pool batteria non e' stato salvato: alla riapertura una "
-            "ricarica gia' contabilizzata potrebbe essere contata di nuovo",
-        )
+            )
+        except Exception:
+            logger.exception(
+                "Salvataggio finale non riuscito: lo stato del pool batteria non e' stato "
+                "salvato, alla riapertura una ricarica gia' contabilizzata potrebbe essere "
+                "contata di nuovo"
+            )
 
     def build_daily_report(self):
         return self.reporting.build_daily_report(date.today(), self.active_hours_today)
