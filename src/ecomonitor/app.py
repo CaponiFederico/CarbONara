@@ -573,8 +573,8 @@ class WindowUpdater(QObject):
         self._window.mark_startup_failed(reason)
 
 
-STOP_TIMEOUT_MS = 3000
-#quanto aspettare il thread di polling alla chiusura
+STOP_TIMEOUT_MS = 12_000
+#quanto aspettare il thread di polling alla chiusura.
 
 STARTUP_STOP_TIMEOUT_MS = 15_000
 #se si esce mentre l'orchestratore e' ancora in costruzione, quella costruzione
@@ -874,8 +874,6 @@ def main() -> None:
 
     def cleanup() -> None:
         sigint_timer.stop()
-        guard.release()
-        db_lock.release()
         if tray is not None:
             tray.hide()  # senza questo l'icona resta nella tray dopo l'uscita
         worker.stop()
@@ -890,6 +888,9 @@ def main() -> None:
                 "stato salvato",
                 timeout_ms / 1000.0,
             )
+        #i lock solo dopo il salvataggio finale
+        guard.release()
+        db_lock.release()
 
     app.aboutToQuit.connect(cleanup)
     thread.start()

@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://api.electricitymaps.com/v3"
 
+CONNECT_TIMEOUT_SECONDS = 2.0
+
 # Fallback offline (gCO2eq/kWh, media annuale lifecycle indicativa per paese)
 STATIC_FALLBACK_G_PER_KWH: dict[str, float] = {
     "IT": 320.0,
@@ -115,7 +117,7 @@ class ElectricityMapsProvider:
             f"{self._base_url}{path}",
             params=params,
             headers={"auth-token": self._api_key},
-            timeout=self._timeout,
+            timeout=httpx.Timeout(self._timeout, connect=min(self._timeout, CONNECT_TIMEOUT_SECONDS)),
         )
         response.raise_for_status()
         return response.json()
@@ -286,9 +288,13 @@ class GridCarbonIntensityService:
             try:
                 value = self._live.get_current_intensity(self.zone)
             except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
+                already_rejected = self._last_live_failure == LIVE_FAILURE_AUTH
                 self._last_live_failure = live_failure_reason(exc)
                 if self._last_live_failure == LIVE_FAILURE_AUTH:
-                    logger.error(
+                    #si riprova a ogni intervallo, ma l'errore si scrive una volta:
+                    #altrimenti riempirebbe il registro ogni 5 minuti per sempre
+                    logger.log(
+                        logging.DEBUG if already_rejected else logging.ERROR,
                         "ElectricityMaps ha rifiutato la chiave API (%s): i dati in "
                         "tempo reale resteranno spenti finche' non viene sostituita",
                         exc,
