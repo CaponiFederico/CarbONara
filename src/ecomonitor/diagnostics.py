@@ -249,8 +249,6 @@ def cmd_sensors(args: argparse.Namespace) -> None:
 
 
 def cmd_grid(args: argparse.Namespace) -> None:
-    import platformdirs
-
     from ecomonitor.advisor import AdviceTarget, CarbonAwareAdvisor, RollingAverage
     from ecomonitor.carbon.grid_intensity import (
         HOUR_FALLBACK_DAYS,
@@ -261,6 +259,7 @@ def cmd_grid(args: argparse.Namespace) -> None:
     )
     from ecomonitor.config import ConfigManager
     from ecomonitor.power_context import read_power_source_state
+    from ecomonitor.storage.db import default_database_path
 
     config = ConfigManager().config
     service = GridCarbonIntensityService(
@@ -309,7 +308,7 @@ def cmd_grid(args: argparse.Namespace) -> None:
         _line(INFO, f"valore statico: {intensity:.0f} gCO2/kWh")
 
     forecast = service.get_forecast()
-    #Stessa finestra che usa l'advisor: forecast[:12]
+    #Stessa finestra che usa l'advisor
     horizon_hours = CarbonAwareAdvisor().horizon_hours
     moment = datetime.now(UTC)
     horizon_end = moment + timedelta(hours=horizon_hours)
@@ -349,14 +348,12 @@ def cmd_grid(args: argparse.Namespace) -> None:
     #stessa media mobile che usa l'app: senza, la diagnostica stamperebbe un
     #consiglio diverso da quello mostrato nella finestra sullo stesso istante
     rolling = RollingAverage()
-    db_path = platformdirs.user_data_path("ecomonitor") / "local.db"
+    db_path = default_database_path()
     if db_path.exists():
+        from ecomonitor.orchestrator import load_rolling_average
         from ecomonitor.storage.db import LocalDatabase
 
-        for value in LocalDatabase(db_path).recent_grid_intensities(
-            rolling.window_size, zone=service.zone
-        ):
-            rolling.add(value)
+        rolling = load_rolling_average(LocalDatabase(db_path), service.zone)
 
     if rolling.average is not None:
         _line(
@@ -371,11 +368,15 @@ def cmd_grid(args: argparse.Namespace) -> None:
             f"ne servono almeno {rolling.min_samples}",
         )
 
-    if forecast:
-        #e' il riferimento che l'advisor preferisce: la media osservata copre
-        #solo le ore in cui l'app era accesa
-        forecast_average = sum(p.g_per_kwh for p in forecast) / len(forecast)
-        _line(OK, f"media prevista 24h: {forecast_average:.0f} gCO2/kWh (riferimento preferito)")
+    reference = [point.g_per_kwh for point in upcoming if point.g_per_kwh > 0]
+    if reference:
+        #e' il riferimento che l'advisor preferisce
+        forecast_average = sum(reference) / len(reference)
+        _line(
+            OK,
+            f"media prevista prossime {horizon_hours:g}h: {forecast_average:.0f} gCO2/kWh "
+            "(riferimento preferito)",
+        )
 
     #stesso stato di alimentazione che legge l'orchestratore: senza, la
     #diagnostica parlerebbe di ricarica anche a un desktop

@@ -24,7 +24,7 @@ from ecomonitor.sensors.base import (
     now_utc,
 )
 from ecomonitor.sensors.factory import get_backend, get_fallback_backend
-from ecomonitor.storage.db import LocalDatabase, default_database_path
+from ecomonitor.storage.db import LIVE_SAMPLE_SOURCE, LocalDatabase, default_database_path
 from ecomonitor.storage.event_buffer import EnergyEventBuffer, EnergySample
 
 #legge i sensori e integra W -> Wh, legge lo stato di
@@ -47,6 +47,16 @@ def _best_effort(action: Callable[[], None], lost: str) -> None:
         action()
     except Exception:
         logger.exception("Salvataggio finale non riuscito: %s", lost)
+
+
+def load_rolling_average(db: LocalDatabase, zone: str) -> RollingAverage:
+    #La media di riferimento del consiglio
+    rolling = RollingAverage()
+    for value in db.recent_grid_intensities(
+        rolling.window_size, zone=zone, sources=(LIVE_SAMPLE_SOURCE,)
+    ):
+        rolling.add(value)
+    return rolling
 
 
 POOL_SAVE_INTERVAL_SECONDS = 60.0
@@ -149,13 +159,9 @@ class Orchestrator:
         self._unknown_origin_source = "static_country_mean"
 
         self.advisor = CarbonAwareAdvisor()
-        self.rolling_avg = RollingAverage()
         #solo i campioni della zona corrente: un portatile si sposta, e la
         #media di riferimento non puo' mescolare due mercati elettrici
-        for value in self.db.recent_grid_intensities(
-            self.rolling_avg.window_size, zone=self.grid_service.zone
-        ):
-            self.rolling_avg.add(value)
+        self.rolling_avg = load_rolling_average(self.db, self.grid_service.zone)
 
         #le ore attive ripartono da quelle gia' osservate oggi: sono il
         #denominatore di gCO2/ora, il cui numeratore copre l'intera giornata
@@ -208,9 +214,7 @@ class Orchestrator:
         self._last_grid_sample_at = None
 
         #la media di riferimento riparte
-        self.rolling_avg = RollingAverage()
-        for value in self.db.recent_grid_intensities(self.rolling_avg.window_size, zone=zone):
-            self.rolling_avg.add(value)
+        self.rolling_avg = load_rolling_average(self.db, zone)
         #il riferimento per l'energia di origine ignota e' la media del paese:
         #se il paese e' cambiato, anche lui
         if self._unknown_origin_source == "static_country_mean":
@@ -296,7 +300,10 @@ class Orchestrator:
         self._current_intensity = self.grid_service.get_current_intensity()
         self._last_grid_sample_at = now
         self._grid_sample_due_seconds = self._jittered_grid_interval(interval)
-        self.rolling_avg.add(self._current_intensity)
+        source = self.grid_service.last_value_source
+        #il riferimento del consiglio
+        if source == LIVE_SAMPLE_SOURCE:
+            self.rolling_avg.add(self._current_intensity)
         self.db.record_grid_intensity(
             now,
             self.grid_service.zone,
@@ -304,7 +311,7 @@ class Orchestrator:
             #la provenienza reale del valore, non la sola presenza di una
             #chiave: registrare come "live" una chiamata fallita renderebbe i
             #campioni non ricalcolabili
-            self.grid_service.last_value_source,
+            source,
         )
 
     def _jittered_grid_interval(self, interval: float) -> float:

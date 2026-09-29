@@ -796,13 +796,16 @@ class LocalDatabase:
     def mean_grid_intensity_between(
         self, start: datetime, end: datetime, zone: str | None = None
     ) -> float | None:
-        #ricostruzione offline: media dei campioni osservati fra start ed end, filtrando
-        #per zona se specificata. Ritorna None se non ci sono campioni
+        #ricostruzione offline: media dei campioni misurati fra start ed end, filtrando
+        #per zona se specificata. Ritorna None se non ci sono campioni.
+        #Solo MEASURED_SOURCES: la media finisce in charge_events come
+        #"reconstructed_local", e un 320 di ripiego non e' una ricostruzione
+        placeholders = ",".join("?" * len(MEASURED_SOURCES))
         query = (
             "SELECT AVG(g_per_kwh), COUNT(*) FROM grid_intensity_samples "
-            "WHERE timestamp > ? AND timestamp < ?"
+            f"WHERE timestamp > ? AND timestamp < ? AND source IN ({placeholders})"
         )
-        params: list = [to_utc_iso(start), to_utc_iso(end)]
+        params: list = [to_utc_iso(start), to_utc_iso(end), *MEASURED_SOURCES]
         if zone is not None:
             query += " AND zone = ?"
             params.append(zone)
@@ -875,16 +878,29 @@ class LocalDatabase:
         )
 
 
-    def recent_grid_intensities(self, limit: int = 288, zone: str | None = None) -> list[float]:
-        #Ritorna gli ultimi campioni di intensita' osservati, ordinati 
-        # dal piu' vecchio al piu' recente. limit e' il numero massimo 
-        #di campioni da restituire, zone filtra per zona se specificata
-        query = "SELECT g_per_kwh FROM grid_intensity_samples"
+    def recent_grid_intensities(
+        self,
+        limit: int = 288,
+        zone: str | None = None,
+        sources: Sequence[str] | None = None,
+    ) -> list[float]:
+        #Ritorna gli ultimi campioni di intensita', ordinati
+        # dal piu' vecchio al piu' recente. limit e' il numero massimo
+        #di campioni da restituire, zone filtra per zona se specificata.
+        #In ordine di timestamp e non di id: il riempimento storico scrive ore
+        #vecchie con id nuovi, e "gli ultimi" sarebbero giorni fa
+        conditions: list[str] = []
         params: list = []
         if zone is not None:
-            query += " WHERE zone = ?"
+            conditions.append("zone = ?")
             params.append(zone)
-        query += " ORDER BY id DESC LIMIT ?"
+        if sources is not None:
+            conditions.append(f"source IN ({','.join('?' * len(sources))})")
+            params.extend(sources)
+        query = "SELECT g_per_kwh FROM grid_intensity_samples"
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY timestamp DESC, id DESC LIMIT ?"
         params.append(limit)
         with closing(self._connect()) as conn:
             rows = conn.execute(query, params).fetchall()
