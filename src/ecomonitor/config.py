@@ -188,9 +188,12 @@ def _optional_text(value: object) -> str | None:
 
 
 class ConfigManager:
+    _saved: dict[str, object] | None = None
+
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or default_config_path()
         self.config = self._load()
+        self._saved = asdict(self.config)
 
     def _load(self) -> AppConfig:
         if not self.path.exists():
@@ -242,5 +245,32 @@ class ConfigManager:
         return self._create_default()
 
     def save(self) -> None:
+        current = asdict(self.config)
+        data: dict[str, object] = current
+        if self._saved is not None:
+            on_disk = self._read_raw()
+            if on_disk is not None:
+                changed = {
+                    name: value
+                    for name, value in current.items()
+                    if value != self._saved.get(name)
+                }
+                data = {**on_disk, **changed}
+        self._write_atomically(data)
+        self._saved = current
+
+    def _read_raw(self) -> dict | None:
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        return data if isinstance(data, dict) else None
+
+    def _write_atomically(self, data: dict[str, object]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(asdict(self.config), indent=2), encoding="utf-8")
+        temporary = self.path.with_name(self.path.name + ".tmp")
+        with temporary.open("w", encoding="utf-8") as stream:
+            stream.write(json.dumps(data, indent=2))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, self.path)
