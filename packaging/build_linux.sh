@@ -67,6 +67,8 @@ cp -r "${DIST_DIR}/EcoMonitor" "${STAGE_DIR}/EcoMonitor"
 cp "${PACKAGING_DIR}/linux_install.sh" "${STAGE_DIR}/install.sh"
 "${PACKAGING_DIR}/read_api_key.sh" >"${STAGE_DIR}/EcoMonitor/api_key"
 chmod 0644 "${STAGE_DIR}/EcoMonitor/api_key"
+"${PACKAGING_DIR}/read_study_endpoint.sh" >"${STAGE_DIR}/EcoMonitor/study_endpoint"
+chmod 0644 "${STAGE_DIR}/EcoMonitor/study_endpoint"
 cp "${PACKAGING_DIR}/ecomonitor.desktop" "${PACKAGING_DIR}/ecomonitor.png" "${STAGE_DIR}/"
 #le regole udev per RAPL servono all'utente dopo l'installazione
 mkdir -p "${STAGE_DIR}/scripts"

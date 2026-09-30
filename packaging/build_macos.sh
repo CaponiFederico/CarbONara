@@ -50,6 +50,7 @@ rm -f "${PKG}"
 
 #prima della build
 API_KEY="$(bash "${PACKAGING_DIR}/read_api_key.sh")"
+STUDY_ENDPOINT="$(bash "${PACKAGING_DIR}/read_study_endpoint.sh")"
 
 PERMISSIONS_SCRIPT="${PROJECT_ROOT}/scripts/install_powermetrics_permissions.sh"
 RULE_SPEC="$(bash "${PERMISSIONS_SCRIPT}" --print-rule)"
@@ -75,6 +76,8 @@ fi
 RESOURCES="${APP}/Contents/Resources"
 printf '%s' "${API_KEY}" >"${RESOURCES}/api_key"
 chmod 0644 "${RESOURCES}/api_key"
+printf '%s' "${STUDY_ENDPOINT}" >"${RESOURCES}/study_endpoint"
+chmod 0644 "${RESOURCES}/study_endpoint"
 cp "${PERMISSIONS_SCRIPT}" "${RESOURCES}/"
 
 #aggiungere file dopo PyInstaller invalida la sua firma

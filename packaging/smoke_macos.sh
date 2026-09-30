@@ -34,7 +34,8 @@ RESOURCES="${APP}/Contents/Resources"
 [[ -f ${RESOURCES}/install_powermetrics_permissions.sh ]] ||
     fail "manca lo script che autorizza powermetrics, a cui punta il consiglio dell'app"
 [[ -s ${RESOURCES}/api_key ]] || fail "manca ${RESOURCES}/api_key"
-echo "dati spediti: api_key"
+[[ -s ${RESOURCES}/study_endpoint ]] || fail "manca ${RESOURCES}/study_endpoint"
+echo "dati spediti: api_key, study_endpoint"
 
 SMOKE_HOME="$(mktemp -d)"
 export HOME="${SMOKE_HOME}"

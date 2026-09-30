@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     #a runtime li importa il thread di polling
     from ecomonitor.advisor import ChargeAdvice
     from ecomonitor.orchestrator import Orchestrator
+    from ecomonitor.study_upload import StudyUploadScheduler, UploadSettings
 
 #Orchestrator.tick() fa I/O bloccante verso i driver:
 #sul thread della GUI l'event loop di Qt si blocca e la finestra smette di
@@ -399,6 +400,10 @@ class PollingWorker(QObject):
         self._pending_lock = threading.Lock()
         self._pending_user_api_key: tuple[str | None, ...] = ()
         self._pending_zone: tuple[str, str | None] | None = None
+        self._pending_study_token: tuple[str | None, ...] = ()
+
+        #invio allo studio: nasce col primo tick, gira in un thread suo
+        self._study_scheduler: StudyUploadScheduler | None = None
 
     def _backfill_grid_history(self) -> None:
         #Un errore non deve fermare il monitoraggio
@@ -457,9 +462,60 @@ class PollingWorker(QObject):
             logger.exception("Zona ElectricityMaps non applicata")
             return False
 
+    def request_study_token(self, token: str | None) -> None:
+        #chiamata dal thread della GUI quando il token viene salvato
+        with self._pending_lock:
+            self._pending_study_token = (token,)
+
+    def _take_pending_study_token(self) -> tuple[str | None, ...]:
+        with self._pending_lock:
+            pending, self._pending_study_token = self._pending_study_token, ()
+        return pending
+
+    def _apply_pending_study_token(self) -> None:
+        pending = self._take_pending_study_token()
+        if not pending or self._orchestrator is None:
+            return
+        self._orchestrator.config_manager.config.study_token = pending[0]
+        if self._study_scheduler is not None:
+            self._study_scheduler.reset()
+
+    @staticmethod
+    def _study_settings(config: AppConfig) -> UploadSettings | None:
+        from ecomonitor.study_upload import UploadSettings, settle_seconds_for
+
+        endpoint = config.effective_study_endpoint
+        if not (endpoint and config.study_token):
+            return None
+        return UploadSettings(
+            endpoint=endpoint,
+            token=config.study_token,
+            zone=config.em_zone,
+            country_code=config.country_code,
+            settle_seconds=settle_seconds_for(config.db_flush_interval_seconds),
+        )
+
+    def _upload_study_hours(self) -> None:
+        if self._orchestrator is None:
+            return
+        try:
+            if self._study_scheduler is None:
+                from ecomonitor.study_upload import StudyUploadScheduler
+
+                self._study_scheduler = StudyUploadScheduler(self._orchestrator.db)
+            self._study_scheduler.maybe_start(
+                self._study_settings(self._orchestrator.config_manager.config)
+            )
+        except Exception:
+            logger.exception("Invio allo studio non avviato")
+
     def _has_pending_request(self) -> bool:
         with self._pending_lock:
-            return bool(self._pending_user_api_key) or self._pending_zone is not None
+            return (
+                bool(self._pending_user_api_key)
+                or self._pending_zone is not None
+                or bool(self._pending_study_token)
+            )
 
     @Slot()
     def run(self) -> None:
@@ -481,6 +537,7 @@ class PollingWorker(QObject):
             #gia' l'API invece di restituire ancora il ripiego
             self._apply_pending_user_api_key()
             zone_changed = self._apply_pending_zone()
+            self._apply_pending_study_token()
             try:
                 result = self._orchestrator.tick()
                 self.tick_ready.emit(result)
@@ -495,6 +552,7 @@ class PollingWorker(QObject):
                 #occupato) non deve bloccare l'app: si riprova al prossimo intervallo
                 logger.exception("Tick fallito, si riprova al prossimo intervallo")
 
+            self._upload_study_hours()
             self._interruptible_sleep(self._poll_interval_ms)
 
         #il salvataggio finale sta qui e non in cleanup()
@@ -871,6 +929,7 @@ def main() -> None:
 
     window.on_api_key_changed = worker.request_user_api_key
     window.on_zone_changed = worker.request_zone
+    window.on_study_token_changed = worker.request_study_token
 
     def cleanup() -> None:
         sigint_timer.stop()

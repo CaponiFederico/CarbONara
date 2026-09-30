@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import threading
 from collections.abc import Callable, Iterable
 
@@ -23,6 +24,7 @@ from ecomonitor import autostart
 from ecomonitor.config import (
     API_KEY_ENV_VAR,
     ATTRIBUTION_MODELS,
+    STUDY_TOKEN_PATTERN,
     AppConfig,
     ConfigManager,
     packaged_api_key,
@@ -43,6 +45,9 @@ def _default_key_validator(api_key: str, zone: str) -> str | None:
 
 #la lista viene da config.ATTRIBUTION_MODELS
 _ATTRIBUTION_MODELS = ATTRIBUTION_MODELS
+
+#l'impronta SHA-256 del token
+_TOKEN_DIGEST_PATTERN = re.compile(r"[0-9a-f]{64}")
 
 #spazio fra il bordo della cartina e l'elenco delle regioni 
 _ZONE_LABEL_GAP = 4
@@ -135,6 +140,21 @@ class SettingsDialog(QDialog):
         )
         form.addRow("Chiave API ElectricityMaps:", self.api_key_edit)
 
+        #il token del partecipante allo studio: e' suo, quindi si rilegge e si cancella
+        self._saved_study_token = config.study_token
+        self.saved_study_token = self._saved_study_token
+        self.study_token_changed = False
+        self.study_token_edit = QLineEdit(self._saved_study_token or "")
+        self.study_token_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.study_token_edit.setPlaceholderText(
+            "Inserisci il token ricevuto all'adesione allo studio"
+        )
+        self.study_token_edit.setToolTip(
+            "Token personale dello studio di tesi. Ogni ora si inviano i consumi orari "
+            "successivi all'adesione. Per smettere di inviare: cancella il campo e salva."
+        )
+        form.addRow("Token dello studio:", self.study_token_edit)
+
         self.attribution_combo = QComboBox()
         self.attribution_combo.addItems(_ATTRIBUTION_MODELS)
         if config.attribution_model in _ATTRIBUTION_MODELS:
@@ -190,7 +210,7 @@ class SettingsDialog(QDialog):
             )
 
         note = QLabel(
-            "Paese, zona e chiave hanno effetto subito. Le altre modifiche al "
+            "Paese, zona, chiave e token hanno effetto subito. Le altre modifiche al "
             "prossimo avvio dell'applicazione."
         )
         note.setWordWrap(True)
@@ -313,6 +333,28 @@ class SettingsDialog(QDialog):
             finally:
                 del error
 
+    def _check_study_token(self) -> bool:
+        token = self.study_token_edit.text().strip()
+        if not token:
+            return True
+        if _TOKEN_DIGEST_PATTERN.fullmatch(token):
+            QMessageBox.warning(
+                self,
+                "Questo non è il token",
+                "Hai incollato l'impronta SHA-256, non il token: usa la stringa che ti è "
+                "stata consegnata all'adesione.",
+            )
+            return False
+        if STUDY_TOKEN_PATTERN.fullmatch(token):
+            return True
+        QMessageBox.warning(
+            self,
+            "Token dello studio non valido",
+            "Il token contiene solo lettere, cifre, - e _, senza spazi: controlla di "
+            "averlo incollato per intero.",
+        )
+        return False
+
     def _check_api_key(self) -> bool:
         #Prova la chiave nuova prima di scriverla
         key = self.api_key_edit.text().strip()
@@ -388,6 +430,8 @@ class SettingsDialog(QDialog):
                 "il computer: senza, resterebbe la zona di prima.",
             )
             return
+        if not self._check_study_token():
+            return
         if not self._check_api_key():
             return
         if not self._apply_autostart():
@@ -401,12 +445,16 @@ class SettingsDialog(QDialog):
         config.electricitymaps_api_key = self.api_key_edit.text().strip() or None
         self.saved_user_api_key = config.electricitymaps_api_key
         self.api_key_changed = self.saved_user_api_key != self._saved_key
+        config.study_token = self.study_token_edit.text().strip() or None
+        self.saved_study_token = config.study_token
+        self.study_token_changed = self.saved_study_token != self._saved_study_token
         config.attribution_model = self.attribution_combo.currentText()
         try:
             self._manager.save()
         except OSError as exc:
             self.api_key_changed = False
             self.zone_changed = False
+            self.study_token_changed = False
             QMessageBox.warning(
                 self,
                 "Impossibile salvare le impostazioni",

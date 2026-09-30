@@ -84,7 +84,7 @@ _FIELD_HELP = {
     ),
     "settings": (
         "Zona elettrica, chiave di accesso ai dati in tempo reale e modello di "
-        "attribuzione. Paese, zona e chiave valgono subito, il resto dal "
+        "attribuzione. Paese, zona, chiave e token valgono subito, il resto dal "
         "prossimo avvio."
     ),
     "measurement": (
@@ -220,6 +220,8 @@ class MainWindow(QMainWindow):
         self.on_api_key_changed: Callable[[str | None], None] | None = None
         #lo stesso per la zona scelta sulla cartina
         self.on_zone_changed: Callable[[str, str], None] | None = None
+        #e per il token dello studio
+        self.on_study_token_changed: Callable[[str | None], None] | None = None
         #chiamata quando la finestra viene nascosta chiudendola: cosa
         #notificare lo decide app.py, la finestra non sa nulla della tray
 
@@ -471,6 +473,8 @@ class MainWindow(QMainWindow):
             self.on_api_key_changed(dialog.saved_user_api_key)
         if dialog.zone_changed and self.on_zone_changed is not None:
             self.on_zone_changed(dialog.saved_zone, dialog.saved_country)
+        if dialog.study_token_changed and self.on_study_token_changed is not None:
+            self.on_study_token_changed(dialog.saved_study_token)
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)

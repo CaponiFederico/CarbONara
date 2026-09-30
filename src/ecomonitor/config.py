@@ -3,9 +3,11 @@ import logging
 import math
 import os
 import platform
+import re
 import sys
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import platformdirs
 
@@ -20,6 +22,13 @@ APP_NAME = "ecomonitor"
 API_KEY_ENV_VAR = "ECOMONITOR_EM_API_KEY"
 
 PACKAGED_API_KEY_FILE = "api_key"
+PACKAGED_STUDY_ENDPOINT_FILE = "study_endpoint"
+
+#server dello studio in locale, per collaudare l'invio da sorgente
+LOCAL_STUDY_HOSTS = ("127.0.0.1", "localhost")
+
+#lo stesso formato che il server accetta 
+STUDY_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{32,128}")
 
 ATTRIBUTION_MODELS: tuple[str, ...] = tuple(model.value for model in AttributionModel)
 
@@ -58,8 +67,12 @@ class AppConfig:
 
     autostart_default_applied: bool = False
     #l'avvio automatico nasce attivo, ma una volta sola
+
     study_endpoint: str | None = None
+    #indirizzo del server dello studio
+
     study_token: str | None = None
+    #token personale del partecipante
 
     @property
     def api_key(self) -> str | None:
@@ -68,6 +81,11 @@ class AppConfig:
             or self.electricitymaps_api_key
             or packaged_api_key()
         )
+
+    @property
+    def effective_study_endpoint(self) -> str | None:
+        #quello del config.json vince su quello spedito
+        return self.study_endpoint or packaged_study_endpoint()
 
 
 def _packaged_text(name: str) -> str | None:
@@ -88,6 +106,11 @@ def _packaged_text(name: str) -> str | None:
 
 def packaged_api_key() -> str | None:
     return _packaged_text(PACKAGED_API_KEY_FILE)
+
+
+def packaged_study_endpoint() -> str | None:
+    #passa dallo stesso controllo del config.json
+    return _study_endpoint(_packaged_text(PACKAGED_STUDY_ENDPOINT_FILE))
 
 
 def default_config_path() -> Path:
@@ -176,8 +199,8 @@ def _sanitised(config: AppConfig) -> AppConfig:
     config.autostart_default_applied = bool(config.autostart_default_applied)
     if config.electricitymaps_api_key is not None:
         config.electricitymaps_api_key = str(config.electricitymaps_api_key).strip() or None
-    config.study_token = _optional_text(config.study_token)
-    config.study_endpoint = _optional_text(config.study_endpoint)
+    config.study_token = _study_token(config.study_token)
+    config.study_endpoint = _study_endpoint(config.study_endpoint)
     return config
 
 
@@ -185,6 +208,32 @@ def _optional_text(value: object) -> str | None:
     if value is None:
         return None
     return str(value).strip() or None
+
+
+def _study_token(value: object) -> str | None:
+    #un token malformato verrebbe rifiutato a ogni invio
+    text = _optional_text(value)
+    if text is None or STUDY_TOKEN_PATTERN.fullmatch(text):
+        return text
+    logger.warning("Configurazione: study_token non valido, l'invio allo studio resta spento")
+    return None
+
+
+def _study_endpoint(value: object) -> str | None:
+    #il token viaggia nell'intestazione
+    text = _optional_text(value)
+    if text is None:
+        return None
+    parts = urlsplit(text)
+    if parts.scheme == "https" or (
+        parts.scheme == "http" and parts.hostname in LOCAL_STUDY_HOSTS
+    ):
+        return text.rstrip("/")
+    logger.warning(
+        "Configurazione: study_endpoint '%s' non e' https, l'invio allo studio resta spento",
+        text,
+    )
+    return None
 
 
 class ConfigManager:

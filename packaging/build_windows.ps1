@@ -67,6 +67,11 @@ if ($foreign) { throw "dist contiene file di una build Linux ($($foreign[0].Name
     -OutFile (Join-Path (Join-Path $DistDir "EcoMonitor") "api_key")
 if ($LASTEXITCODE -ne 0) { throw "chiave ElectricityMaps non disponibile: pacchetto non costruito" }
 
+& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File (Join-Path $PackagingDir "read_study_endpoint.ps1") `
+    -OutFile (Join-Path (Join-Path $DistDir "EcoMonitor") "study_endpoint")
+if ($LASTEXITCODE -ne 0) { throw "indirizzo del server dello studio non disponibile: pacchetto non costruito" }
+
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 & $iscc "/DAppVersion=$Version" (Join-Path $PackagingDir "ecomonitor.iss") | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup ha fallito la compilazione" }

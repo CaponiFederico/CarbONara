@@ -6,6 +6,7 @@ __pycache__/
 .ruff_cache/
 .coverage
 .env
+.study_endpoint
 config.json
 *.db
 docs/
