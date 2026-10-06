@@ -70,6 +70,22 @@ def _create_windows_notifier(data_path: Path, pipe_name: str) -> Notifier | None
         return None
 
 
+def _create_dbus_notifier(on_click: Callable[[], None]) -> Notifier | None:
+    try:
+        from ecomonitor.gui.dbus_notifier import create_dbus_notifier
+
+        notifier = create_dbus_notifier()
+    except Exception as exc:
+        logger.info(
+            "Notifiche del desktop non disponibili (%s): resta l'area di notifica, "
+            "se c'e'",
+            exc,
+        )
+        return None
+    notifier.clicked.connect(on_click)
+    return notifier
+
+
 def create_notifier(
     tray: QSystemTrayIcon | None,
     on_click: Callable[[], None],
@@ -82,6 +98,11 @@ def create_notifier(
         native = _create_windows_notifier(data_path, pipe_name)
         if native is not None:
             return native
+    if system == "Linux":
+        #arriva anche dove l'area di notifica non c'e'
+        desktop = _create_dbus_notifier(on_click)
+        if desktop is not None:
+            return desktop
 
     if tray is None or not tray.supportsMessages():
         logger.info(
