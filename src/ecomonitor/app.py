@@ -1009,6 +1009,8 @@ def main() -> None:
         lambda: create_notifier(
             tray,
             on_click=show_window,
+            data_path=platformdirs.user_data_path("ecomonitor"),
+            pipe_name=guard.server_name if guard.is_listening else None,
         ),
     )
     worker.tick_ready.connect(dispatcher.on_tick_ready)

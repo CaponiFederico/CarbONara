@@ -93,12 +93,21 @@ QT_EXCLUDES = [
     "PySide6.QtTest",
 ]
 
+#Notifiche native di Windows
+gui_hidden_imports = list(sensor_hidden_imports)
+if IS_WINDOWS:
+    gui_hidden_imports += [
+        "ecomonitor.gui.windows_toast",
+        "winrt.windows.data.xml.dom",
+        "winrt.windows.ui.notifications",
+    ]
+
 gui_analysis = Analysis(  # noqa: F821
     [str(PROJECT_ROOT / "packaging" / "entry_gui.py")],
     pathex=[SRC_PATH],
     binaries=sensor_binaries,
     datas=sensor_datas,
-    hiddenimports=sensor_hidden_imports,
+    hiddenimports=gui_hidden_imports,
     excludes=COMMON_EXCLUDES + QT_EXCLUDES,
     noarchive=False,
 )
@@ -113,10 +122,31 @@ gui_exe = EXE(  # noqa: F821
     icon=EXE_ICON,
     uac_admin=REQUEST_UAC_ADMIN,
 )
+gui_collect_parts = [gui_exe, gui_analysis.binaries, gui_analysis.datas]
+
+SHOW_WINDOW_NAME = "EcoMonitorShow"
+if IS_WINDOWS:
+    show_analysis = Analysis(  # noqa: F821
+        [str(PROJECT_ROOT / "packaging" / "entry_show.py")],
+        pathex=[SRC_PATH],
+        excludes=COMMON_EXCLUDES + ["PySide6", "shiboken6"],
+        noarchive=False,
+    )
+    show_pyz = PYZ(show_analysis.pure)  # noqa: F821
+    show_exe = EXE(  # noqa: F821
+        show_pyz,
+        show_analysis.scripts,
+        [],
+        exclude_binaries=True,
+        name=SHOW_WINDOW_NAME,
+        console=False,  # nessuna console che lampeggia al clic
+        icon=EXE_ICON,
+        uac_admin=False,
+    )
+    gui_collect_parts += [show_exe, show_analysis.binaries, show_analysis.datas]
+
 gui_collect = COLLECT(  # noqa: F821
-    gui_exe,
-    gui_analysis.binaries,
-    gui_analysis.datas,
+    *gui_collect_parts,
     name="EcoMonitor",
 )
 

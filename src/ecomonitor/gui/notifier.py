@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import platform
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from PySide6.QtCore import QObject, Signal
@@ -55,12 +56,33 @@ class TrayNotifier(QObject):
             self._clear()
 
 
+def _create_windows_notifier(data_path: Path, pipe_name: str) -> Notifier | None:
+    try:
+        from ecomonitor.gui.windows_toast import create_windows_notifier
+
+        return create_windows_notifier(data_path, pipe_name)
+    except Exception as exc:
+        logger.warning(
+            "Notifiche native di Windows non disponibili (%s): si usano quelle "
+            "dell'area di notifica, che non restano nel centro notifiche",
+            exc,
+        )
+        return None
+
+
 def create_notifier(
     tray: QSystemTrayIcon | None,
     on_click: Callable[[], None],
+    data_path: Path | None = None,
+    pipe_name: str | None = None,
     system: str | None = None,
 ) -> Notifier | None:
     system = system or platform.system()
+    if system == "Windows" and data_path is not None and pipe_name is not None:
+        native = _create_windows_notifier(data_path, pipe_name)
+        if native is not None:
+            return native
+
     if tray is None or not tray.supportsMessages():
         logger.info(
             "Notifiche di sistema non disponibili su questo desktop: consigli e "

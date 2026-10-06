@@ -58,6 +58,11 @@ class SingleInstanceGuard(QObject):
     def is_listening(self) -> bool:
         return self._server is not None
 
+    @property
+    def server_name(self) -> str:
+        #su Windows e' il nome della pipe
+        return self._name
+
     def release(self) -> None:
         if self._server is not None:
             self._server.close()

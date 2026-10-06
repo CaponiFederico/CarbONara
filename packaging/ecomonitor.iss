@@ -68,6 +68,9 @@ Root: HKCU; Subkey: "Software\EcoMonitor"; ValueType: dword; ValueName: "Autosta
     ValueData: 1; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: autostart
 Root: HKCU; Subkey: "Software\EcoMonitor"; ValueType: dword; ValueName: "Autostart"; \
     ValueData: 0; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: not autostart
+Root: HKCU; Subkey: "Software\Classes\AppUserModelId\io.github.caponifederico.ecomonitor"; \
+    Flags: dontcreatekey uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\ecomonitor"; Flags: dontcreatekey uninsdeletekey
 
 [Run]
 Filename: "{sys}\schtasks.exe"; Parameters: "/run /tn ""{code:TaskName}"""; \

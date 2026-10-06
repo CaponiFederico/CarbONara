@@ -21,6 +21,10 @@ gui = [
 ]
 windows = [
     "HardwareMonitor>=1.2.1,<1.3",
+    #notifiche che restano nel centro notifiche
+    "winrt-runtime>=3.2,<3.3",
+    "winrt-Windows.Data.Xml.Dom>=3.2,<3.3",
+    "winrt-Windows.UI.Notifications>=3.2,<3.3",
 ]
 packaging = [
     #serve su tutti i sistemi: lo stesso spec costruisce Windows, Linux e macOS
@@ -67,6 +71,10 @@ check_untyped_defs = true
 #pythonnet/LibreHardwareMonitor e PySide6 non distribuiscono stub completi.
 
 module = ["HardwareMonitor", "HardwareMonitor.*", "PySide6", "PySide6.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["winrt", "winrt.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
