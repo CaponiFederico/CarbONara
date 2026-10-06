@@ -1,3 +1,4 @@
+import os
 import re
 import sys
 from collections.abc import Sequence
@@ -19,6 +20,8 @@ def pipe_name_from(arguments: Sequence[str]) -> str | None:
 
 
 def request_window(pipe_name: str) -> bool:
+    if os.name != "nt":
+        return False
     try:
         with open(rf"\\.\pipe\{pipe_name}", "wb"):
             pass
