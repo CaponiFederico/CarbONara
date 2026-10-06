@@ -49,6 +49,20 @@ _ATTRIBUTION_MODELS = ATTRIBUTION_MODELS
 #l'impronta SHA-256 del token
 _TOKEN_DIGEST_PATTERN = re.compile(r"[0-9a-f]{64}")
 
+CHARGE_ADVICE_LABEL = "Consigli sulla ricarica"
+WORKLOAD_ADVICE_LABEL = "Consigli sul momento migliore per le attività pesanti"
+PROBLEM_NOTIFICATIONS_LABEL = "Problemi di misura, di chiave e di token"
+ADVICE_TOOLTIP = "Poche al giorno, solo con la finestra chiusa e solo da previsione di rete"
+STUDY_ADVICE_TOOLTIP = "Con un token dello studio, i consigli li decide lo studio"
+
+
+def _has_battery() -> bool:
+    #l'import sta qui
+    from ecomonitor.power_context import read_power_source_state
+
+    return read_power_source_state().battery_percent is not None
+
+
 #spazio fra il bordo della cartina e l'elenco delle regioni 
 _ZONE_LABEL_GAP = 4
 class WrappedTextBox(QWidget):
@@ -193,6 +207,23 @@ class SettingsDialog(QDialog):
             self.hidden_start_check.setToolTip(autostart.unsupported_reason())
         form.addRow("", self.hidden_start_check)
 
+        self._saved_advice_notifications = config.advice_notifications_enabled
+        self.saved_advice_notifications = self._saved_advice_notifications
+        self._saved_problem_notifications = config.problem_notifications_enabled
+        self.saved_problem_notifications = self._saved_problem_notifications
+        self.notifications_changed = False
+        #il consiglio che si riceve dipende dal dispositivo
+        self.advice_notifications_check = QCheckBox(
+            CHARGE_ADVICE_LABEL if _has_battery() else WORKLOAD_ADVICE_LABEL
+        )
+        self.advice_notifications_check.setChecked(self._saved_advice_notifications)
+        self.study_token_edit.textChanged.connect(self._refresh_advice_notifications)
+        self._refresh_advice_notifications()
+        form.addRow("Notifiche:", self.advice_notifications_check)
+        self.problem_notifications_check = QCheckBox(PROBLEM_NOTIFICATIONS_LABEL)
+        self.problem_notifications_check.setChecked(self._saved_problem_notifications)
+        form.addRow("", self.problem_notifications_check)
+
         layout = QVBoxLayout(self)
         title = QLabel("Zona di mercato elettrico")
         layout.addWidget(title)
@@ -210,8 +241,8 @@ class SettingsDialog(QDialog):
             )
 
         note = QLabel(
-            "Paese, zona, chiave e token hanno effetto subito. Le altre modifiche al "
-            "prossimo avvio dell'applicazione."
+            "Paese, zona, chiave, token e notifiche hanno effetto subito. Le altre "
+            "modifiche al prossimo avvio dell'applicazione."
         )
         note.setWordWrap(True)
         self.note_box = WrappedTextBox(note)
@@ -276,6 +307,13 @@ class SettingsDialog(QDialog):
         texts = [self._zone_description(zone) for zone in self.zone_map.zones]
         texts.append(self.zone_label.text())
         self.zone_caption.set_reserved_texts(texts)
+
+    def _refresh_advice_notifications(self) -> None:
+        in_study = bool(self.study_token_edit.text().strip())
+        self.advice_notifications_check.setEnabled(not in_study)
+        self.advice_notifications_check.setToolTip(
+            STUDY_ADVICE_TOOLTIP if in_study else ADVICE_TOOLTIP
+        )
 
     def _api_key_placeholder(self) -> str:
         if packaged_api_key():
@@ -449,12 +487,21 @@ class SettingsDialog(QDialog):
         self.saved_study_token = config.study_token
         self.study_token_changed = self.saved_study_token != self._saved_study_token
         config.attribution_model = self.attribution_combo.currentText()
+        config.advice_notifications_enabled = self.advice_notifications_check.isChecked()
+        self.saved_advice_notifications = config.advice_notifications_enabled
+        config.problem_notifications_enabled = self.problem_notifications_check.isChecked()
+        self.saved_problem_notifications = config.problem_notifications_enabled
+        self.notifications_changed = (
+            self.saved_advice_notifications != self._saved_advice_notifications
+            or self.saved_problem_notifications != self._saved_problem_notifications
+        )
         try:
             self._manager.save()
         except OSError as exc:
             self.api_key_changed = False
             self.zone_changed = False
             self.study_token_changed = False
+            self.notifications_changed = False
             QMessageBox.warning(
                 self,
                 "Impossibile salvare le impostazioni",

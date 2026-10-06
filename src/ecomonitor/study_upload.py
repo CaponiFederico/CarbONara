@@ -49,9 +49,11 @@ FALLBACK_SOURCE = AttributionSource.BATTERY_POOL_FALLBACK.value
 
 class UploadStopped(Exception):
     #il giro finisce qui;
-    def __init__(self, reason: str, retry: bool) -> None:
+    def __init__(self, reason: str, retry: bool, token_rejected: bool = False) -> None:
         super().__init__(reason)
         self.retry = retry
+        #401
+        self.token_rejected = token_rejected
 
 
 @dataclass
@@ -281,6 +283,7 @@ class StudyUploader:
             raise UploadStopped(
                 "token rifiutato: revocato o sbagliato, controllarlo nelle impostazioni",
                 retry=False,
+                token_rejected=True,
             )
         if response.status_code != 200:
             raise UploadStopped(f"stato non disponibile ({response.status_code})", retry=True)
@@ -353,6 +356,7 @@ class StudyUploader:
                 raise UploadStopped(
                     "token rifiutato: revocato o sbagliato, controllarlo nelle impostazioni",
                     retry=False,
+                    token_rejected=True,
                 )
             raise UploadStopped(
                 f"invio non riuscito ({response.status_code}, {reason})",
@@ -389,12 +393,19 @@ class StudyUploadScheduler:
         self._rejected: set[datetime] = set()
         self._os_family = detect_os_family()
         self._device_class: str | None = None
+        self._token_rejected = False
+
+    @property
+    def token_rejected(self) -> bool:
+        with self._lock:
+            return self._token_rejected
 
     def reset(self) -> None:
         #token cambiato
         with self._lock:
             self._next_attempt_at = None
             self._rejected.clear()
+            self._token_rejected = False
 
     def maybe_start(self, settings: UploadSettings | None) -> threading.Thread | None:
         if settings is None or self._os_family is None:
@@ -429,10 +440,14 @@ class StudyUploadScheduler:
                 settle_seconds=settings.settle_seconds,
             )
             uploader.upload_pending(settings.zone, settings.country_code, skip)
+            with self._lock:
+                self._token_rejected = False
         except UploadStopped as stop:
             logger.warning("Studio: invio interrotto, %s", stop)
-            if stop.retry:
-                with self._lock:
+            with self._lock:
+                if stop.token_rejected:
+                    self._token_rejected = True
+                if stop.retry:
                     self._next_attempt_at = self._clock() + RETRY_INTERVAL_SECONDS
         except Exception:
             #un difetto qui non deve toccare la misura

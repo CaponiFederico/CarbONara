@@ -222,6 +222,8 @@ class MainWindow(QMainWindow):
         self.on_zone_changed: Callable[[str, str], None] | None = None
         #e per il token dello studio
         self.on_study_token_changed: Callable[[str | None], None] | None = None
+        #i due interruttori delle notifiche: consigli, problemi
+        self.on_notifications_changed: Callable[[bool, bool], None] | None = None
         #chiamata quando la finestra viene nascosta chiudendola: cosa
         #notificare lo decide app.py, la finestra non sa nulla della tray
 
@@ -475,6 +477,10 @@ class MainWindow(QMainWindow):
             self.on_zone_changed(dialog.saved_zone, dialog.saved_country)
         if dialog.study_token_changed and self.on_study_token_changed is not None:
             self.on_study_token_changed(dialog.saved_study_token)
+        if dialog.notifications_changed and self.on_notifications_changed is not None:
+            self.on_notifications_changed(
+                dialog.saved_advice_notifications, dialog.saved_problem_notifications
+            )
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)

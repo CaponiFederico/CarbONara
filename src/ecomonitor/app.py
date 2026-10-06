@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -22,6 +23,7 @@ from ecomonitor.config import AppConfig, ConfigManager
 from ecomonitor.gui import macos_dock
 from ecomonitor.gui.icon import app_icon
 from ecomonitor.gui.main_window import MainWindow
+from ecomonitor.gui.notifier import Notifier, create_notifier
 from ecomonitor.gui.single_instance import SingleInstanceGuard
 from ecomonitor.gui.theme import theme_for
 from ecomonitor.gui.tray import create_tray_icon
@@ -31,6 +33,7 @@ from ecomonitor.storage.lock import DatabaseLock
 if TYPE_CHECKING:
     #a runtime li importa il thread di polling
     from ecomonitor.advisor import ChargeAdvice
+    from ecomonitor.notifications import NotificationPolicy
     from ecomonitor.orchestrator import Orchestrator
     from ecomonitor.study_upload import StudyUploadScheduler, UploadSettings
 
@@ -540,6 +543,10 @@ class PollingWorker(QObject):
             self._apply_pending_study_token()
             try:
                 result = self._orchestrator.tick()
+                #lo scheduler vive qui, non nell'orchestratore
+                result["study_token_rejected"] = (
+                    self._study_scheduler is not None and self._study_scheduler.token_rejected
+                )
                 self.tick_ready.emit(result)
                 if not first_tick_done:
                     first_tick_done = True
@@ -629,6 +636,71 @@ class WindowUpdater(QObject):
     @Slot(str)
     def on_startup_failed(self, reason: str) -> None:
         self._window.mark_startup_failed(reason)
+
+
+class NotificationDispatcher(QObject):
+    #Riceve i tick sul thread della GUI e mostra le notifiche
+
+    def __init__(
+        self,
+        window: MainWindow,
+        config: AppConfig,
+        notifier_factory: Callable[[], Notifier | None],
+        now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
+        super().__init__()
+        self._window = window
+        self._config = config
+        self._now = now
+        self._started_at = now()
+        self._notifier_factory = notifier_factory
+        self._notifier: Notifier | None = None
+        self._policy: NotificationPolicy | None = None
+
+    def set_switches(self, advice_enabled: bool, problems_enabled: bool) -> None:
+        self._config.advice_notifications_enabled = advice_enabled
+        self._config.problem_notifications_enabled = problems_enabled
+
+    def _window_in_foreground(self) -> bool:
+        window = self._window
+        return window.isVisible() and not window.isMinimized() and window.isActiveWindow()
+
+    @Slot(dict)
+    def on_tick_ready(self, result: dict) -> None:
+        try:
+            self._dispatch(result)
+        except Exception:
+            logger.exception("Notifica non riuscita")
+
+    def _dispatch(self, result: dict) -> None:
+        from ecomonitor.notifications import (
+            NotificationPolicy,
+            advice_notifications_allowed,
+            snapshot_from_tick,
+        )
+
+        if self._policy is None:
+            #prima la politica
+            self._policy = NotificationPolicy(self._started_at)
+            self._notifier = self._notifier_factory()
+        if self._notifier is None:
+            return 
+        config = self._config
+        snapshot = snapshot_from_tick(
+            result,
+            window_in_foreground=self._window_in_foreground(),
+            advice_enabled=advice_notifications_allowed(
+                config.advice_notifications_enabled, bool(config.study_token)
+            ),
+            problems_enabled=config.problem_notifications_enabled,
+        )
+        outcome = self._policy.evaluate(snapshot, self._now())
+        for kind in outcome.withdraw:
+            logger.info("Notifica ritirata: %s", kind.value)
+            self._notifier.withdraw(kind)
+        if outcome.show is not None:
+            logger.info("Notifica: %s", outcome.show.kind.value)
+            self._notifier.show(outcome.show)
 
 
 STOP_TIMEOUT_MS = 12_000
@@ -930,6 +1002,17 @@ def main() -> None:
     window.on_api_key_changed = worker.request_user_api_key
     window.on_zone_changed = worker.request_zone
     window.on_study_token_changed = worker.request_study_token
+
+    dispatcher = NotificationDispatcher(
+        window,
+        config,
+        lambda: create_notifier(
+            tray,
+            on_click=show_window,
+        ),
+    )
+    worker.tick_ready.connect(dispatcher.on_tick_ready)
+    window.on_notifications_changed = dispatcher.set_switches
 
     def cleanup() -> None:
         sigint_timer.stop()

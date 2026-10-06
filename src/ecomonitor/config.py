@@ -74,6 +74,12 @@ class AppConfig:
     study_token: str | None = None
     #token personale del partecipante
 
+    advice_notifications_enabled: bool = True
+    #consigli sul momento migliore
+
+    problem_notifications_enabled: bool = True
+    #misura scesa a stima, chiave o token rifiutati
+
     @property
     def api_key(self) -> str | None:
         return (
@@ -197,6 +203,8 @@ def _sanitised(config: AppConfig) -> AppConfig:
     config.tray_notice_shown = bool(config.tray_notice_shown)
     config.background_notice_shown = bool(config.background_notice_shown)
     config.autostart_default_applied = bool(config.autostart_default_applied)
+    config.advice_notifications_enabled = bool(config.advice_notifications_enabled)
+    config.problem_notifications_enabled = bool(config.problem_notifications_enabled)
     if config.electricitymaps_api_key is not None:
         config.electricitymaps_api_key = str(config.electricitymaps_api_key).strip() or None
     config.study_token = _study_token(config.study_token)
