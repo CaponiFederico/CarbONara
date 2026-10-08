@@ -1,0 +1,30 @@
+# API dello studio. Ascolta solo su localhost: da fuori si passa da Caddy
+# --no-access-log: gli IP dei partecipanti non finiscono nel journal
+
+[Unit]
+Description=EcoMonitor study API
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+User=ecomonitor_api
+Group=ecomonitor_api
+Environment=ECOMONITOR_STUDY_DSN=dbname=ecomonitor_study
+ExecStart=/opt/ecomonitor-study/venv/bin/uvicorn study_server.app:app_from_environment --factory --host 127.0.0.1 --port 8000 --workers 2 --no-access-log --no-server-header
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

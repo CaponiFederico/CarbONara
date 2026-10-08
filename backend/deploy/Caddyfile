@@ -1,0 +1,13 @@
+# Reverse proxy dello studio
+# Caddy ottiene e rinnova da solo il certificato
+
+forti-tesi.unipi.it {
+	request_body {
+		max_size 256KiB
+	}
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+	}
+	reverse_proxy 127.0.0.1:8000
+}

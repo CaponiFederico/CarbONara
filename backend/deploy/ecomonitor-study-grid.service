@@ -1,0 +1,27 @@
+# Raccoglitore dell'intensita' della rete da ElectricityMaps
+
+[Unit]
+Description=EcoMonitor study grid intensity collector
+Requires=postgresql.service
+After=postgresql.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ecomonitor_grid
+Group=ecomonitor_grid
+Environment=ECOMONITOR_STUDY_DSN=dbname=ecomonitor_study
+LoadCredential=em_api_key:/etc/ecomonitor-study/em_api_key
+ExecStart=/opt/ecomonitor-study/venv/bin/ecomonitor-study-grid
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true

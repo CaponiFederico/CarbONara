@@ -1,0 +1,14 @@
+# Dump notturno del database dello studio
+# 14 giorni sulla VM
+
+[Unit]
+Description=EcoMonitor study database backup
+Requires=postgresql.service
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=postgres
+UMask=0077
+ExecStart=/bin/sh -c 'pg_dump -Fc ecomonitor_study > /var/backups/ecomonitor-study/ecomonitor_study-$(date -u +%%Y%%m%%dT%%H%%M%%SZ).dump'
+ExecStartPost=/usr/bin/find /var/backups/ecomonitor-study -name '*.dump' -mtime +14 -delete

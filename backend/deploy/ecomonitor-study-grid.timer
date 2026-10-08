@@ -1,0 +1,12 @@
+# Una volta al giorno
+
+[Unit]
+Description=Raccolta giornaliera dell'intensita' della rete
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 UTC
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
