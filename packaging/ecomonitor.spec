@@ -101,6 +101,15 @@ if IS_WINDOWS:
         "winrt.windows.data.xml.dom",
         "winrt.windows.ui.notifications",
     ]
+#Notifiche native di macOS (PyObjC)
+if IS_MACOS:
+    gui_hidden_imports += [
+        "ecomonitor.gui.macos_notifier",
+        "objc",
+        "CoreFoundation",
+        "Foundation",
+        "UserNotifications",
+    ]
 
 gui_analysis = Analysis(  # noqa: F821
     [str(PROJECT_ROOT / "packaging" / "entry_gui.py")],

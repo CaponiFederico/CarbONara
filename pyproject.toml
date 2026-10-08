@@ -26,6 +26,10 @@ windows = [
     "winrt-Windows.Data.Xml.Dom>=3.2,<3.3",
     "winrt-Windows.UI.Notifications>=3.2,<3.3",
 ]
+macos = [
+    #notifiche native (UserNotifications)
+    "pyobjc-framework-UserNotifications>=12.0,<13; sys_platform == 'darwin'",
+]
 packaging = [
     #serve su tutti i sistemi: lo stesso spec costruisce Windows, Linux e macOS
     "pyinstaller>=6.22",
@@ -75,6 +79,11 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["winrt", "winrt.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+#PyObjC: solo su macOS
+module = ["objc", "Foundation", "UserNotifications"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

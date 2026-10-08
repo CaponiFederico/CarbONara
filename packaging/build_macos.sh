@@ -4,8 +4,8 @@
 # dalla root del progetto
 #   bash packaging/build_macos.sh
 #
-# Serve un venv con l'extra [packaging]:
-#   python3 -m venv .venv && .venv/bin/pip install -e ".[gui,packaging]"
+# Serve un venv con gli extra [macos] e [packaging]:
+#   python3 -m venv .venv && .venv/bin/pip install -e ".[gui,macos,packaging]"
 #
 
 set -euo pipefail
@@ -31,6 +31,13 @@ VERSION="$(grep -m1 -E '^version = ' "${PROJECT_ROOT}/pyproject.toml" | cut -d'"
 ARCH="$("${PYTHON}" -c 'import platform; print(platform.machine())')"
 if [[ ${ARCH} != arm64 ]]; then
     echo "ERRORE: serve un interprete arm64, ${PYTHON} e' ${ARCH}." >&2
+    exit 2
+fi
+
+#senza PyObjC il pacchetto esce senza notifiche native, e non lo dice
+if ! "${PYTHON}" -c 'import UserNotifications' 2>/dev/null; then
+    echo "ERRORE: manca PyObjC per le notifiche native." >&2
+    echo "  ${PYTHON} -m pip install -e \".[gui,macos,packaging]\"" >&2
     exit 2
 fi
 

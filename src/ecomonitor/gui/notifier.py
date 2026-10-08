@@ -86,6 +86,23 @@ def _create_dbus_notifier(on_click: Callable[[], None]) -> Notifier | None:
     return notifier
 
 
+def _create_macos_notifier(on_click: Callable[[], None]) -> Notifier | None:
+    try:
+        from ecomonitor.gui.macos_notifier import create_macos_notifier
+
+        notifier = create_macos_notifier()
+    except Exception as exc:
+        logger.info(
+            "Notifiche native di macOS non disponibili (%s): restano quelle "
+            "della barra dei menu",
+            exc,
+        )
+        return None
+    notifier.clicked.connect(on_click)
+    logger.info("Notifiche native di macOS attive")
+    return notifier
+
+
 def create_notifier(
     tray: QSystemTrayIcon | None,
     on_click: Callable[[], None],
@@ -103,6 +120,10 @@ def create_notifier(
         desktop = _create_dbus_notifier(on_click)
         if desktop is not None:
             return desktop
+    if system == "Darwin":
+        native = _create_macos_notifier(on_click)
+        if native is not None:
+            return native
 
     if tray is None or not tray.supportsMessages():
         logger.info(

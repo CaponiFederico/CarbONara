@@ -28,6 +28,14 @@ file "${EXECUTABLE}"
 codesign --verify --deep --strict "${APP}" ||
     fail "firma non valida: su Apple Silicon l'app verrebbe uccisa all'avvio"
 echo "firma: valida"
+#macOS lega il permesso delle notifiche a chi e' intestata la firma
+signed_identifier="$(codesign -dv "${APP}" 2>&1 | sed -n 's/^Identifier=//p')"
+if [[ ${signed_identifier} == "${EXPECTED_IDENTIFIER}" ]]; then
+    echo "firma intestata a: ${signed_identifier}"
+else
+    echo "ATTENZIONE: firma intestata a «${signed_identifier}», non a ${EXPECTED_IDENTIFIER}:"
+    echo "  macOS potrebbe negare le notifiche native"
+fi
 
 #senza la chiave il pacchetto esce 
 RESOURCES="${APP}/Contents/Resources"
@@ -98,6 +106,14 @@ if grep -q "powermetrics attivo" "${LOG_FILE}"; then
     echo "misura: nativa (powermetrics)"
 else
     echo "misura: stima (powermetrics non disponibile, vedi registro)"
+fi
+
+if grep -q "Notifiche native di macOS attive" "${LOG_FILE}"; then
+    echo "notifiche: native"
+elif grep -q "Notifiche native di macOS non disponibili" "${LOG_FILE}"; then
+    echo "notifiche: NON native, resta la barra dei menu (vedi registro)"
+else
+    echo "notifiche: non ancora create, nessun tick in ${GUI_SECONDS} s"
 fi
 
 rm -rf "${SMOKE_HOME}"
