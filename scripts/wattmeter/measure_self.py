@@ -23,7 +23,9 @@ ROOT = Path(__file__).resolve().parents[2]
 PRIVATE_FIELDS = ("electricitymaps_api_key", "study_token", "study_endpoint")
 
 MIN_SIGNAL_TO_ERROR = 2.0
-MAX_LEVEL_SPREAD = 0.35
+MAX_LEVEL_SPREAD = 0.2
+#watt di scarto fra i due A attorno a un B oltre i quali il B si scarta
+MAX_BASELINE_STEP_W = 1.0
 
 
 def _say(text: str) -> None:
@@ -43,6 +45,8 @@ def run_instance(db_path: Path, config_path: Path, offset: float) -> int:
         return 2
     orchestrator = Orchestrator(config_manager=ConfigManager(config_path), db=LocalDatabase(db_path))
     interval = orchestrator.config_manager.config.poll_interval_seconds
+    #quale backend ha davvero preso la copia: misurato o stimato cambia il costo
+    db_path.with_suffix(".backend").write_text(type(orchestrator.backend).__name__, encoding="utf-8")
     while True:
         try:
             orchestrator.tick()
@@ -149,6 +153,11 @@ def analyze(arms: list[dict], samples: list[tuple[float, float]]) -> int:
         before, after = arms[position - 1], arms[position + 1]
         if None in (arm["mean"], before["mean"], after["mean"]):
             continue
+        #se la base cambia stato fra i due A, la loro media non e' la base di nessuno
+        step = abs(before["median"] - after["median"])
+        if step > MAX_BASELINE_STEP_W:
+            print(f"braccio {arm['index']} scartato: la base attorno si sposta di {step:.1f} W")
+            continue
         level = deltas.setdefault(arm["copies"], {"mean": [], "median": []})
         for key in ("mean", "median"):
             level[key].append(arm[key] - (before[key] + after[key]) / 2.0)
@@ -250,6 +259,7 @@ def main(argv: list[str] | None = None) -> int:
     time.sleep(20)
 
     arms: list[dict] = []
+    backends: set[str] = set()
     running: list[subprocess.Popen] = []
     try:
         for index, copies in enumerate(sequence, start=1):
@@ -271,6 +281,11 @@ def main(argv: list[str] | None = None) -> int:
             running = []
             if alive != copies:
                 _say(f"  ATTENZIONE: vive {alive} copie su {copies}")
+            if copies:
+                names = [path.read_text(encoding="utf-8")
+                         for path in work.glob(f"arm{index:02d}_*.backend")]
+                backends.update(names)
+                _say(f"  backend: {len(names)} dichiarati, {sorted(set(names))}")
             arms.append({
                 "index": index, "copies": copies, "alive": alive, "start": start,
                 "from": measured_from, "to": measured_to,
@@ -295,6 +310,7 @@ def main(argv: list[str] | None = None) -> int:
                 round(arm["cpu_percent_per_copy"], 4), round(arm["memory_mb_per_copy"], 1),
             ])
 
+    print(f"\nbackend delle copie: {', '.join(sorted(backends)) or 'nessuno dichiarato'}")
     return analyze(arms, load_plug(plug_csv))
 
 
