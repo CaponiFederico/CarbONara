@@ -41,6 +41,13 @@ if ! "${PYTHON}" -c 'import UserNotifications' 2>/dev/null; then
     exit 2
 fi
 
+#Qt prima della 6.12 va in crash su macOS 27
+if ! "${PYTHON}" -c 'import sys, PySide6; sys.exit(PySide6.__version_info__[:2] < (6, 12))' 2>/dev/null; then
+    echo "ERRORE: serve PySide6 6.12 o successiva." >&2
+    echo "  ${PYTHON} -m pip install -U -e \".[gui,macos,packaging]\"" >&2
+    exit 2
+fi
+
 BUILD_DIR="${PACKAGING_DIR}/build"
 DIST_DIR="${PACKAGING_DIR}/dist"
 OUT_DIR="${PACKAGING_DIR}/out"
