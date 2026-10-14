@@ -3,7 +3,13 @@ import random
 from collections import deque
 from datetime import date, datetime, timedelta
 
-from ecomonitor.advisor import AdviceTarget, CarbonAwareAdvisor, ChargeAdvice, RollingAverage
+from ecomonitor.advisor import (
+    AdviceTarget,
+    CarbonAwareAdvisor,
+    ChargeAdvice,
+    ChargeRecommendation,
+    RollingAverage,
+)
 from ecomonitor.carbon.attribution import CarbonAttributionService
 from ecomonitor.carbon.backfill import backfill_grid_history
 from ecomonitor.carbon.battery_pool import (
@@ -26,6 +32,7 @@ from ecomonitor.sensors.base import (
 from ecomonitor.sensors.factory import get_backend, get_fallback_backend
 from ecomonitor.storage.db import LIVE_SAMPLE_SOURCE, LocalDatabase, default_database_path
 from ecomonitor.storage.event_buffer import BufferedEnergyRow, EnergyEventBuffer, EnergyTick
+from ecomonitor.study_phase import StudyPhase, hour_phase_label
 
 #legge i sensori e integra W -> Wh, legge lo stato di
 #alimentazione, campiona l'intensita' di rete con la sua cadenza, delega
@@ -151,6 +158,9 @@ class Orchestrator:
         self._unknown_origin_source = "static_country_mean"
 
         self.advisor = CarbonAwareAdvisor()
+        self._last_advice: ChargeAdvice | None = None
+        self.study_phase: StudyPhase | None = None
+        self.dashboard_visible = False
         #solo i campioni della zona corrente: un portatile si sposta, e la
         #media di riferimento non puo' mescolare due mercati elettrici
         self.rolling_avg = load_rolling_average(self.db, self.grid_service.zone)
@@ -471,6 +481,13 @@ class Orchestrator:
         self._last_battery_percent = power_state.battery_percent
         self._last_seen_at = now
 
+        interval = self.integrator.last_interval_seconds
+        #dopo _read_sensor: un sensore perso cambia backend e livello
+        measurement_mode = getattr(self.backend, "mode", NATIVE_MODE)
+        previous = (
+            None if self._last_advice is None else self._last_advice.recommendation
+        )
+
         #gli eventi di consumo passano dal buffer, che chiude la riga da solo
         #quando cambia regime o dopo una finestra non osservata
         completed = self.buffer.add(
@@ -493,11 +510,20 @@ class Orchestrator:
                 #l'ascissa con cui si calibrera' il ripiego
                 cpu_percent=reading.cpu_percent,
                 #la durata che ha prodotto questi wh, per la riga aggregata
-                interval_seconds=self.integrator.last_interval_seconds,
+                interval_seconds=interval,
                 #il solo dominio CPU: e' quello che il ripiego deve stimare
                 #quando la GPU riesce a misurarla
                 cpu_wh=self.integrator.last_package_wh,
                 starts_new_row=self.integrator.skipped_gap_seconds > 0,
+                study_phase=hour_phase_label(self.study_phase),
+                measurement_kind=measurement_mode.kind,
+                dashboard_visible_seconds=interval if self.dashboard_visible else 0.0,
+                advice_wait_seconds=(
+                    interval if previous is ChargeRecommendation.WAIT else 0.0
+                ),
+                advice_now_seconds=(
+                    interval if previous is ChargeRecommendation.CHARGE_NOW else 0.0
+                ),
             )
         )
         if completed is not None:
@@ -529,6 +555,7 @@ class Orchestrator:
             target=AdviceTarget.WORKLOAD if power_state.is_plugged_in else AdviceTarget.CHARGE,
             now=now,
         )
+        self._last_advice = advice
 
         #i totali viaggiano col risultato del tick: la finestra non deve fare
         #I/O SQLite per conto suo
@@ -544,7 +571,7 @@ class Orchestrator:
             "today_operational_gco2": today_gco2,
             "active_hours_today": self.active_hours_today,
             #che cosa e' misurato davvero
-            "measurement_mode": getattr(self.backend, "mode", NATIVE_MODE),
+            "measurement_mode": measurement_mode,
             "grid_intensity_source": self.grid_service.last_value_source,
             "grid_intensity_failure": self.grid_service.last_live_failure,
             "grid_zone": self.grid_service.zone,

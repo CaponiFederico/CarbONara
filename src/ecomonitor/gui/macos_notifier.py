@@ -21,9 +21,9 @@ ADVICE_IDENTIFIER = "advice"
 
 
 def notification_identifier(kind: NotificationKind) -> str:
-    from ecomonitor.notifications import PROBLEM_KINDS
+    from ecomonitor.notifications import OWN_SLOT_KINDS
 
-    return kind.value if kind in PROBLEM_KINDS else ADVICE_IDENTIFIER
+    return kind.value if kind in OWN_SLOT_KINDS else ADVICE_IDENTIFIER
 
 
 class NotificationCenter(Protocol):

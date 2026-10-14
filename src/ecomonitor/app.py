@@ -26,14 +26,15 @@ from ecomonitor.gui.main_window import MainWindow
 from ecomonitor.gui.notifier import Notifier, create_notifier
 from ecomonitor.gui.single_instance import SingleInstanceGuard
 from ecomonitor.gui.theme import theme_for
-from ecomonitor.gui.tray import create_tray_icon
+from ecomonitor.gui.tray import create_tray_icon, set_study_baseline
 from ecomonitor.storage.db import default_database_path
 from ecomonitor.storage.lock import DatabaseLock
+from ecomonitor.study_phase import StudyPhase, format_moment, new_install_id, parse_moment
 
 if TYPE_CHECKING:
     #a runtime li importa il thread di polling
     from ecomonitor.advisor import ChargeAdvice
-    from ecomonitor.notifications import NotificationPolicy
+    from ecomonitor.notifications import Notification, NotificationPolicy
     from ecomonitor.orchestrator import Orchestrator
     from ecomonitor.study_upload import StudyUploadScheduler, UploadSettings
 
@@ -88,6 +89,35 @@ def should_start_hidden(requested: bool, tray_available: bool, background_availa
     if not requested:
         return False
     return tray_available or background_available
+
+
+def needs_onboarding(frozen: bool, config: AppConfig) -> bool:
+    return frozen and not config.study_onboarding_done and not config.study_token
+
+
+def starts_hidden_for_study(
+    requested: bool,
+    phase: StudyPhase | None,
+    onboarding: bool,
+    tray_available: bool,
+    background_available: bool,
+) -> bool:
+    if onboarding:
+        return False
+    return should_start_hidden(
+        requested or phase is StudyPhase.BASELINE, tray_available, background_available
+    )
+
+
+def ensure_install_id(config_manager: ConfigManager) -> None:
+    config = config_manager.config
+    if config.install_id is not None:
+        return
+    config.install_id = new_install_id()
+    try:
+        config_manager.save()
+    except OSError:
+        logger.warning("Identificativo dell'installazione non salvato")
 
 #open --args --background attiva l'app all'avvio
 HIDDEN_START_ACTIVATION_GRACE_SECONDS = 3.0
@@ -404,6 +434,8 @@ class PollingWorker(QObject):
         self._pending_user_api_key: tuple[str | None, ...] = ()
         self._pending_zone: tuple[str, str | None] | None = None
         self._pending_study_token: tuple[str | None, ...] = ()
+        #la dashboard a schermo, scritta dal thread della GUI
+        self._dashboard_visible = False
 
         #invio allo studio: nasce col primo tick, gira in un thread suo
         self._study_scheduler: StudyUploadScheduler | None = None
@@ -479,20 +511,48 @@ class PollingWorker(QObject):
         pending = self._take_pending_study_token()
         if not pending or self._orchestrator is None:
             return
-        self._orchestrator.config_manager.config.study_token = pending[0]
+        config = self._orchestrator.config_manager.config
+        if pending[0] != config.study_token:
+            #un altro partecipante: si riparte dalla fase 1
+            config.reset_study_calendar()
+        config.study_token = pending[0]
         if self._study_scheduler is not None:
             self._study_scheduler.reset()
+
+    def set_dashboard_visible(self, visible: bool) -> None:
+        #chiamata dal thread della GUI a ogni cambio
+        with self._pending_lock:
+            self._dashboard_visible = visible
+
+    def _sync_study_phase(self) -> dict:
+        assert self._orchestrator is not None
+        config = self._orchestrator.config_manager.config
+        dates = None if self._study_scheduler is None else self._study_scheduler.study_dates
+        if dates is not None:
+            config.study_advice_starts_at = format_moment(dates.advice_starts_at)
+            config.study_ends_at = format_moment(dates.ends_at)
+        phase = config.study_phase(datetime.now(UTC))
+        with self._pending_lock:
+            visible = self._dashboard_visible
+        self._orchestrator.study_phase = phase
+        self._orchestrator.dashboard_visible = visible
+        return {
+            "study_phase": phase,
+            "study_advice_starts_at": parse_moment(config.study_advice_starts_at),
+            "study_ends_at": parse_moment(config.study_ends_at),
+        }
 
     @staticmethod
     def _study_settings(config: AppConfig) -> UploadSettings | None:
         from ecomonitor.study_upload import UploadSettings, settle_seconds_for
 
         endpoint = config.effective_study_endpoint
-        if not (endpoint and config.study_token):
+        if not (endpoint and config.study_token and config.install_id):
             return None
         return UploadSettings(
             endpoint=endpoint,
             token=config.study_token,
+            install_id=config.install_id,
             zone=config.em_zone,
             country_code=config.country_code,
             settle_seconds=settle_seconds_for(config.db_flush_interval_seconds),
@@ -542,11 +602,18 @@ class PollingWorker(QObject):
             zone_changed = self._apply_pending_zone()
             self._apply_pending_study_token()
             try:
+                study = self._sync_study_phase()
+            except Exception:
+                #un difetto qui non deve fermare la misura
+                logger.exception("Fase dello studio non aggiornata")
+                study = {}
+            try:
                 result = self._orchestrator.tick()
                 #lo scheduler vive qui, non nell'orchestratore
                 result["study_token_rejected"] = (
                     self._study_scheduler is not None and self._study_scheduler.token_rejected
                 )
+                result.update(study)
                 self.tick_ready.emit(result)
                 if not first_tick_done:
                     first_tick_done = True
@@ -672,25 +739,43 @@ class NotificationDispatcher(QObject):
         except Exception:
             logger.exception("Notifica non riuscita")
 
-    def _dispatch(self, result: dict) -> None:
-        from ecomonitor.notifications import (
-            NotificationPolicy,
-            advice_notifications_allowed,
-            snapshot_from_tick,
-        )
+    def _ensure_started(self) -> None:
+        from ecomonitor.notifications import NotificationPolicy
 
         if self._policy is None:
             #prima la politica
             self._policy = NotificationPolicy(self._started_at)
             self._notifier = self._notifier_factory()
-        if self._notifier is None:
-            return 
+
+    def show_notice(self, notification: Notification) -> bool:
+        try:
+            self._ensure_started()
+            if self._notifier is None:
+                return False
+            logger.info("Notifica: %s", notification.kind.value)
+            self._notifier.show(notification)
+        except Exception:
+            logger.exception("Notifica non riuscita")
+            return False
+        return True
+
+    def _dispatch(self, result: dict) -> None:
+        from ecomonitor.notifications import advice_notifications_allowed, snapshot_from_tick
+
+        self._ensure_started()
+        if self._notifier is None or self._policy is None:
+            return
         config = self._config
+        phase = (
+            result["study_phase"]
+            if "study_phase" in result
+            else config.study_phase(self._now())
+        )
         snapshot = snapshot_from_tick(
             result,
             window_in_foreground=self._window_in_foreground(),
             advice_enabled=advice_notifications_allowed(
-                config.advice_notifications_enabled, bool(config.study_token)
+                config.advice_notifications_enabled, phase
             ),
             problems_enabled=config.problem_notifications_enabled,
         )
@@ -701,6 +786,72 @@ class NotificationDispatcher(QObject):
         if outcome.show is not None:
             logger.info("Notifica: %s", outcome.show.kind.value)
             self._notifier.show(outcome.show)
+
+
+class StudyPhaseController(QObject):
+
+    def __init__(
+        self,
+        window: MainWindow,
+        config_manager: ConfigManager,
+        show_window: Callable[[], None],
+        show_notice: Callable[[Notification], bool],
+        on_baseline_changed: Callable[[bool], None] | None = None,
+    ) -> None:
+        super().__init__()
+        self._window = window
+        self._config_manager = config_manager
+        self._show_window = show_window
+        self._show_notice = show_notice
+        self._on_baseline_changed = on_baseline_changed
+        config = config_manager.config
+        self._saved_dates = (config.study_advice_starts_at, config.study_ends_at)
+        self._in_baseline: bool | None = None
+
+    @Slot(dict)
+    def on_tick_ready(self, result: dict) -> None:
+        #senza la chiave la fase non e' stata calcolata
+        if "study_phase" not in result:
+            return
+        try:
+            self._apply(result["study_phase"], result.get("study_advice_starts_at"))
+        except Exception:
+            logger.exception("Fase dello studio non applicata")
+
+    def apply_phase(self, phase: StudyPhase | None) -> None:
+        #la stessa strada di un tick, per il benvenuto che entra in fase 1
+        self._apply(phase, None)
+
+    def _apply(self, phase: StudyPhase | None, advice_starts_at: datetime | None) -> None:
+        config = self._config_manager.config
+        #il thread di polling scrive il calendario nel config in memoria
+        dates = (config.study_advice_starts_at, config.study_ends_at)
+        if dates != self._saved_dates:
+            self._saved_dates = dates
+            self._save("il calendario dello studio")
+
+        self._window.set_study_phase(phase, advice_starts_at)
+        in_baseline = phase is StudyPhase.BASELINE
+        if in_baseline != self._in_baseline:
+            self._in_baseline = in_baseline
+            if self._on_baseline_changed is not None:
+                self._on_baseline_changed(in_baseline)
+
+        if phase is StudyPhase.ADVICE and not config.study_advice_announced:
+            #anche al primo avvio dopo il cambio, se l'app era spenta
+            from ecomonitor.notifications import study_advice_started_notification
+
+            config.study_advice_announced = True
+            self._save("l'annuncio della fase 2")
+            logger.info("Studio: inizia la fase 2, l'app mostra i consigli")
+            self._show_window()
+            self._show_notice(study_advice_started_notification())
+
+    def _save(self, what: str) -> None:
+        try:
+            self._config_manager.save()
+        except OSError:
+            logger.warning("Impossibile salvare %s: resta in memoria", what)
 
 
 STOP_TIMEOUT_MS = 12_000
@@ -899,9 +1050,22 @@ def main() -> None:
     # La GUI non puo' aspettare il thread di polling perche' deve mostrare subito
     config_manager = ConfigManager()
     config = config_manager.config
+    ensure_install_id(config_manager)
 
-    start_hidden = should_start_hidden(requested_hidden, tray_available, background_available)
-    if requested_hidden and not start_hidden:
+    #la fase si applica prima di mostrare qualunque cosa
+    initial_phase = config.study_phase(datetime.now(UTC))
+    window.set_study_phase(initial_phase, parse_moment(config.study_advice_starts_at))
+    if needs_onboarding(getattr(sys, "frozen", False), config):
+        window.show_onboarding()
+
+    start_hidden = starts_hidden_for_study(
+        requested_hidden,
+        initial_phase,
+        window.onboarding,
+        tray_available,
+        background_available,
+    )
+    if requested_hidden and not start_hidden and not window.onboarding:
         logger.warning(
             "Avvio in secondo piano chiesto ma non possibile su questo desktop: senza "
             "area di notifica e senza modalita' in secondo piano la finestra non si "
@@ -941,6 +1105,8 @@ def main() -> None:
     default_autostart.start()
 
     tray = create_tray_icon(window, on_quit=app.quit) if tray_available else None
+    if tray is not None:
+        set_study_baseline(tray, initial_phase is StudyPhase.BASELINE)
     if tray is None and not background_available:
         #solo quando la modalita' in secondo piano non e' disponibile
         logger.info(
@@ -1015,6 +1181,24 @@ def main() -> None:
     )
     worker.tick_ready.connect(dispatcher.on_tick_ready)
     window.on_notifications_changed = dispatcher.set_switches
+
+    def mark_tray_baseline(in_baseline: bool) -> None:
+        if tray is not None:
+            set_study_baseline(tray, in_baseline)
+
+    study_controller = StudyPhaseController(
+        window,
+        config_manager,
+        show_window=show_window,
+        show_notice=dispatcher.show_notice,
+        on_baseline_changed=mark_tray_baseline,
+    )
+    worker.tick_ready.connect(study_controller.on_tick_ready)
+    window.on_study_phase_changed = study_controller.apply_phase
+    window.on_quit = app.quit
+    window.on_dashboard_visibility_changed = worker.set_dashboard_visible
+    #la finestra puo' essere gia' a schermo
+    worker.set_dashboard_visible(window.dashboard_on_screen)
 
     def cleanup() -> None:
         sigint_timer.stop()

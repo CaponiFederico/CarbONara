@@ -93,9 +93,9 @@ def toast_xml(title: str, text: str) -> str:
 
 
 def toast_tag(kind: NotificationKind) -> str:
-    from ecomonitor.notifications import PROBLEM_KINDS
+    from ecomonitor.notifications import OWN_SLOT_KINDS
 
-    return kind.value if kind in PROBLEM_KINDS else ADVICE_TAG
+    return kind.value if kind in OWN_SLOT_KINDS else ADVICE_TAG
 
 
 class ToastPlatform(Protocol):

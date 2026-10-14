@@ -15,6 +15,7 @@ from ecomonitor.advisor import (
 )
 from ecomonitor.carbon.grid_intensity import LIVE_FAILURE_AUTH
 from ecomonitor.storage.db import LIVE_SAMPLE_SOURCE
+from ecomonitor.study_phase import StudyPhase
 
 STARTUP_GRACE_SECONDS = 120.0
 
@@ -54,6 +55,9 @@ class NotificationKind(Enum):
     API_KEY_REJECTED = "api_key_rejected"
     STUDY_TOKEN_REJECTED = "study_token_rejected"
 
+    STUDY_ADVICE_STARTED = "study_advice_started"
+    # studio: inizia la fase 2, l'app mostra i consigli
+
 
 PROBLEM_KINDS = frozenset(
     {
@@ -62,6 +66,8 @@ PROBLEM_KINDS = frozenset(
         NotificationKind.STUDY_TOKEN_REJECTED,
     }
 )
+
+OWN_SLOT_KINDS = PROBLEM_KINDS | {NotificationKind.STUDY_ADVICE_STARTED}
 
 
 @dataclass(frozen=True)
@@ -96,10 +102,20 @@ class PolicyOutcome:
     withdraw: tuple[NotificationKind, ...] = ()
 
 
-def advice_notifications_allowed(user_enabled: bool, has_study_token: bool) -> bool:
-    if has_study_token:
+def advice_notifications_allowed(user_enabled: bool, study_phase: StudyPhase | None) -> bool:
+    #una notifica e' un intervento: in fase 1 dello studio non ce ne sono
+    if study_phase is StudyPhase.BASELINE:
         return False
     return user_enabled
+
+
+def study_advice_started_notification() -> Notification:
+    #una volta sola, all'inizio della fase 2
+    return Notification(
+        NotificationKind.STUDY_ADVICE_STARTED,
+        "EcoMonitor ora mostra i consigli",
+        _lines("Ti dice quando la rete è più pulita", "Seconda settimana dello studio"),
+    )
 
 
 def snapshot_from_tick(

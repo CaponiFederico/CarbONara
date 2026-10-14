@@ -1,8 +1,8 @@
 import logging
 import os
-import re
 import threading
 from collections.abc import Callable, Iterable
+from datetime import UTC, datetime
 
 from PySide6.QtCore import QCoreApplication, QRect, Qt
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QResizeEvent
@@ -25,6 +25,7 @@ from ecomonitor.config import (
     API_KEY_ENV_VAR,
     ATTRIBUTION_MODELS,
     STUDY_TOKEN_PATTERN,
+    TOKEN_DIGEST_PATTERN,
     AppConfig,
     ConfigManager,
     packaged_api_key,
@@ -32,6 +33,7 @@ from ecomonitor.config import (
 from ecomonitor.gui.theme import LIGHT, Theme, build_palette
 from ecomonitor.gui.zone_map import ZoneMapWidget, country_of_zone, normalize_country
 from ecomonitor.gui.zone_map_data import COUNTRY_NAMES, COUNTRY_ZONES, ZONE_NAMES, ZONE_REGIONS
+from ecomonitor.study_phase import StudyPhase
 
 logger = logging.getLogger(__name__)
 
@@ -47,13 +49,13 @@ def _default_key_validator(api_key: str, zone: str) -> str | None:
 _ATTRIBUTION_MODELS = ATTRIBUTION_MODELS
 
 #l'impronta SHA-256 del token
-_TOKEN_DIGEST_PATTERN = re.compile(r"[0-9a-f]{64}")
+_TOKEN_DIGEST_PATTERN = TOKEN_DIGEST_PATTERN
 
 CHARGE_ADVICE_LABEL = "Consigli sulla ricarica"
 WORKLOAD_ADVICE_LABEL = "Consigli sul momento migliore per le attività pesanti"
 PROBLEM_NOTIFICATIONS_LABEL = "Problemi di misura, di chiave e di token"
 ADVICE_TOOLTIP = "Poche al giorno, solo con la finestra chiusa e solo da previsione di rete"
-STUDY_ADVICE_TOOLTIP = "Con un token dello studio, i consigli li decide lo studio"
+STUDY_ADVICE_TOOLTIP = "Nella prima fase dello studio i consigli restano spenti"
 
 
 def _has_battery() -> bool:
@@ -156,6 +158,7 @@ class SettingsDialog(QDialog):
 
         #il token del partecipante allo studio: e' suo, quindi si rilegge e si cancella
         self._saved_study_token = config.study_token
+        self._saved_study_phase = config.study_phase(datetime.now(UTC))
         self.saved_study_token = self._saved_study_token
         self.study_token_changed = False
         self.study_token_edit = QLineEdit(self._saved_study_token or "")
@@ -309,10 +312,17 @@ class SettingsDialog(QDialog):
         self.zone_caption.set_reserved_texts(texts)
 
     def _refresh_advice_notifications(self) -> None:
-        in_study = bool(self.study_token_edit.text().strip())
-        self.advice_notifications_check.setEnabled(not in_study)
+        #un token nuovo riparte dalla fase 1
+        token = self.study_token_edit.text().strip()
+        if not token:
+            in_baseline = False
+        elif token != self._saved_study_token:
+            in_baseline = True
+        else:
+            in_baseline = self._saved_study_phase is StudyPhase.BASELINE
+        self.advice_notifications_check.setEnabled(not in_baseline)
         self.advice_notifications_check.setToolTip(
-            STUDY_ADVICE_TOOLTIP if in_study else ADVICE_TOOLTIP
+            STUDY_ADVICE_TOOLTIP if in_baseline else ADVICE_TOOLTIP
         )
 
     def _api_key_placeholder(self) -> str:
@@ -486,6 +496,8 @@ class SettingsDialog(QDialog):
         config.study_token = self.study_token_edit.text().strip() or None
         self.saved_study_token = config.study_token
         self.study_token_changed = self.saved_study_token != self._saved_study_token
+        if self.study_token_changed:
+            config.reset_study_calendar()
         config.attribution_model = self.attribution_combo.currentText()
         config.advice_notifications_enabled = self.advice_notifications_check.isChecked()
         self.saved_advice_notifications = config.advice_notifications_enabled

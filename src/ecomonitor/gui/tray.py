@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 
 TRAY_TOOLTIP = "EcoMonitor"
 SHOW_ENTRY = "Apri dashboard"
+#fase 1 dello studio
+STUDY_SHOW_ENTRY = "Stato dello studio"
+STUDY_TOOLTIP = "EcoMonitor — raccolta dati per lo studio"
 QUIT_ENTRY = "Esci"
 
 
@@ -39,3 +42,10 @@ def create_tray_icon(window: QMainWindow, on_quit: Callable[[], None]) -> QSyste
     )
     tray.show()
     return tray
+
+def set_study_baseline(tray: QSystemTrayIcon, in_baseline: bool) -> None:
+    menu = tray.contextMenu()
+    actions = menu.actions() if menu is not None else []
+    if actions:
+        actions[0].setText(STUDY_SHOW_ENTRY if in_baseline else SHOW_ENTRY)
+    tray.setToolTip(STUDY_TOOLTIP if in_baseline else TRAY_TOOLTIP)

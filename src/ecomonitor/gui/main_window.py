@@ -1,9 +1,11 @@
+import logging
 import platform
 import time
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QRect, Qt, QTimer
+from PySide6.QtCore import QEvent, QRect, Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QHideEvent, QShowEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -18,10 +20,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ecomonitor.config import ConfigManager
 from ecomonitor.gui import macos_dock
 from ecomonitor.gui.history_page import HistoryPage
 from ecomonitor.gui.icon import app_icon
 from ecomonitor.gui.settings_dialog import SettingsDialog
+from ecomonitor.gui.study_pages import OnboardingPage, StudyPhasePage
 from ecomonitor.gui.theme import LIGHT, Theme, build_stylesheet
 from ecomonitor.labels import SOURCE_LABELS, grid_source_detail
 from ecomonitor.reporting import (
@@ -32,6 +36,9 @@ from ecomonitor.reporting import (
     format_gco2,
     format_phone_charges,
 )
+from ecomonitor.study_phase import StudyPhase, shows_dashboard
+
+logger = logging.getLogger(__name__)
 
 #le etichette
 _SOURCE_LABELS = SOURCE_LABELS
@@ -187,9 +194,22 @@ class MainWindow(QMainWindow):
         self.history_page = HistoryPage(database_path=database_path, theme=self._theme)
         self.history_page.back_requested.connect(self.show_dashboard)
 
+        #studio: fase 1 e primo avvio prendono il posto di dashboard e storico
+        self._study_phase: StudyPhase | None = None
+        self._onboarding = False
+        self._dashboard_on_screen = False
+        self.study_page = StudyPhasePage()
+        self.study_page.settings_requested.connect(self.open_settings)
+        self.study_page.quit_requested.connect(self._request_quit)
+        self.onboarding_page = OnboardingPage()
+        self.onboarding_page.joined.connect(self._join_study)
+        self.onboarding_page.skipped.connect(self._skip_study)
+
         self._stack = QStackedWidget(self)
         self._stack.addWidget(self.dashboard_page)
         self._stack.addWidget(self.history_page)
+        self._stack.addWidget(self.study_page)
+        self._stack.addWidget(self.onboarding_page)
 
         self.setCentralWidget(self._stack)
         self._build_status_bar()
@@ -224,6 +244,14 @@ class MainWindow(QMainWindow):
         self.on_study_token_changed: Callable[[str | None], None] | None = None
         #i due interruttori delle notifiche: consigli, problemi
         self.on_notifications_changed: Callable[[bool, bool], None] | None = None
+        #dashboard a schermo o no: il thread di polling la registra per lo studio
+        self.on_dashboard_visibility_changed: Callable[[bool], None] | None = None
+        #fase dello studio cambiata dalla finestra stessa (benvenuto)
+        self.on_study_phase_changed: Callable[[StudyPhase | None], None] | None = None
+        #«Esci» della pagina dello studio
+        self.on_quit: Callable[[], None] | None = None
+        #da dove il benvenuto legge e scrive la configurazione
+        self.config_manager_factory: Callable[[], ConfigManager] = ConfigManager
         #chiamata quando la finestra viene nascosta chiudendola: cosa
         #notificare lo decide app.py, la finestra non sa nulla della tray
 
@@ -440,7 +468,22 @@ class MainWindow(QMainWindow):
 
     # -- interazione -------------------------------------------------------
 
+    def _locked_page(self) -> QWidget | None:
+        #la pagina che sta al posto di dashboard e storico, se ce n'e' una
+        if self._onboarding:
+            return self.onboarding_page
+        if not shows_dashboard(self._study_phase):
+            return self.study_page
+        return None
+
     def _show_page(self, page: QWidget) -> None:
+        locked = self._locked_page()
+        if locked is not None:
+            page = locked
+        elif page is self.study_page or page is self.onboarding_page:
+            page = self.dashboard_page
+        #storico, impostazioni e stato dei campionamenti stanno nella barra
+        self.statusBar().setVisible(locked is None)
         for index in range(self._stack.count()):
             candidate = self._stack.widget(index)
             if candidate is None:
@@ -454,6 +497,11 @@ class MainWindow(QMainWindow):
             candidate.setSizePolicy(policy)
 
         self._stack.setCurrentWidget(page)
+        self._report_dashboard_visibility()
+
+    @property
+    def current_page(self) -> QWidget | None:
+        return self._stack.currentWidget()
 
     def show_dashboard(self) -> None:
         self._show_page(self.dashboard_page)
@@ -461,6 +509,79 @@ class MainWindow(QMainWindow):
     def show_history(self) -> None:
         self._show_page(self.history_page)
         self.fit_to_content()
+
+    def set_study_phase(
+        self, phase: StudyPhase | None, advice_starts_at: datetime | None = None
+    ) -> None:
+        self.study_page.set_advice_start(advice_starts_at)
+        was_locked = self._locked_page()
+        self._study_phase = phase
+        if self._locked_page() is not was_locked:
+            self._show_page(self.dashboard_page)
+
+    @property
+    def study_phase(self) -> StudyPhase | None:
+        return self._study_phase
+
+    def show_onboarding(self) -> None:
+        self._onboarding = True
+        self._show_page(self.onboarding_page)
+
+    @property
+    def onboarding(self) -> bool:
+        return self._onboarding
+
+    def _join_study(self, token: str) -> None:
+        try:
+            manager = self.config_manager_factory()
+            config = manager.config
+            config.study_token = token
+            config.study_onboarding_done = True
+            config.reset_study_calendar()
+            manager.save()
+        except OSError as exc:
+            logger.warning("Codice dello studio non salvato: %s", exc)
+            self.onboarding_page.show_error(f"Il codice non è stato salvato: {exc}")
+            return
+        self._onboarding = False
+        if self.on_study_token_changed is not None:
+            self.on_study_token_changed(token)
+        #fase 1 subito
+        self._study_phase = StudyPhase.BASELINE
+        self._show_page(self.study_page)
+        if self.on_study_phase_changed is not None:
+            self.on_study_phase_changed(StudyPhase.BASELINE)
+
+    def _skip_study(self) -> None:
+        try:
+            manager = self.config_manager_factory()
+            manager.config.study_onboarding_done = True
+            manager.save()
+        except OSError as exc:
+            #si chiedera' di nuovo al prossimo avvio
+            logger.warning("Scelta di non partecipare non salvata: %s", exc)
+        self._onboarding = False
+        self._show_page(self.dashboard_page)
+
+    def _request_quit(self) -> None:
+        if self.on_quit is not None:
+            self.on_quit()
+
+    @property
+    def dashboard_on_screen(self) -> bool:
+        return self._dashboard_on_screen
+
+    def _report_dashboard_visibility(self) -> None:
+        on_screen = (
+            self.isVisible()
+            and not self.isMinimized()
+            and self._stack.currentWidget() is self.dashboard_page
+        )
+        if on_screen == self._dashboard_on_screen:
+            return
+        self._dashboard_on_screen = on_screen
+        if self.on_dashboard_visibility_changed is not None:
+            self.on_dashboard_visibility_changed(on_screen)
 
     def enable_quit_button(self, on_quit: Callable[[], None]) -> None:
         #chiamato da app.py quando chiudere nasconde ma non c'e' l'area di notifica
@@ -486,9 +607,16 @@ class MainWindow(QMainWindow):
         super().showEvent(event)
         #l'icona nel Dock torna insieme alla finestra
         macos_dock.set_dock_icon_visible(True)
+        self._report_dashboard_visibility()
+
+    def changeEvent(self, event: QEvent) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            self._report_dashboard_visibility()
 
     def hideEvent(self, event: QHideEvent) -> None:
         super().hideEvent(event)
+        self._report_dashboard_visibility()
         if self.isMinimized():
             #ridurre la finestra non rimuove l'icona
             return

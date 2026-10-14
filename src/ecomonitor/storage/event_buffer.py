@@ -8,7 +8,8 @@ from datetime import datetime
 
 #La finestra di aggregazione si chiude quando:
 # - il tick corrente e' di regime diverso dal precedente (plugged,
-#   attribution_source, unknown_origin_source)
+#   attribution_source, unknown_origin_source, fase dello studio, livello
+#   di misura)
 # - il tick corrente e' il primo dopo un buco di campionamento (starts_new_row)
 # - la finestra ha superato il tempo massimo (flush_interval_seconds)
 
@@ -41,6 +42,14 @@ class EnergyTick:
     starts_new_row: bool = False
     #True quando il tick segue una finestra non osservata: il pending va chiuso
     #prima, cosi' nessuna riga attraversa il buco
+    study_phase: str | None = None
+    #fase dello studio applicata, None senza studio
+    measurement_kind: str | None = None
+    #native, partial, calibrated, generic
+    dashboard_visible_seconds: float = 0.0
+    #quanto dell'intervallo la dashboard era a schermo
+    advice_wait_seconds: float = 0.0
+    advice_now_seconds: float = 0.0
 
 
 @dataclass
@@ -69,6 +78,11 @@ class BufferedEnergyRow:
     covered_seconds: float = 0.0
     #tempo davvero coperto dall'energia della riga, somma degli intervalli
     cpu_wh: float = 0.0
+    study_phase: str | None = None
+    measurement_kind: str | None = None
+    dashboard_visible_seconds: float = 0.0
+    advice_wait_seconds: float = 0.0
+    advice_now_seconds: float = 0.0
 
 
 class EnergyEventBuffer:
@@ -89,6 +103,9 @@ class EnergyEventBuffer:
         self._cpu_n = 0
         self._seconds = 0.0
         self._cpu_wh = 0.0
+        self._dashboard_visible = 0.0
+        self._advice_wait = 0.0
+        self._advice_now = 0.0
 
     # -- stato in sospeso --------------------------------------------------
 
@@ -154,6 +171,11 @@ class EnergyEventBuffer:
             cpu_percent=(self._cpu_sum / self._cpu_n) if self._cpu_n else None,
             covered_seconds=self._seconds,
             cpu_wh=self._cpu_wh,
+            study_phase=self._last.study_phase,
+            measurement_kind=self._last.measurement_kind,
+            dashboard_visible_seconds=self._dashboard_visible,
+            advice_wait_seconds=self._advice_wait,
+            advice_now_seconds=self._advice_now,
         )
         self._reset()
         return row
@@ -170,6 +192,9 @@ class EnergyEventBuffer:
             #anche a parita' di fonte il valore puo' cambiare
             or sample.unknown_origin_intensity_g_per_kwh
             != self._last.unknown_origin_intensity_g_per_kwh
+            #una riga sta in una fase sola e a un livello di misura solo
+            or sample.study_phase != self._last.study_phase
+            or sample.measurement_kind != self._last.measurement_kind
         )
 
     def _elapsed_seconds(self) -> float:
@@ -197,6 +222,9 @@ class EnergyEventBuffer:
             self._cpu_n += 1
         self._seconds += sample.interval_seconds
         self._cpu_wh += sample.cpu_wh
+        self._dashboard_visible += sample.dashboard_visible_seconds
+        self._advice_wait += sample.advice_wait_seconds
+        self._advice_now += sample.advice_now_seconds
 
     def _reset(self) -> None:
         self._started_at = None
@@ -214,3 +242,6 @@ class EnergyEventBuffer:
         self._cpu_n = 0
         self._seconds = 0.0
         self._cpu_wh = 0.0
+        self._dashboard_visible = 0.0
+        self._advice_wait = 0.0
+        self._advice_now = 0.0

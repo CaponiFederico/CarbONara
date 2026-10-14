@@ -6,12 +6,20 @@ import platform
 import re
 import sys
 from dataclasses import asdict, dataclass, fields
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import platformdirs
 
 from ecomonitor.carbon.battery_pool import AttributionModel
+from ecomonitor.study_phase import (
+    INSTALL_ID_PATTERN,
+    StudyPhase,
+    current_phase,
+    format_moment,
+    parse_moment,
+)
 
 #Configurazione in JSON nella cartella utente di sistema, quindi fuori dal
 #repository: la chiave ElectricityMaps e' un segreto personale
@@ -27,8 +35,10 @@ PACKAGED_STUDY_ENDPOINT_FILE = "study_endpoint"
 #server dello studio in locale, per collaudare l'invio da sorgente
 LOCAL_STUDY_HOSTS = ("127.0.0.1", "localhost")
 
-#lo stesso formato che il server accetta 
+#lo stesso formato che il server accetta
 STUDY_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{32,128}")
+#l'impronta SHA-256 del token, che non va scambiata per il token
+TOKEN_DIGEST_PATTERN = re.compile(r"[0-9a-f]{64}")
 
 ATTRIBUTION_MODELS: tuple[str, ...] = tuple(model.value for model in AttributionModel)
 
@@ -80,6 +90,19 @@ class AppConfig:
     problem_notifications_enabled: bool = True
     #misura scesa a stima, chiave o token rifiutati
 
+    study_advice_starts_at: str | None = None
+    study_ends_at: str | None = None
+    #calendario dello studio deciso dal server
+
+    study_advice_announced: bool = False
+    #l'inizio della fase 2 si annuncia una volta sola
+
+    study_onboarding_done: bool = False
+    #la schermata che chiede il codice dello studio al primo avvio
+
+    install_id: str | None = None
+    #UUID casuale dell'installazione, inviato allo studio
+
     @property
     def api_key(self) -> str | None:
         return (
@@ -92,6 +115,20 @@ class AppConfig:
     def effective_study_endpoint(self) -> str | None:
         #quello del config.json vince su quello spedito
         return self.study_endpoint or packaged_study_endpoint()
+
+    def study_phase(self, now: datetime) -> StudyPhase | None:
+        return current_phase(
+            bool(self.study_token),
+            parse_moment(self.study_advice_starts_at),
+            parse_moment(self.study_ends_at),
+            now,
+        )
+
+    def reset_study_calendar(self) -> None:
+        #un token diverso e' un altro partecipante
+        self.study_advice_starts_at = None
+        self.study_ends_at = None
+        self.study_advice_announced = False
 
 
 def _packaged_text(name: str) -> str | None:
@@ -209,6 +246,14 @@ def _sanitised(config: AppConfig) -> AppConfig:
         config.electricitymaps_api_key = str(config.electricitymaps_api_key).strip() or None
     config.study_token = _study_token(config.study_token)
     config.study_endpoint = _study_endpoint(config.study_endpoint)
+    config.study_advice_announced = bool(config.study_advice_announced)
+    config.study_onboarding_done = bool(config.study_onboarding_done)
+    config.study_advice_starts_at = format_moment(parse_moment(config.study_advice_starts_at))
+    config.study_ends_at = format_moment(parse_moment(config.study_ends_at))
+    install_id = _optional_text(config.install_id)
+    config.install_id = (
+        install_id if install_id and INSTALL_ID_PATTERN.fullmatch(install_id) else None
+    )
     return config
 
 

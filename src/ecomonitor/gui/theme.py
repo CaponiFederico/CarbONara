@@ -205,6 +205,21 @@ QLabel#sectionTitle { font-size: $font_body; font-weight: 500; color: $text; }
 QLabel#sectionNote { font-size: $font_small; color: $text_muted; }
 QLabel#legendText { font-size: $font_small; color: $text_muted; }
 QLabel#emptyState { font-size: $font_body; color: $text_muted; }
+
+/* -- pagine dello studio -- */
+
+QLabel#studyTitle { font-size: $font_title; font-weight: 600; color: $text; }
+QLabel#studyText { font-size: $font_body; color: $text; }
+QLabel#studyText[state="error"] { color: $warning; }
+QLineEdit#studyToken {
+    font-size: $font_body;
+    padding: 4px 6px;
+    border: 1px solid $border;
+    border-radius: 6px;
+    background: $card;
+    color: $text;
+}
+QLineEdit#studyToken:focus { border-color: $accent; }
 """
 )
 

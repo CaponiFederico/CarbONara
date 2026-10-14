@@ -40,7 +40,12 @@ CREATE TABLE IF NOT EXISTS energy_events (
     unknown_origin_intensity_g_per_kwh REAL,
     unknown_origin_source TEXT,
     cpu_percent REAL,
-    cpu_wh REAL
+    cpu_wh REAL,
+    study_phase TEXT,
+    measurement_kind TEXT,
+    dashboard_visible_seconds REAL,
+    advice_wait_seconds REAL,
+    advice_now_seconds REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_energy_events_timestamp
@@ -158,6 +163,12 @@ class EnergySample:
     is_plugged: bool
     attribution_source: str | None
     cpu_wh: float = 0.0
+    charged_percent: float = 0.0
+    study_phase: str | None = None
+    measurement_kind: str | None = None
+    dashboard_visible_seconds: float = 0.0
+    advice_wait_seconds: float = 0.0
+    advice_now_seconds: float = 0.0
 
 
 #Un campione letto davvero dalla rete
@@ -439,6 +450,11 @@ class LocalDatabase:
         unknown_origin_source: str | None = None,
         cpu_percent: float | None = None,
         cpu_wh: float | None = None,
+        study_phase: str | None = None,
+        measurement_kind: str | None = None,
+        dashboard_visible_seconds: float | None = None,
+        advice_wait_seconds: float | None = None,
+        advice_now_seconds: float | None = None,
     ) -> None:
         with closing(self._connect()) as conn:
             conn.execute(
@@ -446,8 +462,9 @@ class LocalDatabase:
                 "intensity_g_per_kwh, attribution_source, battery_percent, charged_percent, "
                 "discharged_percent, pool_coverage_ratio, battery_assisted, n_samples, "
                 "duration_seconds, unknown_origin_intensity_g_per_kwh, unknown_origin_source, "
-                "cpu_percent, cpu_wh) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "cpu_percent, cpu_wh, study_phase, measurement_kind, dashboard_visible_seconds, "
+                "advice_wait_seconds, advice_now_seconds) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     to_utc_iso(timestamp),
                     wh,
@@ -467,6 +484,11 @@ class LocalDatabase:
                     unknown_origin_source,
                     cpu_percent,
                     cpu_wh,
+                    study_phase,
+                    measurement_kind,
+                    dashboard_visible_seconds,
+                    advice_wait_seconds,
+                    advice_now_seconds,
                 ),
             )
             conn.commit()
@@ -497,6 +519,11 @@ class LocalDatabase:
             unknown_origin_source=row.unknown_origin_source,
             cpu_percent=row.cpu_percent,
             cpu_wh=row.cpu_wh,
+            study_phase=row.study_phase,
+            measurement_kind=row.measurement_kind,
+            dashboard_visible_seconds=row.dashboard_visible_seconds,
+            advice_wait_seconds=row.advice_wait_seconds,
+            advice_now_seconds=row.advice_now_seconds,
         )
 
     def sum_energy_events_for_day(self, day: date) -> dict:
@@ -584,7 +611,9 @@ class LocalDatabase:
         with closing(self._connect()) as conn:
             rows = conn.execute(
                 "SELECT timestamp, wh, gco2, duration_seconds, is_estimated, is_plugged, "
-                "attribution_source, cpu_wh FROM energy_events "
+                "attribution_source, cpu_wh, charged_percent, study_phase, measurement_kind, "
+                "dashboard_visible_seconds, advice_wait_seconds, advice_now_seconds "
+                "FROM energy_events "
                 "WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp",
                 (to_utc_iso(start), to_utc_iso(end)),
             ).fetchall()
@@ -599,6 +628,12 @@ class LocalDatabase:
                 is_plugged=bool(row[5]),
                 attribution_source=row[6],
                 cpu_wh=row[7] or 0.0,
+                charged_percent=row[8] or 0.0,
+                study_phase=row[9],
+                measurement_kind=row[10],
+                dashboard_visible_seconds=row[11] or 0.0,
+                advice_wait_seconds=row[12] or 0.0,
+                advice_now_seconds=row[13] or 0.0,
             )
             for row in rows
         ]

@@ -15,13 +15,14 @@ import ecomonitor
 from ecomonitor.carbon.attribution import AttributionSource
 from ecomonitor.history import covered_seconds_per_row
 from ecomonitor.storage.db import EnergySample, LocalDatabase
+from ecomonitor.study_phase import StudyPhase
 
 #Invio degli aggregati orari al server dello studio.
 
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 STATUS_PATH = "/v1/status"
 HOURS_PATH = "/v1/hours"
 
@@ -46,6 +47,14 @@ BATTERY_SOURCES = frozenset(
 #il ripiego e' una parte dell'energia a batteria
 FALLBACK_SOURCE = AttributionSource.BATTERY_POOL_FALLBACK.value
 
+#i livelli di misura di MeasurementMode.kind, ognuno col suo campo
+LEVEL_FIELDS = {
+    "native": "native_wh",
+    "partial": "partial_wh",
+    "calibrated": "calibrated_wh",
+    "generic": "generic_wh",
+}
+
 
 class UploadStopped(Exception):
     #il giro finisce qui;
@@ -67,10 +76,22 @@ class HourlyUsage:
     battery_wh: float = 0.0
     fallback_wh: float = 0.0
     cpu_wh: float = 0.0
+    #fase dell'ora: quella con piu' secondi coperti, None senza studio
+    phase: str | None = None
+    dashboard_visible_seconds: float = 0.0
+    advice_wait_seconds: float = 0.0
+    advice_now_seconds: float = 0.0
+    plugged_seconds: float = 0.0
+    charge_percent: float = 0.0
+    native_wh: float = 0.0
+    partial_wh: float = 0.0
+    calibrated_wh: float = 0.0
+    generic_wh: float = 0.0
 
     def to_payload(self) -> dict[str, Any]:
         return {
             "hour_start": self.hour_start.strftime("%Y-%m-%dT%H:00:00Z"),
+            "phase": self.phase,
             "covered_seconds": self.covered_seconds,
             "energy_wh": self.energy_wh,
             "gco2": self.gco2,
@@ -78,7 +99,23 @@ class HourlyUsage:
             "battery_wh": self.battery_wh,
             "fallback_wh": self.fallback_wh,
             "cpu_wh": self.cpu_wh,
+            "dashboard_visible_seconds": self.dashboard_visible_seconds,
+            "advice_wait_seconds": self.advice_wait_seconds,
+            "advice_now_seconds": self.advice_now_seconds,
+            "plugged_seconds": self.plugged_seconds,
+            "charge_percent": self.charge_percent,
+            "native_wh": self.native_wh,
+            "partial_wh": self.partial_wh,
+            "calibrated_wh": self.calibrated_wh,
+            "generic_wh": self.generic_wh,
         }
+
+
+@dataclass(frozen=True)
+class StudyDates:
+    #calendario deciso dal server; None finche' non e' arrivata la prima ora
+    advice_starts_at: datetime | None
+    ends_at: datetime | None
 
 
 @dataclass(frozen=True)
@@ -88,12 +125,18 @@ class ServerStatus:
     max_hours_per_request: int
     max_body_bytes: int
     max_past_days: int
+    phase: str = "baseline"
+    study: StudyDates = StudyDates(None, None)
 
 
 @dataclass
 class UploadReport:
     accepted: int = 0
     rejected: list[datetime] = field(default_factory=list)
+    #il calendario letto dal server in questo giro
+    study: StudyDates | None = None
+    #studio finito e niente piu' da inviare
+    finished: bool = False
 
 
 def hour_floor(moment: datetime) -> datetime:
@@ -116,6 +159,8 @@ def aggregate_hours(
 ) -> list[HourlyUsage]:
     #righe al minuto sommate per ora UTC, in ordine di tempo
     hours: dict[datetime, HourlyUsage] = {}
+    #secondi coperti per fase, in ogni ora
+    phases: dict[datetime, dict[str | None, float]] = defaultdict(lambda: defaultdict(float))
     for sample, seconds in zip(samples, covered_seconds_per_row(samples), strict=True):
         start = hour_floor(sample.timestamp)
         hour = hours.setdefault(start, HourlyUsage(start))
@@ -129,6 +174,19 @@ def aggregate_hours(
             hour.battery_wh += sample.wh
         if sample.attribution_source == FALLBACK_SOURCE:
             hour.fallback_wh += sample.wh
+        if sample.is_plugged:
+            hour.plugged_seconds += seconds
+        hour.charge_percent += sample.charged_percent
+        #i secondi registrati dal tick, mai oltre il tempo coperto della riga
+        hour.dashboard_visible_seconds += min(sample.dashboard_visible_seconds, seconds)
+        wait = min(sample.advice_wait_seconds, seconds)
+        hour.advice_wait_seconds += wait
+        hour.advice_now_seconds += min(sample.advice_now_seconds, seconds - wait)
+        #una riga senza livello resta fuori
+        level = LEVEL_FIELDS.get(sample.measurement_kind or "")
+        if level is not None:
+            setattr(hour, level, getattr(hour, level) + sample.wh)
+        phases[start][sample.study_phase] += seconds
 
     zones: dict[datetime, Counter[str]] = defaultdict(Counter)
     for moment, zone in zone_samples:
@@ -141,6 +199,9 @@ def aggregate_hours(
             continue
         counts = zones.get(start)
         hour.zone = counts.most_common(1)[0][0] if counts else current_zone
+        #il cambio di fase cade a pochi secondi dall'ora intera
+        seconds_by_phase = phases[start]
+        hour.phase = max(seconds_by_phase, key=seconds_by_phase.__getitem__)
         result.append(hour)
     return result
 
@@ -193,13 +254,33 @@ def parse_status(payload: object) -> ServerStatus:
             retry=False,
         )
     last = payload.get("last_hour_start")
+    phase, study = parse_study(payload.get("study"))
     return ServerStatus(
         joined_at=_parse_time(payload.get("joined_at")),
         last_hour_start=None if last is None else _parse_time(last),
         max_hours_per_request=_positive_int(limits, "max_hours_per_request"),
         max_body_bytes=_positive_int(limits, "max_body_bytes"),
         max_past_days=_positive_int(limits, "max_past_days"),
+        phase=phase,
+        study=study,
     )
+
+
+def parse_study(value: object) -> tuple[str, StudyDates]:
+    #la fase e il calendario, come li scrivono /v1/status e /v1/hours
+    if not isinstance(value, dict):
+        raise TypeError("risposta senza study")
+    phase = value.get("phase")
+    if phase not in {item.value for item in StudyPhase}:
+        raise ValueError(f"fase sconosciuta: {phase!r}")
+    return phase, StudyDates(
+        advice_starts_at=_optional_time(value.get("advice_starts_at")),
+        ends_at=_optional_time(value.get("ends_at")),
+    )
+
+
+def _optional_time(value: object) -> datetime | None:
+    return None if value is None else _parse_time(value)
 
 
 def _rejection(response: httpx.Response) -> tuple[str, int | None]:
@@ -223,6 +304,7 @@ class StudyUploader:
         endpoint: str,
         token: str,
         *,
+        install_id: str,
         os_family: str,
         device_class: str,
         settle_seconds: float = MIN_SETTLE_SECONDS,
@@ -232,6 +314,7 @@ class StudyUploader:
         self._db = db
         self._endpoint = endpoint.rstrip("/")
         self._headers = {"Authorization": f"Bearer {token}"}
+        self._install_id = install_id
         self._os_family = os_family
         self._device_class = device_class
         self._settle_seconds = settle_seconds
@@ -247,8 +330,16 @@ class StudyUploader:
         report = self.report = UploadReport()
         with httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS, transport=self._transport) as client:
             status = self._status(client)
+            report.study = status.study
             now = self._now()
             end = hour_floor(now - timedelta(seconds=self._settle_seconds))
+            ends_at = status.study.ends_at
+            study_over = (
+                status.phase == StudyPhase.ENDED.value and ends_at is not None and end >= ends_at
+            )
+            #dopo la fine dello studio non si invia piu' niente
+            if ends_at is not None:
+                end = min(end, hour_floor(ends_at))
             start = max(
                 #il consenso non e' retroattivo: l'ora dell'adesione resta fuori
                 hour_ceil(status.joined_at),
@@ -257,6 +348,7 @@ class StudyUploader:
             if status.last_hour_start is not None:
                 start = max(start, status.last_hour_start + timedelta(hours=1))
             if start >= end:
+                report.finished = study_over
                 return report
 
             hours = [
@@ -272,6 +364,7 @@ class StudyUploader:
                 zone = run[0].zone
                 country = country_code if zone == current_zone else zone.split("-", 1)[0]
                 self._send_run(client, status, zone, country, run, report)
+            report.finished = study_over
         return report
 
     def _status(self, client: httpx.Client) -> ServerStatus:
@@ -298,6 +391,7 @@ class StudyUploader:
         body = {
             "schema_version": SCHEMA_VERSION,
             "app_version": ecomonitor.__version__,
+            "install_id": self._install_id,
             "os_family": self._os_family,
             "device_class": self._device_class,
             "country_code": country_code,
@@ -319,6 +413,11 @@ class StudyUploader:
         pending = list(run)
         size = status.max_hours_per_request
         while pending:
+            ends_at = None if report.study is None else report.study.ends_at
+            if ends_at is not None:
+                pending = [hour for hour in pending if hour.hour_start < ends_at]
+                if not pending:
+                    break
             chunk = pending[:size]
             raw = self._body(zone, country_code, chunk)
             if len(raw) > status.max_body_bytes:
@@ -338,6 +437,7 @@ class StudyUploader:
             if response.status_code == 200:
                 report.accepted += len(chunk)
                 del pending[: len(chunk)]
+                self._read_study(response, report)
                 continue
             reason, index = _rejection(response)
             if response.status_code == 400 and index is not None and 0 <= index < len(chunk):
@@ -363,12 +463,20 @@ class StudyUploader:
                 retry=response.status_code >= 500,
             )
 
+    @staticmethod
+    def _read_study(response: httpx.Response, report: UploadReport) -> None:
+        try:
+            _phase, report.study = parse_study(response.json().get("study"))
+        except (AttributeError, TypeError, ValueError) as exc:
+            logger.warning("Studio: calendario nella risposta all'invio illeggibile (%s)", exc)
+
 
 @dataclass(frozen=True)
 class UploadSettings:
     #copia della configurazione presa sul thread di polling
     endpoint: str
     token: str
+    install_id: str
     zone: str
     country_code: str
     settle_seconds: float
@@ -394,11 +502,21 @@ class StudyUploadScheduler:
         self._os_family = detect_os_family()
         self._device_class: str | None = None
         self._token_rejected = False
+        self._study: StudyDates | None = None
+        #studio finito e ogni ora inviata: niente piu' giri fino al riavvio
+        self._finished = False
+        #cresce a ogni reset
+        self._generation = 0
 
     @property
     def token_rejected(self) -> bool:
         with self._lock:
             return self._token_rejected
+
+    @property
+    def study_dates(self) -> StudyDates | None:
+        with self._lock:
+            return self._study
 
     def reset(self) -> None:
         #token cambiato
@@ -406,12 +524,17 @@ class StudyUploadScheduler:
             self._next_attempt_at = None
             self._rejected.clear()
             self._token_rejected = False
+            self._study = None
+            self._finished = False
+            self._generation += 1
 
     def maybe_start(self, settings: UploadSettings | None) -> threading.Thread | None:
         if settings is None or self._os_family is None:
             return None
         with self._lock:
             now = self._clock()
+            if self._finished:
+                return None
             if self._thread is not None and self._thread.is_alive():
                 return None
             if self._next_attempt_at is not None and now < self._next_attempt_at:
@@ -426,6 +549,8 @@ class StudyUploadScheduler:
 
     def _run(self, settings: UploadSettings) -> None:
         uploader: StudyUploader | None = None
+        with self._lock:
+            generation = self._generation
         try:
             if self._device_class is None:
                 self._device_class = detect_device_class()
@@ -435,6 +560,7 @@ class StudyUploadScheduler:
                 self._db,
                 settings.endpoint,
                 settings.token,
+                install_id=settings.install_id,
                 os_family=self._os_family,
                 device_class=self._device_class,
                 settle_seconds=settings.settle_seconds,
@@ -442,6 +568,9 @@ class StudyUploadScheduler:
             uploader.upload_pending(settings.zone, settings.country_code, skip)
             with self._lock:
                 self._token_rejected = False
+                if uploader.report.finished and generation == self._generation:
+                    self._finished = True
+                    logger.info("Studio: finito, ogni ora e' stata inviata")
         except UploadStopped as stop:
             logger.warning("Studio: invio interrotto, %s", stop)
             with self._lock:
@@ -456,5 +585,7 @@ class StudyUploadScheduler:
             if uploader is not None:
                 with self._lock:
                     self._rejected.update(uploader.report.rejected)
+                    if uploader.report.study is not None and generation == self._generation:
+                        self._study = uploader.report.study
                 if uploader.report.accepted:
                     logger.info("Studio: %d ore inviate", uploader.report.accepted)
