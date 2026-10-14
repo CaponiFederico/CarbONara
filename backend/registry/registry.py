@@ -7,6 +7,7 @@
 #   python registry.py list
 #   python registry.py revoke --email m.rossi@studenti.unipi.it
 #   python registry.py withdraw --email m.rossi@studenti.unipi.it
+#   python registry.py phases --email m.rossi@studenti.unipi.it --baseline 168 --advice 168
 #   python registry.py pull --output dati.csv
 #   python registry.py pull-grid --output rete.csv
 #
@@ -167,6 +168,18 @@ def withdraw(conn: sqlite3.Connection, remote: RemoteRunner, email: str) -> int:
     return len(digests)
 
 
+def set_phases(
+    conn: sqlite3.Connection,
+    remote: RemoteRunner,
+    email: str,
+    baseline_hours: int,
+    advice_hours: int,
+) -> str:
+    #durata delle due fasi del token attivo; la VM rifiuta valori fuori limite
+    digest = _find_active(conn, email)
+    return remote(["phases", digest, str(baseline_hours), str(advice_hours)]).strip()
+
+
 def pull(conn: sqlite3.Connection, remote: RemoteRunner, output: Path) -> tuple[int, int]:
     exported = csv.DictReader(io.StringIO(remote(["export"])))
     people = {
@@ -223,6 +236,11 @@ def main(argv: list[str] | None = None, remote: RemoteRunner | None = None) -> i
     ):
         commands.add_parser(name, help=text).add_argument("--email", required=True)
 
+    phases_parser = commands.add_parser("phases", help="durata in ore delle due fasi")
+    phases_parser.add_argument("--email", required=True)
+    phases_parser.add_argument("--baseline", type=int, required=True, help="ore di fase 1")
+    phases_parser.add_argument("--advice", type=int, required=True, help="ore di fase 2")
+
     pull_parser = commands.add_parser("pull", help="scarica le ore e le unisce all'anagrafica")
     pull_parser.add_argument("--output", type=Path, required=True)
 
@@ -263,6 +281,8 @@ def main(argv: list[str] | None = None, remote: RemoteRunner | None = None) -> i
             elif args.command == "withdraw":
                 count = withdraw(conn, runner, args.email)
                 print(f"cancellato ({count} token)")
+            elif args.command == "phases":
+                print(set_phases(conn, runner, args.email, args.baseline, args.advice))
             elif args.command == "pull-grid":
                 count = pull_grid(runner, args.output)
                 print(f"{count} ore di rete scritte in {args.output}")

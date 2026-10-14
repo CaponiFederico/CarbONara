@@ -1,7 +1,7 @@
 #API REST dello studio
 #
 #   POST /v1/hours    invia ore di consumo
-#   GET  /v1/status   ultima ora ricevuta e limiti da rispettare
+#   GET  /v1/status   ultima ora ricevuta, limiti da rispettare e fase dello studio
 #   GET  /healthz     il database risponde
 
 import hashlib
@@ -17,7 +17,8 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from . import validation
-from .store import Participant, PostgresStore, Store
+from .phases import Calendar, calendar, phase_at
+from .store import Participant, PostgresStore, Store, study_start
 
 log = logging.getLogger("study_server")
 
@@ -38,6 +39,16 @@ def _utc_text(moment: datetime | None) -> str | None:
     if moment is None:
         return None
     return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _study(dates: Calendar, now: datetime) -> dict[str, Any]:
+    #la fase la decide il server
+    #le date bastano all'app per cambiarla anche senza rete
+    return {
+        "phase": phase_at(dates, now),
+        "advice_starts_at": _utc_text(dates.advice_starts_at),
+        "ends_at": _utc_text(dates.ends_at),
+    }
 
 
 def create_app(store: Store, clock=lambda: datetime.now(UTC)) -> FastAPI:
@@ -79,6 +90,7 @@ def create_app(store: Store, clock=lambda: datetime.now(UTC)) -> FastAPI:
                 "joined_at": _utc_text(participant.joined_at),
                 "last_hour_start": _utc_text(last),
                 "limits": validation.limits(),
+                "study": _study(participant.calendar, clock()),
             }
         )
 
@@ -105,7 +117,9 @@ def create_app(store: Store, clock=lambda: datetime.now(UTC)) -> FastAPI:
             return _error(400, "il corpo non e' JSON valido")
 
         try:
-            submission = validation.validate_submission(body, clock(), participant.joined_at)
+            submission = validation.validate_submission(
+                body, clock(), participant.joined_at, participant.calendar.ends_at
+            )
         except validation.ValidationError as rejection:
             return JSONResponse(rejection.as_dict(), status_code=400)
 
@@ -114,7 +128,12 @@ def create_app(store: Store, clock=lambda: datetime.now(UTC)) -> FastAPI:
         except Exception:
             log.exception("scrittura non riuscita")
             return _error(503, UNAVAILABLE)
-        return JSONResponse({"accepted": len(submission.hours)})
+        #il primo invio fissa il calendario
+        started_at = participant.started_at or study_start(submission)
+        dates = calendar(started_at, participant.baseline_hours, participant.advice_hours)
+        return JSONResponse(
+            {"accepted": len(submission.hours), "study": _study(dates, clock())}
+        )
 
     return app
 
