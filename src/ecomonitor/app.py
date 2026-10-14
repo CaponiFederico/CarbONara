@@ -91,6 +91,32 @@ def should_start_hidden(requested: bool, tray_available: bool, background_availa
     return tray_available or background_available
 
 
+def needs_hand_over(system: str, frozen: bool, elevated: bool) -> bool:
+    return system == "Windows" and frozen and not elevated
+
+
+def hand_over_to_elevated_instance(
+    arguments: Sequence[str],
+    *,
+    request_window: Callable[[], bool],
+    launcher_ready: Callable[[], bool],
+    run_launcher: Callable[[], bool],
+    relaunch_as_administrator: Callable[[list[str]], bool],
+) -> bool:
+    if request_window():
+        logger.info("EcoMonitor e' gia' in esecuzione: mostrata la sua finestra")
+        return True
+    if launcher_ready() and run_launcher():
+        logger.info("Avvio passato all'attivita' di lancio, elevata senza UAC")
+        return True
+    #installazione non finita: meglio la UAC di sempre che una CPU stimata
+    logger.warning("Attivita' di lancio assente o non avviata: si chiede la conferma di Windows")
+    if relaunch_as_administrator(list(arguments)):
+        return True
+    logger.warning("Elevazione rifiutata: EcoMonitor parte senza privilegi e stima la CPU")
+    return False
+
+
 def needs_onboarding(frozen: bool, config: AppConfig) -> bool:
     return frozen and not config.study_onboarding_done and not config.study_token
 
@@ -956,8 +982,29 @@ def _configure_logging() -> None:
     )
 
 
+def _hand_over_if_not_elevated() -> bool:
+    if not needs_hand_over(
+        platform.system(), getattr(sys, "frozen", False), autostart.is_elevated()
+    ):
+        return False
+    from ecomonitor.gui.single_instance import server_name_for
+    from ecomonitor.show_window import request_window
+
+    pipe_name = server_name_for(platformdirs.user_data_path("ecomonitor"))
+    return hand_over_to_elevated_instance(
+        sys.argv[1:],
+        request_window=lambda: request_window(pipe_name),
+        launcher_ready=autostart.launcher_task_ready,
+        run_launcher=autostart.run_launcher_task,
+        relaunch_as_administrator=autostart.relaunch_as_administrator,
+    )
+
+
 def main() -> None:
     _configure_logging()
+    #prima di Qt: questo processo serve solo a passare la mano
+    if _hand_over_if_not_elevated():
+        return
 
     _force_platform_theme()
     app = QApplication(sys.argv)

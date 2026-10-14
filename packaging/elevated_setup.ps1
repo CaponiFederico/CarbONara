@@ -3,14 +3,17 @@
 #
 #   powershell -ExecutionPolicy Bypass -File elevated_setup.ps1 -InstallPawnIO -PawnIOSetup "...\PawnIO_setup.exe"
 #   powershell -ExecutionPolicy Bypass -File elevated_setup.ps1 -RegisterAutostart -AutostartScript "...\autostart.ps1" -TargetPath "...\EcoMonitor.exe" -UserId "DOMINIO\utente" [-AutostartArguments "--background"]
+#   powershell -ExecutionPolicy Bypass -File elevated_setup.ps1 -RegisterLauncher -AutostartScript "...\autostart.ps1" -TargetPath "...\EcoMonitor.exe" -UserId "DOMINIO\utente"
+#   powershell -ExecutionPolicy Bypass -File elevated_setup.ps1 -RemoveStaleAutostart -AutostartScript "...\autostart.ps1" -TargetPath "...\EcoMonitor.exe" -UserId "DOMINIO\utente"
 #
 #Codice di uscita, a bit: 1 PawnIO non installato, 2 avvio automatico non
-#registrato, 4 processo non elevato. 0 e' andato tutto bene
 [CmdletBinding()]
 param(
     [switch]$InstallPawnIO,
     [string]$PawnIOSetup,
     [switch]$RegisterAutostart,
+    [switch]$RegisterLauncher,
+    [switch]$RemoveStaleAutostart,
     [string]$AutostartScript,
     [string]$TargetPath,
     [string]$UserId,
@@ -26,6 +29,8 @@ $PawnIOWingetId = "namazso.PawnIO"
 $PawnIOFailed = 1
 $AutostartFailed = 2
 $NotElevated = 4
+$LauncherFailed = 8
+$StaleAutostartFailed = 16
 
 function Test-PawnIO {
     Test-Path "HKLM:\SYSTEM\CurrentControlSet\Services\PawnIO"
@@ -59,7 +64,7 @@ function Install-PawnIOFromWinget {
 
 #Prima di tutto: se non c'e' niente da fare non serve nemmeno essere elevati
 $needsPawnIO = $InstallPawnIO -and -not (Test-PawnIO)
-if (-not $needsPawnIO -and -not $RegisterAutostart) {
+if (-not $needsPawnIO -and -not $RegisterAutostart -and -not $RegisterLauncher -and -not $RemoveStaleAutostart) {
     Write-Host "Niente da fare."
     exit 0
 }
@@ -95,6 +100,15 @@ if ($needsPawnIO) {
     }
 }
 
+if ($RemoveStaleAutostart) {
+    try {
+        & $AutostartScript -Unregister -UnlessTargetPath $TargetPath -UserId $UserId
+    } catch {
+        Write-Warning "Avvio automatico di un'altra installazione: $_"
+        $exitCode = $exitCode -bor $StaleAutostartFailed
+    }
+}
+
 if ($RegisterAutostart) {
     try {
         $autostart = @{ Register = $true; TargetPath = $TargetPath; UserId = $UserId }
@@ -103,6 +117,16 @@ if ($RegisterAutostart) {
     } catch {
         Write-Warning "Avvio automatico: $_"
         $exitCode = $exitCode -bor $AutostartFailed
+    }
+}
+
+if ($RegisterLauncher) {
+    #senza, ogni avvio da Start mostra la UAC
+    try {
+        & $AutostartScript -Register -Launcher -TargetPath $TargetPath -UserId $UserId
+    } catch {
+        Write-Warning "Attivita' di lancio: $_"
+        $exitCode = $exitCode -bor $LauncherFailed
     }
 }
 

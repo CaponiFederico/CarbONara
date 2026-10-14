@@ -19,6 +19,9 @@ from xml.parsers.expat import ExpatError
 logger = logging.getLogger(__name__)
 
 TASK_NAME = "EcoMonitor"
+#l'attivita' senza trigger che avvia l'app elevata senza UAC; la registra
+#l'installer, la avvia l'app quando parte non elevata
+LAUNCHER_TASK_NAME = "EcoMonitor avvio"
 SCRIPT_NAME = "autostart.ps1"
 
 XDG_AUTOSTART_ENTRY = "ecomonitor.desktop"
@@ -116,6 +119,52 @@ def task_name(user_id: str | None = None) -> str:
     #"EcoMonitor (DOMINIO-utente)"
     user = (user_id or _current_user_id()).replace("\\", "-")
     return f"{TASK_NAME} ({user})"
+
+
+def launcher_task_name(user_id: str | None = None) -> str:
+    user = (user_id or _current_user_id()).replace("\\", "-")
+    return f"{LAUNCHER_TASK_NAME} ({user})"
+
+
+def launcher_task_ready() -> bool:
+    if platform.system() != "Windows":
+        return False
+    task = _windows_task(launcher_task_name())
+    return task is not None and _same_executable(task.command, _target_path())
+
+
+def run_launcher_task() -> bool:
+    try:
+        result = subprocess.run(
+            ["schtasks.exe", "/run", "/tn", launcher_task_name()],
+            capture_output=True,
+            check=False,
+            creationflags=_CREATE_NO_WINDOW,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("Attivita' di lancio non avviata: %s", exc)
+        return False
+    if result.returncode != 0:
+        logger.warning(
+            "Attivita' di lancio non avviata (codice %d)", result.returncode
+        )
+        return False
+    return True
+
+
+def relaunch_as_administrator(arguments: list[str]) -> bool:
+    info = _ShellExecuteInfo()
+    info.cbSize = ctypes.sizeof(info)
+    info.lpVerb = "runas"
+    info.lpFile = _target_path()
+    info.lpParameters = " ".join(_quote(argument) for argument in arguments)
+    info.nShow = 1  # SW_SHOWNORMAL
+    try:
+        return bool(_windows_ctypes.windll.shell32.ShellExecuteExW(ctypes.byref(info)))
+    except (AttributeError, OSError) as exc:
+        logger.warning("Riavvio da amministratore non riuscito: %s", exc)
+        return False
 
 
 @dataclass(frozen=True)

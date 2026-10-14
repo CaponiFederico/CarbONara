@@ -22,6 +22,11 @@ def _server_name(data_path: Path) -> str:
     return f"ecomonitor-{digest[:16]}"
 
 
+def server_name_for(data_path: Path) -> str:
+    #il nome della pipe senza aprire niente: serve a chi bussa prima di Qt
+    return _server_name(data_path)
+
+
 class SingleInstanceGuard(QObject):
     def __init__(self, data_path: Path, on_second_launch: Callable[[], None] | None = None) -> None:
         super().__init__()

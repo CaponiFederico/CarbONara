@@ -24,8 +24,7 @@ AppPublisher=Tesi triennale di green computing
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
-; nessun amministratore
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=out
@@ -73,11 +72,11 @@ Root: HKCU; Subkey: "Software\Classes\AppUserModelId\io.github.caponifederico.ec
 Root: HKCU; Subkey: "Software\Classes\ecomonitor"; Flags: dontcreatekey uninsdeletekey
 
 [Run]
-Filename: "{sys}\schtasks.exe"; Parameters: "/run /tn ""{code:TaskName}"""; \
+Filename: "{sys}\schtasks.exe"; Parameters: "/run /tn ""{code:LauncherTaskName}"""; \
     Description: "Avvia {#AppName}"; Flags: postinstall skipifsilent runhidden; \
-    Check: AutostartTaskExists
+    Check: LauncherTaskExists
 Filename: "{app}\{#AppExeName}"; Description: "Avvia {#AppName}"; \
-    Flags: nowait postinstall skipifsilent shellexec; Check: not AutostartTaskExists
+    Flags: nowait postinstall skipifsilent runasoriginaluser; Check: not LauncherTaskExists
 
 [Code]
 var
@@ -131,6 +130,11 @@ begin
   Result := 'EcoMonitor (' + ExpandConstant('{%USERDOMAIN}') + '-' + ExpandConstant('{username}') + ')';
 end;
 
+function LauncherTaskName(Param: string): string;
+begin
+  Result := 'EcoMonitor avvio (' + ExpandConstant('{%USERDOMAIN}') + '-' + ExpandConstant('{username}') + ')';
+end;
+
 function TaskExists(const Name: string): Boolean;
 var
   ResultCode: Integer;
@@ -142,6 +146,27 @@ end;
 function AutostartTaskExists: Boolean;
 begin
   Result := TaskExists(TaskName(''));
+end;
+
+function LauncherTaskExists: Boolean;
+begin
+  Result := TaskExists(LauncherTaskName(''));
+end;
+
+const
+  PerUserUninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{ef2ed1a8-13dd-4d13-8813-a84e088939a6}_is1';
+
+function InitializeSetup: Boolean;
+begin
+  Result := True;
+  if RegKeyExists(HKCU, PerUserUninstallKey) then
+  begin
+    SuppressibleMsgBox('C''e'' ancora la versione precedente di EcoMonitor, installata solo'
+      + #13#10 + 'per questo utente. Disinstallarla da Impostazioni > App, poi riavviare'
+      + #13#10 + 'questa installazione. Le misure gia'' raccolte restano.',
+      mbError, MB_OK, IDOK);
+    Result := False;
+  end;
 end;
 
 function PawnIOInstalled: Boolean;
@@ -160,7 +185,7 @@ procedure CloseEcoMonitor;
 var
   ResultCode: Integer;
 begin
-  ShellExec('runas', 'taskkill.exe', '/f /im {#AppExeName}', '', SW_HIDE,
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im {#AppExeName}', '', SW_HIDE,
     ewWaitUntilTerminated, ResultCode);
   Sleep(1500);
 end;
@@ -193,7 +218,7 @@ var
   ScriptPath: string;
 begin
   ScriptPath := ExpandConstant('{app}\autostart.ps1');
-  Result := ShellExec('runas', PowerShellPath,
+  Result := Exec(PowerShellPath,
     '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath + '" ' + Arguments,
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
 end;
@@ -209,6 +234,8 @@ end;
 const
   PawnIOFailed = 1;
   AutostartFailed = 2;
+  LauncherFailed = 8;
+  StaleAutostartFailed = 16;
 
 procedure ReportPawnIOFailure;
 begin
@@ -225,18 +252,27 @@ begin
     mbInformation, MB_OK, IDOK);
 end;
 
+procedure ReportLauncherFailure;
+begin
+  SuppressibleMsgBox('Avvio senza conferma non configurato.' + #13#10 +
+    'EcoMonitor funziona, ma ogni avvio dal menu Start chiedera' + #39 + ' la conferma' + #13#10 +
+    'di Windows. Ripetere l' + #39 + 'installazione per sistemarlo.',
+    mbInformation, MB_OK, IDOK);
+end;
+
 procedure RunElevatedSetup;
 var
-  Arguments: string;
+  Arguments, Target, User: string;
   ResultCode: Integer;
   WantsPawnIO, WantsAutostart: Boolean;
 begin
   WantsPawnIO := WizardIsTaskSelected('pawnio') and not PawnIOInstalled;
   WantsAutostart := WizardIsTaskSelected('autostart');
-  if not WantsPawnIO and not WantsAutostart then
-    exit;
+  Target := ' -AutostartScript "' + ExpandConstant('{app}\autostart.ps1') + '"'
+    + ' -TargetPath "' + ExpandConstant('{app}\{#AppExeName}') + '"';
+  User := ' -UserId "' + CurrentUserId + '"';
 
-  Arguments := '';
+  Arguments := ' -RegisterLauncher -RemoveStaleAutostart' + Target + User;
   if WantsPawnIO then
   begin
     Arguments := Arguments + ' -InstallPawnIO';
@@ -244,20 +280,18 @@ begin
       Arguments := Arguments + ' -PawnIOSetup "' + ExpandConstant('{tmp}\PawnIO_setup.exe') + '"';
   end;
   if WantsAutostart then
-    Arguments := Arguments + ' -RegisterAutostart'
-      + ' -AutostartScript "' + ExpandConstant('{app}\autostart.ps1') + '"'
-      + ' -TargetPath "' + ExpandConstant('{app}\{#AppExeName}') + '"'
-      + ' -UserId "' + CurrentUserId + '"' + HiddenStartArgument;
+    Arguments := Arguments + ' -RegisterAutostart' + HiddenStartArgument;
 
-  if not ShellExec('runas', PowerShellPath,
+  if not Exec(PowerShellPath,
       '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\elevated_setup.ps1') + '"' + Arguments,
       '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
   begin
-    // elevazione rifiutata: non e' stato fatto niente
+    // PowerShell non partito: non e' stato fatto niente
     if WantsPawnIO then
       ReportPawnIOFailure;
     if WantsAutostart then
       ReportAutostartFailure;
+    ReportLauncherFailure;
     exit;
   end;
 
@@ -265,6 +299,12 @@ begin
     ReportPawnIOFailure;
   if WantsAutostart and (((ResultCode and AutostartFailed) <> 0) or not AutostartTaskExists) then
     ReportAutostartFailure;
+  if ((ResultCode and LauncherFailed) <> 0) or not LauncherTaskExists then
+    ReportLauncherFailure;
+  if ((ResultCode and StaleAutostartFailed) <> 0) and not WantsAutostart then
+    SuppressibleMsgBox('E'' rimasto l''avvio automatico di una versione precedente.' + #13#10 +
+      'Rimuoverlo da Utilita' + #39 + ' di pianificazione, attivita' + #39 + ' ' + TaskName('') + '.',
+      mbInformation, MB_OK, IDOK);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -297,11 +337,18 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
+  begin
     if AutostartTaskExists then
       if not RunAutostartScript('-Unregister -UserId "' + CurrentUserId + '"') then
         SuppressibleMsgBox('Non sono riuscito a togliere l' + #39 + 'avvio automatico.' + #13#10 +
           'Rimuoverlo da Utilita' + #39 + ' di pianificazione, attivita' + #39 + ' ' + TaskName('') + '.',
           mbInformation, MB_OK, IDOK);
+    if LauncherTaskExists then
+      if not RunAutostartScript('-Unregister -Launcher -UserId "' + CurrentUserId + '"') then
+        SuppressibleMsgBox('Non sono riuscito a togliere l' + #39 + 'attivita' + #39 + ' di lancio.' + #13#10 +
+          'Rimuoverla da Utilita' + #39 + ' di pianificazione, attivita' + #39 + ' ' + LauncherTaskName('') + '.',
+          mbInformation, MB_OK, IDOK);
+  end;
 
   if CurUninstallStep = usPostUninstall then
     SuppressibleMsgBox('I dati misurati restano in:' + #13#10 +

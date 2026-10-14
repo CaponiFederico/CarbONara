@@ -4,11 +4,17 @@
 #   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Register -TargetPath "..." -UserId "..." -Arguments "--background"
 #   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Unregister -UserId "DOMINIO\utente"
 #
+#Con -Launcher la stessa cosa per l'attivita' di lancio
+#   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Register -Launcher -TargetPath "..." -UserId "..."
+#   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Unregister -UnlessTargetPath "...\EcoMonitor.exe" -UserId "..."
+#
 [CmdletBinding()]
 param(
     [switch]$Register,
     [switch]$Unregister,
+    [switch]$Launcher,
     [string]$TargetPath,
+    [string]$UnlessTargetPath,
     [string]$UserId,
     [string]$Arguments
 )
@@ -24,14 +30,28 @@ if (-not $UserId) { $UserId = "$env:USERDOMAIN\$env:USERNAME" }
 
 #un'attivita' per utente
 $TaskName = "EcoMonitor ($($UserId.Replace('\', '-')))"
+$LauncherTaskName = "EcoMonitor avvio ($($UserId.Replace('\', '-')))"
+if ($Launcher) { $TaskName = $LauncherTaskName }
+
+function Get-FullPath([string]$Path) {
+    [System.IO.Path]::GetFullPath($Path.Trim().Trim('"'))
+}
 
 if ($Unregister) {
-    if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-        Write-Host "Avvio automatico rimosso."
-    } else {
-        Write-Host "Nessun avvio automatico da rimuovere."
+    $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if (-not $task) {
+        Write-Host "Nessuna attivita' $TaskName da rimuovere."
+        exit 0
     }
+    if ($UnlessTargetPath) {
+        $registered = @($task.Actions | Where-Object { $_.Execute } | ForEach-Object { Get-FullPath $_.Execute })
+        if ($registered -contains (Get-FullPath $UnlessTargetPath)) {
+            Write-Host "Attivita' $TaskName gia' su questo eseguibile: resta."
+            exit 0
+        }
+    }
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    Write-Host "Attivita' $TaskName rimossa."
     exit 0
 }
 
@@ -45,8 +65,23 @@ if ($Arguments) {
 } else {
     $action = New-ScheduledTaskAction -Execute $TargetPath
 }
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $UserId
 $principal = New-ScheduledTaskPrincipal -UserId $UserId -LogonType Interactive -RunLevel Highest
+
+if ($Launcher) {
+    #un secondo avvio mentre l'app gira bussa alla sua pipe ed esce: niente da ignorare
+    $settings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries `
+        -ExecutionTimeLimit ([TimeSpan]::Zero) `
+        -MultipleInstances Parallel
+    Register-ScheduledTask -TaskName $TaskName -Action $action `
+        -Principal $principal -Settings $settings -Force `
+        -Description "Avvia EcoMonitor con i sensori leggibili, senza UAC" | Out-Null
+    Write-Host "Attivita' di lancio registrata per $UserId."
+    exit 0
+}
+
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $UserId
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `

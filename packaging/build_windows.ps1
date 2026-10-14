@@ -14,9 +14,7 @@
 
 [CmdletBinding()]
 param(
-    # Di default l'eseguibile chiede sempre di essere amministratore, che serve
-    # ai sensori della CPU: con questo parte normale e ripiega sulla stima
-    [switch]$AllowNonAdmin
+    [switch]$RequireAdminManifest
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,7 +46,7 @@ foreach ($dir in $BuildDir, $DistDir) {
     if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
 }
 
-if ($AllowNonAdmin) { Remove-Item Env:\ECOMONITOR_UAC_ADMIN -ErrorAction SilentlyContinue } else { $env:ECOMONITOR_UAC_ADMIN = "1" }
+if ($RequireAdminManifest) { $env:ECOMONITOR_UAC_ADMIN = "1" } else { Remove-Item Env:\ECOMONITOR_UAC_ADMIN -ErrorAction SilentlyContinue }
 
 & $Python (Join-Path $PackagingDir "make_icon.py")
 if ($LASTEXITCODE -ne 0) { throw "generazione dell'icona fallita" }
