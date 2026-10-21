@@ -4,7 +4,8 @@
 #   ecomonitor-study-admin revoke <sha256>    il token smette di valere, i dati restano
 #   ecomonitor-study-admin delete <sha256>    ritiro: cancella partecipante e ore
 #   ecomonitor-study-admin phases <sha256> <ore fase 1> <ore fase 2>
-#                                             durata delle fasi di un partecipante
+#                                             durata delle fasi di un partecipante; un
+#                                             confine gia' passato non si sposta
 #   ecomonitor-study-admin list               impronte, adesione, revoca, fase, ore ricevute
 #   ecomonitor-study-admin export             tutte le ore in CSV su stdout, con
 #                                             l'intensita' della rete di quell'ora e
@@ -182,15 +183,31 @@ def cmd_delete(digest: str) -> int:
 def cmd_phases(digest: str, baseline_hours: int, advice_hours: int) -> int:
     with _connect() as conn:
         _set_role(conn)
+        #FOR UPDATE: il calendario non deve partire fra il controllo e la scrittura
         row = conn.execute(
-            "UPDATE participants SET baseline_hours = %s, advice_hours = %s "
-            "WHERE token_sha256 = %s RETURNING started_at",
-            (baseline_hours, advice_hours, digest),
+            "SELECT started_at, baseline_hours, advice_hours FROM participants "
+            "WHERE token_sha256 = %s FOR UPDATE",
+            (digest,),
         ).fetchone()
-    if row is None:
-        print("sconosciuto", file=sys.stderr)
-        return 1
-    dates = phases.calendar(row[0], baseline_hours, advice_hours)
+        if row is None:
+            print("sconosciuto", file=sys.stderr)
+            return 1
+        started_at, current_baseline, current_advice = row
+        refusal = phases.change_refusal(
+            started_at,
+            (current_baseline, current_advice),
+            (baseline_hours, advice_hours),
+            datetime.now(UTC),
+        )
+        if refusal is not None:
+            print(refusal, file=sys.stderr)
+            return 1
+        conn.execute(
+            "UPDATE participants SET baseline_hours = %s, advice_hours = %s "
+            "WHERE token_sha256 = %s",
+            (baseline_hours, advice_hours, digest),
+        )
+    dates = phases.calendar(started_at, baseline_hours, advice_hours)
     if dates.advice_starts_at is None:
         print(f"fasi: {baseline_hours} + {advice_hours} ore, dalla prima ora inviata")
     else:

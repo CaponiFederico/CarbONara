@@ -8,6 +8,7 @@
 #   python registry.py revoke --email m.rossi@studenti.unipi.it
 #   python registry.py withdraw --email m.rossi@studenti.unipi.it
 #   python registry.py phases --email m.rossi@studenti.unipi.it --baseline 168 --advice 168
+#       (la VM rifiuta di spostare un confine gia' passato o a meno di 2 ore)
 #   python registry.py pull --output dati.csv
 #   python registry.py pull-grid --output rete.csv
 #
