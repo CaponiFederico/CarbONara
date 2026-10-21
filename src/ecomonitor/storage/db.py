@@ -91,6 +91,12 @@ CREATE TABLE IF NOT EXISTS daily_summary (
     operational_gco2 REAL NOT NULL,
     active_hours REAL NOT NULL
 );
+
+-- l'identificativo con cui le ore di questo database vanno allo studio
+CREATE TABLE IF NOT EXISTS install_identity (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    install_id TEXT NOT NULL
+);
 """
 
 
@@ -934,6 +940,20 @@ class LocalDatabase:
                 (to_utc_iso(start), to_utc_iso(end), RECONSTRUCTED_SOURCE),
             ).fetchall()
         return [(datetime.fromisoformat(row[0]), row[1]) for row in rows]
+
+    # -- identita' dell'installazione ---------------------------------------
+
+    def install_id(self, candidate: str) -> str:
+        #candidate vale solo la prima volta; poi resta quello gia' scritto, anche
+        #con due processi che arrivano insieme
+        with closing(self._connect()) as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO install_identity (id, install_id) VALUES (1, ?)",
+                (candidate,),
+            )
+            conn.commit()
+            row = conn.execute("SELECT install_id FROM install_identity WHERE id = 1").fetchone()
+        return str(row[0])
 
     # -- aggregati giornalieri ---------------------------------------------
 

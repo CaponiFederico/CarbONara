@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 SCHEMA_VERSION = 2
 STATUS_PATH = "/v1/status"
 HOURS_PATH = "/v1/hours"
+INSTALL_ID_HEADER = "X-Install-Id"
 
 UPLOAD_INTERVAL_SECONDS = 3600.0
 #dopo un errore di rete si riprova prima dell'ora successiva
@@ -314,6 +315,7 @@ class StudyUploader:
         self._db = db
         self._endpoint = endpoint.rstrip("/")
         self._headers = {"Authorization": f"Bearer {token}"}
+        self._status_headers = {**self._headers, INSTALL_ID_HEADER: install_id}
         self._install_id = install_id
         self._os_family = os_family
         self._device_class = device_class
@@ -369,7 +371,7 @@ class StudyUploader:
 
     def _status(self, client: httpx.Client) -> ServerStatus:
         try:
-            response = client.get(self._endpoint + STATUS_PATH, headers=self._headers)
+            response = client.get(self._endpoint + STATUS_PATH, headers=self._status_headers)
         except httpx.HTTPError as exc:
             raise UploadStopped(f"server non raggiungibile ({exc})", retry=True) from exc
         if response.status_code == 401:

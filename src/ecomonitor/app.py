@@ -135,16 +135,6 @@ def starts_hidden_for_study(
     )
 
 
-def ensure_install_id(config_manager: ConfigManager) -> None:
-    config = config_manager.config
-    if config.install_id is not None:
-        return
-    config.install_id = new_install_id()
-    try:
-        config_manager.save()
-    except OSError:
-        logger.warning("Identificativo dell'installazione non salvato")
-
 #open --args --background attiva l'app all'avvio
 HIDDEN_START_ACTIVATION_GRACE_SECONDS = 3.0
 
@@ -465,6 +455,7 @@ class PollingWorker(QObject):
 
         #invio allo studio: nasce col primo tick, gira in un thread suo
         self._study_scheduler: StudyUploadScheduler | None = None
+        self._install_id: str | None = None
 
     def _backfill_grid_history(self) -> None:
         #Un errore non deve fermare il monitoraggio
@@ -569,16 +560,16 @@ class PollingWorker(QObject):
         }
 
     @staticmethod
-    def _study_settings(config: AppConfig) -> UploadSettings | None:
+    def _study_settings(config: AppConfig, install_id: str | None) -> UploadSettings | None:
         from ecomonitor.study_upload import UploadSettings, settle_seconds_for
 
         endpoint = config.effective_study_endpoint
-        if not (endpoint and config.study_token and config.install_id):
+        if not (endpoint and config.study_token and install_id):
             return None
         return UploadSettings(
             endpoint=endpoint,
             token=config.study_token,
-            install_id=config.install_id,
+            install_id=install_id,
             zone=config.em_zone,
             country_code=config.country_code,
             settle_seconds=settle_seconds_for(config.db_flush_interval_seconds),
@@ -592,9 +583,12 @@ class PollingWorker(QObject):
                 from ecomonitor.study_upload import StudyUploadScheduler
 
                 self._study_scheduler = StudyUploadScheduler(self._orchestrator.db)
-            self._study_scheduler.maybe_start(
-                self._study_settings(self._orchestrator.config_manager.config)
-            )
+            config = self._orchestrator.config_manager.config
+            if self._install_id is None:
+                self._install_id = self._orchestrator.db.install_id(
+                    config.install_id or new_install_id()
+                )
+            self._study_scheduler.maybe_start(self._study_settings(config, self._install_id))
         except Exception:
             logger.exception("Invio allo studio non avviato")
 
@@ -1097,7 +1091,6 @@ def main() -> None:
     # La GUI non puo' aspettare il thread di polling perche' deve mostrare subito
     config_manager = ConfigManager()
     config = config_manager.config
-    ensure_install_id(config_manager)
 
     #la fase si applica prima di mostrare qualunque cosa
     initial_phase = config.study_phase(datetime.now(UTC))

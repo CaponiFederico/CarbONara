@@ -6,7 +6,8 @@
 #   ecomonitor-study-admin phases <sha256> <ore fase 1> <ore fase 2>
 #                                             durata delle fasi di un partecipante; un
 #                                             confine gia' passato non si sposta
-#   ecomonitor-study-admin list               impronte, adesione, revoca, fase, ore ricevute
+#   ecomonitor-study-admin list               impronte, adesione, revoca, fase, dispositivi,
+#                                             ore ricevute
 #   ecomonitor-study-admin export             tutte le ore in CSV su stdout, con
 #                                             l'intensita' della rete di quell'ora e
 #                                             la fase attesa dal calendario
@@ -69,7 +70,7 @@ EXPORT_QUERY = (
     + ", ".join(EXPORT_EXPRESSIONS)
     + " FROM hourly_usage h JOIN participants p ON p.id = h.participant_id"
     " LEFT JOIN grid_hourly g ON g.zone = h.zone AND g.hour_start = h.hour_start"
-    " ORDER BY p.token_sha256, h.hour_start"
+    " ORDER BY p.token_sha256, h.install_id, h.hour_start"
 )
 
 GRID_COLUMNS = (
@@ -223,7 +224,8 @@ def cmd_list() -> int:
         _set_role(conn)
         rows = conn.execute(
             "SELECT p.token_sha256, p.joined_at, p.revoked_at, p.started_at, "
-            "p.baseline_hours, p.advice_hours, count(h.hour_start) "
+            "p.baseline_hours, p.advice_hours, count(DISTINCT h.install_id), "
+            "count(h.hour_start) "
             "FROM participants p LEFT JOIN hourly_usage h ON h.participant_id = p.id "
             "GROUP BY p.id ORDER BY p.joined_at"
         ).fetchall()
@@ -238,10 +240,11 @@ def cmd_list() -> int:
             "baseline_hours",
             "advice_hours",
             "phase",
+            "devices",
             "hours",
         )
     )
-    for digest, joined, revoked, started, baseline, advice, hours in rows:
+    for digest, joined, revoked, started, baseline, advice, devices, hours in rows:
         writer.writerow(
             (
                 digest,
@@ -251,6 +254,7 @@ def cmd_list() -> int:
                 baseline,
                 advice,
                 phases.phase_at(phases.calendar(started, baseline, advice), now),
+                devices,
                 hours,
             )
         )

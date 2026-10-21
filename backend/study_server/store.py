@@ -27,7 +27,7 @@ UPSERT_HOUR = (
     + ", ".join(STORED_COLUMNS)
     + ") VALUES (%s, %s, now(), "
     + ", ".join(["%s"] * len(STORED_COLUMNS))
-    + ") ON CONFLICT (participant_id, hour_start) DO UPDATE SET "
+    + ") ON CONFLICT (participant_id, install_id, hour_start) DO UPDATE SET "
     + "received_at = excluded.received_at, "
     + ", ".join(f"{name} = excluded.{name}" for name in STORED_COLUMNS)
 )
@@ -59,7 +59,7 @@ def study_start(submission: Submission) -> datetime | None:
 class Store(Protocol):
     def find_participant(self, token_sha256: str) -> Participant | None: ...
 
-    def last_hour(self, participant_id: int) -> datetime | None: ...
+    def last_hour(self, participant_id: int, install_id: str) -> datetime | None: ...
 
     def save(self, participant_id: int, submission: Submission) -> None: ...
 
@@ -89,11 +89,13 @@ class PostgresStore:
             advice_hours=row[4],
         )
 
-    def last_hour(self, participant_id: int) -> datetime | None:
+    def last_hour(self, participant_id: int, install_id: str) -> datetime | None:
+        #il progresso e' per dispositivo: ognuno manda le sue ore
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT max(hour_start) FROM hourly_usage WHERE participant_id = %s",
-                (participant_id,),
+                "SELECT max(hour_start) FROM hourly_usage "
+                "WHERE participant_id = %s AND install_id = %s",
+                (participant_id, uuid.UUID(install_id)),
             ).fetchone()
         return None if row is None else row[0]
 

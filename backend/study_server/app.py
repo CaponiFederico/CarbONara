@@ -1,7 +1,7 @@
 #API REST dello studio
 #
 #   POST /v1/hours    invia ore di consumo
-#   GET  /v1/status   ultima ora ricevuta, limiti da rispettare e fase dello studio
+#   GET  /v1/status   ultima ora ricevuta dal dispositivo, limiti e fase dello studio
 #   GET  /healthz     il database risponde
 
 import hashlib
@@ -25,6 +25,8 @@ log = logging.getLogger("study_server")
 #secrets.token_urlsafe(32) produce 43 caratteri url-safe
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{32,128}")
 UNAVAILABLE = "database non disponibile, riprovare piu' tardi"
+#il dispositivo che chiede lo stato: ogni dispositivo ha il suo progresso
+INSTALL_ID_HEADER = "x-install-id"
 
 
 def token_sha256(token: str) -> str:
@@ -80,8 +82,13 @@ def create_app(store: Store, clock=lambda: datetime.now(UTC)) -> FastAPI:
             return participant
         if participant is None:
             return _error(401, "token mancante, sconosciuto o revocato")
+        install_id = request.headers.get(INSTALL_ID_HEADER, "")
+        if validation.INSTALL_ID_PATTERN.fullmatch(install_id) is None:
+            return _error(
+                400, "identificativo dell'installazione mancante o non valido", field="install_id"
+            )
         try:
-            last = store.last_hour(participant.id)
+            last = store.last_hour(participant.id, install_id)
         except Exception:
             log.exception("lettura non riuscita")
             return _error(503, UNAVAILABLE)
