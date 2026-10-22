@@ -32,9 +32,15 @@ UPSERT_HOUR = (
     + ", ".join(f"{name} = excluded.{name}" for name in STORED_COLUMNS)
 )
 
-#le fasi partono dalla prima ora inviata in modalita' studio
+#ripiego per le app che avevano il codice prima di POST /v1/start: le fasi
+#partono dalla prima ora inviata in modalita' studio
 START_STUDY = (
     "UPDATE participants SET started_at = %s WHERE id = %s AND started_at IS NULL"
+)
+#la verifica del codice fissa l'inizio una volta sola, per tutti i dispositivi
+START_ON_VERIFICATION = (
+    "UPDATE participants SET started_at = coalesce(started_at, %s) WHERE id = %s "
+    "RETURNING started_at"
 )
 
 
@@ -60,6 +66,8 @@ class Store(Protocol):
     def find_participant(self, token_sha256: str) -> Participant | None: ...
 
     def last_hour(self, participant_id: int, install_id: str) -> datetime | None: ...
+
+    def start_study(self, participant_id: int, moment: datetime) -> datetime: ...
 
     def save(self, participant_id: int, submission: Submission) -> None: ...
 
@@ -98,6 +106,14 @@ class PostgresStore:
                 (participant_id, uuid.UUID(install_id)),
             ).fetchone()
         return None if row is None else row[0]
+
+    def start_study(self, participant_id: int, moment: datetime) -> datetime:
+        #l'inizio effettivo: quello gia' fissato, se c'e'
+        with self._connect() as conn:
+            row = conn.execute(START_ON_VERIFICATION, (moment, participant_id)).fetchone()
+        if row is None or row[0] is None:
+            raise LookupError(f"partecipante {participant_id} sparito")
+        return row[0]
 
     def save(self, participant_id: int, submission: Submission) -> None:
         envelope = (

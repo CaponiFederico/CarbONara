@@ -210,7 +210,7 @@ def cmd_phases(digest: str, baseline_hours: int, advice_hours: int) -> int:
         )
     dates = phases.calendar(started_at, baseline_hours, advice_hours)
     if dates.advice_starts_at is None:
-        print(f"fasi: {baseline_hours} + {advice_hours} ore, dalla prima ora inviata")
+        print(f"fasi: {baseline_hours} + {advice_hours} ore, dalla verifica del codice nell'app")
     else:
         print(
             f"fasi: {baseline_hours} + {advice_hours} ore; fase 2 dal "

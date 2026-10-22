@@ -1,3 +1,5 @@
+import threading
+from collections.abc import Callable
 from datetime import datetime
 
 from PySide6.QtCore import Qt, Signal
@@ -11,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from ecomonitor.config import STUDY_TOKEN_PATTERN, TOKEN_DIGEST_PATTERN
+from ecomonitor.study_phase import StudyDates
 
 #Le due pagine dello studio
 #fase 1: l'app raccoglie e non mostra consumi ne' consigli
@@ -22,6 +25,24 @@ _MONTHS = (
 
 STUDY_TITLE = "Partecipi allo studio EcoMonitor"
 ONBOARDING_TITLE = "Benvenuto in EcoMonitor"
+JOIN_TEXT = "Partecipa"
+VERIFYING_TEXT = "Verifica del codice…"
+NO_SERVER_TEXT = (
+    "Questa copia di EcoMonitor non conosce l'indirizzo del server dello studio, "
+    "quindi non può verificare il codice."
+)
+
+
+def verify_study_token(endpoint: str, token: str) -> StudyDates:
+    #il server riconosce il codice e fissa il calendario
+    from ecomonitor.study_upload import start_study
+
+    return start_study(endpoint, token)
+
+
+def run_in_background(work: Callable[[], None]) -> None:
+    #la verifica e' una chiamata di rete
+    threading.Thread(target=work, name="study-start", daemon=True).start()
 
 
 def local_date_text(moment: datetime) -> str:
@@ -132,7 +153,7 @@ class OnboardingPage(QFrame):
         _set_error(self.error_label)
         self.error_label.setVisible(False)
 
-        self.join_button = QPushButton("Partecipa")
+        self.join_button = QPushButton(JOIN_TEXT)
         self.join_button.setObjectName("settingsButton")
         self.join_button.setDefault(True)
         self.join_button.clicked.connect(self._join)
@@ -168,6 +189,12 @@ class OnboardingPage(QFrame):
     def show_error(self, text: str) -> None:
         self.error_label.setText(text)
         self.error_label.setVisible(True)
+
+    def set_busy(self, busy: bool) -> None:
+        self.token_edit.setEnabled(not busy)
+        self.join_button.setEnabled(not busy)
+        self.skip_button.setEnabled(not busy)
+        self.join_button.setText(VERIFYING_TEXT if busy else JOIN_TEXT)
 
     def _hide_error(self, _text: str) -> None:
         self.error_label.setVisible(False)

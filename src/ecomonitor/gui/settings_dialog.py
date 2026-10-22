@@ -30,10 +30,11 @@ from ecomonitor.config import (
     ConfigManager,
     packaged_api_key,
 )
+from ecomonitor.gui import study_pages
 from ecomonitor.gui.theme import LIGHT, Theme, build_palette
 from ecomonitor.gui.zone_map import ZoneMapWidget, country_of_zone, normalize_country
 from ecomonitor.gui.zone_map_data import COUNTRY_NAMES, COUNTRY_ZONES, ZONE_NAMES, ZONE_REGIONS
-from ecomonitor.study_phase import StudyPhase
+from ecomonitor.study_phase import StudyDates, StudyPhase, StudyStartFailed
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,8 @@ class SettingsDialog(QDialog):
         self._saved_study_phase = config.study_phase(datetime.now(UTC))
         self.saved_study_token = self._saved_study_token
         self.study_token_changed = False
+        self._verified_study_dates: StudyDates | None = None
+        self.saved_study_dates: StudyDates | None = None
         self.study_token_edit = QLineEdit(self._saved_study_token or "")
         self.study_token_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.study_token_edit.setPlaceholderText(
@@ -393,15 +396,39 @@ class SettingsDialog(QDialog):
                 "stata consegnata all'adesione.",
             )
             return False
-        if STUDY_TOKEN_PATTERN.fullmatch(token):
+        if STUDY_TOKEN_PATTERN.fullmatch(token) is None:
+            QMessageBox.warning(
+                self,
+                "Token dello studio non valido",
+                "Il token contiene solo lettere, cifre, - e _, senza spazi: controlla di "
+                "averlo incollato per intero.",
+            )
+            return False
+        if token == self._saved_study_token:
             return True
-        QMessageBox.warning(
-            self,
-            "Token dello studio non valido",
-            "Il token contiene solo lettere, cifre, - e _, senza spazi: controlla di "
-            "averlo incollato per intero.",
-        )
-        return False
+        return self._verify_study_token(token)
+
+    def _verify_study_token(self, token: str) -> bool:
+        #un token nuovo si salva solo se il server lo riconosce
+        endpoint = self._manager.config.effective_study_endpoint
+        if endpoint is None:
+            QMessageBox.warning(self, "Token dello studio non verificato", study_pages.NO_SERVER_TEXT)
+            return False
+        verify = study_pages.verify_study_token
+        verified: list[StudyDates] = []
+        try:
+            self._run_without_freezing(lambda: verified.append(verify(endpoint, token)))
+        except StudyStartFailed as exc:
+            QMessageBox.warning(self, "Token dello studio non verificato", str(exc))
+            return False
+        except Exception as exc:
+            logger.error("Verifica del token dello studio non riuscita: %r", exc)
+            QMessageBox.warning(
+                self, "Token dello studio non verificato", f"Verifica non riuscita: {exc}"
+            )
+            return False
+        self._verified_study_dates = verified[0]
+        return True
 
     def _check_api_key(self) -> bool:
         #Prova la chiave nuova prima di scriverla
@@ -498,6 +525,11 @@ class SettingsDialog(QDialog):
         self.study_token_changed = self.saved_study_token != self._saved_study_token
         if self.study_token_changed:
             config.reset_study_calendar()
+            if self.saved_study_token is not None and self._verified_study_dates is not None:
+                config.apply_study_dates(self._verified_study_dates)
+        self.saved_study_dates = (
+            self._verified_study_dates if self.saved_study_token is not None else None
+        )
         config.attribution_model = self.attribution_combo.currentText()
         config.advice_notifications_enabled = self.advice_notifications_check.isChecked()
         self.saved_advice_notifications = config.advice_notifications_enabled

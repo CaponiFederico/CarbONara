@@ -1,5 +1,6 @@
 #API REST dello studio
 #
+#   POST /v1/start    verifica il codice e fissa l'inizio del calendario
 #   POST /v1/hours    invia ore di consumo
 #   GET  /v1/status   ultima ora ricevuta dal dispositivo, limiti e fase dello studio
 #   GET  /healthz     il database risponde
@@ -17,7 +18,7 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from . import validation
-from .phases import Calendar, calendar, phase_at
+from .phases import Calendar, calendar, next_whole_hour, phase_at
 from .store import Participant, PostgresStore, Store, study_start
 
 log = logging.getLogger("study_server")
@@ -48,6 +49,7 @@ def _study(dates: Calendar, now: datetime) -> dict[str, Any]:
     #le date bastano all'app per cambiarla anche senza rete
     return {
         "phase": phase_at(dates, now),
+        "starts_at": _utc_text(dates.starts_at),
         "advice_starts_at": _utc_text(dates.advice_starts_at),
         "ends_at": _utc_text(dates.ends_at),
     }
@@ -100,6 +102,24 @@ def create_app(store: Store, clock=lambda: datetime.now(UTC)) -> FastAPI:
                 "study": _study(participant.calendar, clock()),
             }
         )
+
+    #l'app la chiama quando il partecipante scrive il codice: un codice sbagliato si
+    #scopre subito, e da qui in poi l'app conosce le date anche senza rete
+    @app.post("/v1/start")
+    def start(request: Request) -> JSONResponse:
+        participant = authenticate(request)
+        if isinstance(participant, JSONResponse):
+            return participant
+        if participant is None:
+            return _error(401, "token mancante, sconosciuto o revocato")
+        now = clock()
+        try:
+            started_at = store.start_study(participant.id, next_whole_hour(now))
+        except Exception:
+            log.exception("inizio dello studio non registrato")
+            return _error(503, UNAVAILABLE)
+        dates = calendar(started_at, participant.baseline_hours, participant.advice_hours)
+        return JSONResponse({"study": _study(dates, now)})
 
     #async per leggere il corpo; Postgres e' sincrono e va nel pool di thread,
     #altrimenti un invio lento fermerebbe tutte le altre richieste del worker

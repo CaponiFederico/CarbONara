@@ -15,10 +15,12 @@ import platformdirs
 from ecomonitor.carbon.battery_pool import AttributionModel
 from ecomonitor.study_phase import (
     INSTALL_ID_PATTERN,
+    StudyDates,
     StudyPhase,
     current_phase,
     format_moment,
     parse_moment,
+    recorded_phase,
 )
 
 #Configurazione in JSON nella cartella utente di sistema, quindi fuori dal
@@ -90,6 +92,7 @@ class AppConfig:
     problem_notifications_enabled: bool = True
     #misura scesa a stima, chiave o token rifiutati
 
+    study_starts_at: str | None = None
     study_advice_starts_at: str | None = None
     study_ends_at: str | None = None
     #calendario dello studio deciso dal server
@@ -124,8 +127,17 @@ class AppConfig:
             now,
         )
 
+    def recorded_study_phase(self, now: datetime) -> StudyPhase | None:
+        return recorded_phase(self.study_phase(now), parse_moment(self.study_starts_at), now)
+
+    def apply_study_dates(self, dates: StudyDates) -> None:
+        self.study_starts_at = format_moment(dates.starts_at)
+        self.study_advice_starts_at = format_moment(dates.advice_starts_at)
+        self.study_ends_at = format_moment(dates.ends_at)
+
     def reset_study_calendar(self) -> None:
         #un token diverso e' un altro partecipante
+        self.study_starts_at = None
         self.study_advice_starts_at = None
         self.study_ends_at = None
         self.study_advice_announced = False
@@ -248,6 +260,7 @@ def _sanitised(config: AppConfig) -> AppConfig:
     config.study_endpoint = _study_endpoint(config.study_endpoint)
     config.study_advice_announced = bool(config.study_advice_announced)
     config.study_onboarding_done = bool(config.study_onboarding_done)
+    config.study_starts_at = format_moment(parse_moment(config.study_starts_at))
     config.study_advice_starts_at = format_moment(parse_moment(config.study_advice_starts_at))
     config.study_ends_at = format_moment(parse_moment(config.study_ends_at))
     install_id = _optional_text(config.install_id)

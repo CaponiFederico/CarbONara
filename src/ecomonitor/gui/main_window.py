@@ -2,10 +2,10 @@ import logging
 import platform
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QRect, Qt, QTimer
+from PySide6.QtCore import QEvent, QRect, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QHideEvent, QShowEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from ecomonitor.config import ConfigManager
-from ecomonitor.gui import macos_dock
+from ecomonitor.gui import macos_dock, study_pages
 from ecomonitor.gui.history_page import HistoryPage
 from ecomonitor.gui.icon import app_icon
 from ecomonitor.gui.settings_dialog import SettingsDialog
@@ -36,7 +36,13 @@ from ecomonitor.reporting import (
     format_gco2,
     format_phone_charges,
 )
-from ecomonitor.study_phase import StudyPhase, shows_dashboard
+from ecomonitor.study_phase import (
+    StudyDates,
+    StudyPhase,
+    StudyStartFailed,
+    current_phase,
+    shows_dashboard,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +173,9 @@ def _set_state(widget: QWidget, state: str) -> None:
 
 
 class MainWindow(QMainWindow):
+    #esito della verifica del token
+    _study_verified = Signal(object)
+
     def __init__(self, theme: Theme | None = None, database_path: Path | None = None) -> None:
         super().__init__()
         self.setWindowTitle("EcoMonitor — impatto del tuo utilizzo attivo")
@@ -204,6 +213,7 @@ class MainWindow(QMainWindow):
         self.onboarding_page = OnboardingPage()
         self.onboarding_page.joined.connect(self._join_study)
         self.onboarding_page.skipped.connect(self._skip_study)
+        self._study_verified.connect(self._finish_join)
 
         self._stack = QStackedWidget(self)
         self._stack.addWidget(self.dashboard_page)
@@ -240,14 +250,17 @@ class MainWindow(QMainWindow):
         self.on_api_key_changed: Callable[[str | None], None] | None = None
         #lo stesso per la zona scelta sulla cartina
         self.on_zone_changed: Callable[[str, str], None] | None = None
-        #e per il token dello studio
-        self.on_study_token_changed: Callable[[str | None], None] | None = None
+        #e per il token dello studio, col calendario ricevuto dalla verifica
+        self.on_study_token_changed: (
+            Callable[[str | None, StudyDates | None], None] | None
+        ) = None
         #i due interruttori delle notifiche: consigli, problemi
         self.on_notifications_changed: Callable[[bool, bool], None] | None = None
         #dashboard a schermo o no: il thread di polling la registra per lo studio
         self.on_dashboard_visibility_changed: Callable[[bool], None] | None = None
-        #fase dello studio cambiata dalla finestra stessa (benvenuto)
-        self.on_study_phase_changed: Callable[[StudyPhase | None], None] | None = None
+        self.on_study_phase_changed: (
+            Callable[[StudyPhase | None, datetime | None], None] | None
+        ) = None
         #«Esci» della pagina dello studio
         self.on_quit: Callable[[], None] | None = None
         #da dove il benvenuto legge e scrive la configurazione
@@ -532,12 +545,47 @@ class MainWindow(QMainWindow):
         return self._onboarding
 
     def _join_study(self, token: str) -> None:
+        #il token si salva solo se il server lo riconosce
+        endpoint = self.config_manager_factory().config.effective_study_endpoint
+        if endpoint is None:
+            self.onboarding_page.show_error(study_pages.NO_SERVER_TEXT)
+            return
+        self.onboarding_page.set_busy(True)
+        verify = study_pages.verify_study_token
+
+        def work() -> None:
+            result: StudyDates | Exception
+            try:
+                result = verify(endpoint, token)
+            except Exception as exc:
+                result = exc
+            try:
+                self._study_verified.emit((token, result))
+            except RuntimeError:
+                #finestra chiusa durante la verifica
+                logger.info("Verifica del codice finita a finestra chiusa")
+
+        study_pages.run_in_background(work)
+
+    @Slot(object)
+    def _finish_join(self, outcome: tuple[str, StudyDates | Exception]) -> None:
+        token, result = outcome
+        self.onboarding_page.set_busy(False)
+        if isinstance(result, StudyStartFailed):
+            self.onboarding_page.show_error(str(result))
+            return
+        if isinstance(result, Exception):
+            logger.error("Verifica del codice dello studio non riuscita: %r", result)
+            self.onboarding_page.show_error(f"Verifica del codice non riuscita: {result}")
+            return
+        dates = result
         try:
             manager = self.config_manager_factory()
             config = manager.config
             config.study_token = token
             config.study_onboarding_done = True
             config.reset_study_calendar()
+            config.apply_study_dates(dates)
             manager.save()
         except OSError as exc:
             logger.warning("Codice dello studio non salvato: %s", exc)
@@ -545,12 +593,13 @@ class MainWindow(QMainWindow):
             return
         self._onboarding = False
         if self.on_study_token_changed is not None:
-            self.on_study_token_changed(token)
-        #fase 1 subito
-        self._study_phase = StudyPhase.BASELINE
-        self._show_page(self.study_page)
+            self.on_study_token_changed(token, dates)
+        phase = current_phase(True, dates.advice_starts_at, dates.ends_at, datetime.now(UTC))
+        self._study_phase = phase
+        self.study_page.set_advice_start(dates.advice_starts_at)
+        self._show_page(self.dashboard_page)
         if self.on_study_phase_changed is not None:
-            self.on_study_phase_changed(StudyPhase.BASELINE)
+            self.on_study_phase_changed(phase, dates.advice_starts_at)
 
     def _skip_study(self) -> None:
         try:
@@ -597,7 +646,7 @@ class MainWindow(QMainWindow):
         if dialog.zone_changed and self.on_zone_changed is not None:
             self.on_zone_changed(dialog.saved_zone, dialog.saved_country)
         if dialog.study_token_changed and self.on_study_token_changed is not None:
-            self.on_study_token_changed(dialog.saved_study_token)
+            self.on_study_token_changed(dialog.saved_study_token, dialog.saved_study_dates)
         if dialog.notifications_changed and self.on_notifications_changed is not None:
             self.on_notifications_changed(
                 dialog.saved_advice_notifications, dialog.saved_problem_notifications

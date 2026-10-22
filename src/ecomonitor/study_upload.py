@@ -15,7 +15,7 @@ import ecomonitor
 from ecomonitor.carbon.attribution import AttributionSource
 from ecomonitor.history import covered_seconds_per_row
 from ecomonitor.storage.db import EnergySample, LocalDatabase
-from ecomonitor.study_phase import StudyPhase
+from ecomonitor.study_phase import StudyDates, StudyPhase, StudyStartFailed
 
 #Invio degli aggregati orari al server dello studio.
 
@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 SCHEMA_VERSION = 2
 STATUS_PATH = "/v1/status"
 HOURS_PATH = "/v1/hours"
+START_PATH = "/v1/start"
 INSTALL_ID_HEADER = "X-Install-Id"
 
 UPLOAD_INTERVAL_SECONDS = 3600.0
@@ -113,13 +114,6 @@ class HourlyUsage:
 
 
 @dataclass(frozen=True)
-class StudyDates:
-    #calendario deciso dal server; None finche' non e' arrivata la prima ora
-    advice_starts_at: datetime | None
-    ends_at: datetime | None
-
-
-@dataclass(frozen=True)
 class ServerStatus:
     joined_at: datetime
     last_hour_start: datetime | None
@@ -127,7 +121,7 @@ class ServerStatus:
     max_body_bytes: int
     max_past_days: int
     phase: str = "baseline"
-    study: StudyDates = StudyDates(None, None)
+    study: StudyDates = field(default_factory=lambda: StudyDates(None, None))
 
 
 @dataclass
@@ -277,6 +271,7 @@ def parse_study(value: object) -> tuple[str, StudyDates]:
     return phase, StudyDates(
         advice_starts_at=_optional_time(value.get("advice_starts_at")),
         ends_at=_optional_time(value.get("ends_at")),
+        starts_at=_optional_time(value.get("starts_at")),
     )
 
 
@@ -296,6 +291,47 @@ def _rejection(response: httpx.Response) -> tuple[str, int | None]:
     if not isinstance(index, int) or isinstance(index, bool):
         index = None
     return str(payload.get("error")), index
+
+
+def start_study(
+    endpoint: str, token: str, *, transport: httpx.BaseTransport | None = None
+) -> StudyDates:
+    #verifica il codice appena scritto e riceve il calendario
+    try:
+        with httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS, transport=transport) as client:
+            response = client.post(
+                endpoint.rstrip("/") + START_PATH,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError as exc:
+        logger.warning("Studio: verifica del codice non riuscita (%s)", exc)
+        raise StudyStartFailed(
+            "Per verificare il codice serve la connessione a Internet. Collegati e riprova."
+        ) from exc
+    if response.status_code == 401:
+        raise StudyStartFailed(
+            "Il server dello studio non riconosce questo codice: controlla di averlo "
+            "scritto per intero, o chiedine uno nuovo.",
+            rejected=True,
+        )
+    if response.status_code != 200:
+        raise StudyStartFailed(
+            f"Il server dello studio non risponde come dovrebbe ({response.status_code}): "
+            "riprova fra qualche minuto."
+        )
+    try:
+        _phase, dates = parse_study(response.json().get("study"))
+    except (AttributeError, TypeError, ValueError) as exc:
+        logger.warning("Studio: risposta alla verifica illeggibile (%s)", exc)
+        raise StudyStartFailed(
+            "La risposta del server dello studio non si legge: serve aggiornare l'app."
+        ) from exc
+    if dates.starts_at is None:
+        raise StudyStartFailed(
+            "Il server dello studio non ha fissato l'inizio: serve aggiornare il server."
+        )
+    logger.info("Studio: codice verificato, si parte il %s", dates.starts_at.isoformat())
+    return dates
 
 
 class StudyUploader:

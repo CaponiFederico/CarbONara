@@ -29,7 +29,7 @@ from ecomonitor.gui.theme import theme_for
 from ecomonitor.gui.tray import create_tray_icon, set_study_baseline
 from ecomonitor.storage.db import default_database_path
 from ecomonitor.storage.lock import DatabaseLock
-from ecomonitor.study_phase import StudyPhase, format_moment, new_install_id, parse_moment
+from ecomonitor.study_phase import StudyDates, StudyPhase, new_install_id, parse_moment
 
 if TYPE_CHECKING:
     #a runtime li importa il thread di polling
@@ -449,7 +449,8 @@ class PollingWorker(QObject):
         self._pending_lock = threading.Lock()
         self._pending_user_api_key: tuple[str | None, ...] = ()
         self._pending_zone: tuple[str, str | None] | None = None
-        self._pending_study_token: tuple[str | None, ...] = ()
+        #(token, calendario ricevuto dalla verifica), oppure () se non c'e' richiesta
+        self._pending_study_token: tuple[()] | tuple[str | None, StudyDates | None] = ()
         #la dashboard a schermo, scritta dal thread della GUI
         self._dashboard_visible = False
 
@@ -514,12 +515,11 @@ class PollingWorker(QObject):
             logger.exception("Zona ElectricityMaps non applicata")
             return False
 
-    def request_study_token(self, token: str | None) -> None:
-        #chiamata dal thread della GUI quando il token viene salvato
+    def request_study_token(self, token: str | None, dates: StudyDates | None = None) -> None:
         with self._pending_lock:
-            self._pending_study_token = (token,)
+            self._pending_study_token = (token, dates)
 
-    def _take_pending_study_token(self) -> tuple[str | None, ...]:
+    def _take_pending_study_token(self) -> tuple[()] | tuple[str | None, StudyDates | None]:
         with self._pending_lock:
             pending, self._pending_study_token = self._pending_study_token, ()
         return pending
@@ -528,11 +528,14 @@ class PollingWorker(QObject):
         pending = self._take_pending_study_token()
         if not pending or self._orchestrator is None:
             return
+        token, dates = pending
         config = self._orchestrator.config_manager.config
-        if pending[0] != config.study_token:
+        if token != config.study_token:
             #un altro partecipante: si riparte dalla fase 1
             config.reset_study_calendar()
-        config.study_token = pending[0]
+        config.study_token = token
+        if dates is not None:
+            config.apply_study_dates(dates)
         if self._study_scheduler is not None:
             self._study_scheduler.reset()
 
@@ -545,13 +548,13 @@ class PollingWorker(QObject):
         assert self._orchestrator is not None
         config = self._orchestrator.config_manager.config
         dates = None if self._study_scheduler is None else self._study_scheduler.study_dates
-        if dates is not None:
-            config.study_advice_starts_at = format_moment(dates.advice_starts_at)
-            config.study_ends_at = format_moment(dates.ends_at)
-        phase = config.study_phase(datetime.now(UTC))
+        if dates is not None and dates.advice_starts_at is not None:
+            config.apply_study_dates(dates)
+        now = datetime.now(UTC)
+        phase = config.study_phase(now)
         with self._pending_lock:
             visible = self._dashboard_visible
-        self._orchestrator.study_phase = phase
+        self._orchestrator.study_phase = config.recorded_study_phase(now)
         self._orchestrator.dashboard_visible = visible
         return {
             "study_phase": phase,
@@ -808,6 +811,10 @@ class NotificationDispatcher(QObject):
             self._notifier.show(outcome.show)
 
 
+def _calendar_fields(config: AppConfig) -> tuple[str | None, ...]:
+    return (config.study_starts_at, config.study_advice_starts_at, config.study_ends_at)
+
+
 class StudyPhaseController(QObject):
 
     def __init__(
@@ -825,7 +832,7 @@ class StudyPhaseController(QObject):
         self._show_notice = show_notice
         self._on_baseline_changed = on_baseline_changed
         config = config_manager.config
-        self._saved_dates = (config.study_advice_starts_at, config.study_ends_at)
+        self._saved_dates = _calendar_fields(config)
         self._in_baseline: bool | None = None
 
     @Slot(dict)
@@ -838,14 +845,16 @@ class StudyPhaseController(QObject):
         except Exception:
             logger.exception("Fase dello studio non applicata")
 
-    def apply_phase(self, phase: StudyPhase | None) -> None:
-        #la stessa strada di un tick, per il benvenuto che entra in fase 1
-        self._apply(phase, None)
+    def apply_phase(
+        self, phase: StudyPhase | None, advice_starts_at: datetime | None = None
+    ) -> None:
+        #la stessa strada di un tick
+        self._apply(phase, advice_starts_at)
 
     def _apply(self, phase: StudyPhase | None, advice_starts_at: datetime | None) -> None:
         config = self._config_manager.config
         #il thread di polling scrive il calendario nel config in memoria
-        dates = (config.study_advice_starts_at, config.study_ends_at)
+        dates = _calendar_fields(config)
         if dates != self._saved_dates:
             self._saved_dates = dates
             self._save("il calendario dello studio")

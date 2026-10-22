@@ -1,6 +1,7 @@
 import logging
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
 
@@ -18,6 +19,23 @@ INSTALL_ID_PATTERN = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 )
 MOMENT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+@dataclass(frozen=True)
+class StudyDates:
+    #calendario deciso dal server con la verifica del codice
+    advice_starts_at: datetime | None
+    ends_at: datetime | None
+    #la prima ora dello studio
+    starts_at: datetime | None = None
+
+
+class StudyStartFailed(Exception):
+    #la verifica del codice non e' riuscita
+    def __init__(self, message: str, rejected: bool = False) -> None:
+        super().__init__(message)
+        #il server non conosce il codice
+        self.rejected = rejected
 
 
 def new_install_id() -> str:
@@ -60,6 +78,15 @@ def current_phase(
 def shows_dashboard(phase: StudyPhase | None) -> bool:
     #solo la fase 1 nasconde consumi e consigli
     return phase is not StudyPhase.BASELINE
+
+
+def recorded_phase(
+    phase: StudyPhase | None, starts_at: datetime | None, now: datetime
+) -> StudyPhase | None:
+    #la fase con cui si registrano le righe
+    if starts_at is not None and now < starts_at:
+        return None
+    return phase
 
 
 def hour_phase_label(phase: StudyPhase | None) -> str | None:
