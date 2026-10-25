@@ -117,7 +117,7 @@ class Orchestrator:
 
         self.grid_service = grid_service or GridCarbonIntensityService(
             zone=config.em_zone,
-            api_key=config.api_key,
+            endpoint=config.effective_study_endpoint,
             country_code=config.country_code,
             local_history=self.db,
         )
@@ -186,21 +186,6 @@ class Orchestrator:
         self._unwritten: deque[BufferedEnergyRow] = deque()
         self._last_totals_resync_at: datetime | None = None
         self._resync_totals(self._active_day)
-
-    def apply_user_api_key(self, user_api_key: str | None) -> bool:
-        config = self.config_manager.config
-        config.electricitymaps_api_key = user_api_key
-        if not self.grid_service.set_api_key(config.api_key):
-            return False
-
-        self._last_grid_sample_at = None
-        logger.info(
-            "Chiave ElectricityMaps aggiornata: %s",
-            "si interroga l'API al prossimo tick"
-            if config.api_key
-            else "nessuna chiave disponibile, si usa il ripiego statico",
-        )
-        return True
 
     def apply_zone(self, zone: str, country_code: str | None = None) -> bool:
         #Cambia zona True se la zona e' cambiata
@@ -320,9 +305,6 @@ class Orchestrator:
             now,
             self.grid_service.zone,
             self._current_intensity,
-            #la provenienza reale del valore, non la sola presenza di una
-            #chiave: registrare come "live" una chiamata fallita renderebbe i
-            #campioni non ricalcolabili
             source,
         )
 

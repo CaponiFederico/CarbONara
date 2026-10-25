@@ -1,16 +1,20 @@
 import logging
+import math
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from statistics import median
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_BASE_URL = "https://api.electricitymaps.com/v3"
+#I dati di ElectricityMaps arrivano dal server di EcoMonitor 
+GRID_LATEST_PATH = "/v1/grid/latest"
+GRID_FORECAST_PATH = "/v1/grid/forecast"
+GRID_PAST_PATH = "/v1/grid/past"
 
 CONNECT_TIMEOUT_SECONDS = 2.0
 
@@ -40,11 +44,20 @@ def country_code_from_zone(zone: str) -> str:
     return zone.split("-", 1)[0].upper()
 
 
+def _intensity(value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise TypeError(f"intensita' non numerica: {value!r}")
+    number = float(value)
+    if not math.isfinite(number) or number < 0:
+        raise ValueError(f"intensita' fuori dai limiti: {value!r}")
+    return number
+
+
 def _parse_point(item: dict) -> IntensityPoint:
-    return IntensityPoint(
-        timestamp=datetime.fromisoformat(item["datetime"]),
-        g_per_kwh=float(item["carbonIntensity"]),
-    )
+    moment = datetime.fromisoformat(item["datetime"])
+    if moment.tzinfo is None:
+        raise ValueError(f"ora senza fuso: {item['datetime']!r}")
+    return IntensityPoint(timestamp=moment, g_per_kwh=_intensity(item["g_per_kwh"]))
 
 
 #Ripiego per fascia oraria
@@ -57,19 +70,20 @@ MIN_HOUR_FALLBACK_DAYS = 2
 #mediana e non media
 HOUR_MEDIAN_SOURCE = "local_hour_median"
 
-LIVE_FAILURE_AUTH = "auth"
+LIVE_FAILURE_ZONE = "zone"
+
+LIVE_FAILURE_UNAVAILABLE = "unavailable"
 
 LIVE_FAILURE_UNREACHABLE = "unreachable"
 
-#401 chiave non valida
-#403 chiave senza accesso'
-AUTH_STATUS_CODES = frozenset({401, 403})
-
 
 def live_failure_reason(exc: Exception) -> str:
-    #Distingue il rifiuto dell'API dal resto
-    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in AUTH_STATUS_CODES:
-        return LIVE_FAILURE_AUTH
+    #perche' non c'e' il dato in tempo reale
+    if isinstance(exc, httpx.HTTPStatusError):
+        if exc.response.status_code == 404:
+            return LIVE_FAILURE_ZONE
+        if exc.response.status_code == 503:
+            return LIVE_FAILURE_UNAVAILABLE
     return LIVE_FAILURE_UNREACHABLE
 
 
@@ -99,73 +113,58 @@ class StaticFallbackProvider:
         return STATIC_FALLBACK_G_PER_KWH.get(country, STATIC_FALLBACK_G_PER_KWH["DEFAULT"])
 
 
-class ElectricityMapsProvider:
-    #Client per l'API ElectricityMaps v3
+def _utc_text(moment: datetime) -> str:
+    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    #Endpoint usati:
-    #/carbon-intensity/latest  
-    #/carbon-intensity/forecast
-    #/carbon-intensity/past-range 
 
-    def __init__(self, api_key: str, base_url: str = DEFAULT_BASE_URL, timeout: float = 8.0) -> None:
-        self._api_key = api_key
-        self._base_url = base_url.rstrip("/")
+class GridServerProvider:
+    def __init__(
+        self,
+        endpoint: str,
+        timeout: float = 8.0,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
+        self._endpoint = endpoint.rstrip("/")
         self._timeout = timeout
+        #per i test di contratto col server vero
+        self._transport = transport
 
-    def _get(self, path: str, params: dict) -> dict:
-        response = httpx.get(
-            f"{self._base_url}{path}",
-            params=params,
-            headers={"auth-token": self._api_key},
-            timeout=httpx.Timeout(self._timeout, connect=min(self._timeout, CONNECT_TIMEOUT_SECONDS)),
-        )
-        response.raise_for_status()
-        return response.json()
+    def _get(self, path: str, params: dict[str, str]) -> Any:
+        timeout = httpx.Timeout(self._timeout, connect=min(self._timeout, CONNECT_TIMEOUT_SECONDS))
+        with httpx.Client(timeout=timeout, transport=self._transport) as client:
+            response = client.get(f"{self._endpoint}{path}", params=params)
+            response.raise_for_status()
+            return response.json()
 
     def get_current_intensity(self, zone: str) -> float:
-        return float(self._get("/carbon-intensity/latest", {"zone": zone})["carbonIntensity"])
+        return _intensity(self._get(GRID_LATEST_PATH, {"zone": zone})["g_per_kwh"])
 
     def get_forecast(self, zone: str) -> list[IntensityPoint]:
-        payload = self._get("/carbon-intensity/forecast", {"zone": zone})
-        return [_parse_point(item) for item in payload.get("forecast", [])]
+        payload = self._get(GRID_FORECAST_PATH, {"zone": zone})
+        return [_parse_point(item) for item in payload["forecast"]]
 
     def get_past_range(self, zone: str, start: datetime, end: datetime) -> list[IntensityPoint]:
         payload = self._get(
-            "/carbon-intensity/past-range",
-            {
-                "zone": zone,
-                "start": start.astimezone(UTC).isoformat().replace("+00:00", "Z"),
-                "end": end.astimezone(UTC).isoformat().replace("+00:00", "Z"),
-            },
+            GRID_PAST_PATH, {"zone": zone, "start": _utc_text(start), "end": _utc_text(end)}
         )
-        return [_parse_point(item) for item in payload.get("data", [])]
-
-
-def check_api_key(api_key: str, zone: str, timeout: float = 4.0) -> str | None:
-    #Prova una chiave prima di salvarla
-    try:
-        ElectricityMapsProvider(api_key, timeout=timeout).get_current_intensity(zone)
-    except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
-        return live_failure_reason(exc)
-    return None
+        return [_parse_point(item) for item in payload["data"]]
 
 
 class GridCarbonIntensityService:
     def __init__(
         self,
         zone: str,
-        api_key: str | None = None,
+        endpoint: str | None = None,
         country_code: str | None = None,
         cache_ttl_seconds: float = 300.0,
         forecast_ttl_seconds: float = 1800.0,
         local_history: LocalIntensityHistory | None = None,
-        provider: ElectricityMapsProvider | None = None,
+        provider: GridServerProvider | None = None,
     ) -> None:
         self.zone = zone
         self.country_code = country_code or country_code_from_zone(zone)
-        #serve a sapere se la chiave e' davvero cambiata
-        self._api_key = api_key
-        self._live = provider or (ElectricityMapsProvider(api_key) if api_key else None)
+        #senza indirizzo del server (da sorgente, senza study_endpoint) solo il ripiego
+        self._live = provider or (GridServerProvider(endpoint) if endpoint else None)
         self._fallback = StaticFallbackProvider()
         self._local_history = local_history
 
@@ -178,21 +177,6 @@ class GridCarbonIntensityService:
         self._last_value_source: str = "static_fallback"
         self._last_mean_source: str | None = None
         self._last_live_failure: str | None = None
-
-    def set_api_key(self, api_key: str | None) -> bool:
-        #Cambia la chiave a caldo. Torna True se qualcosa e' cambiato.
-        if api_key == self._api_key:
-            return False
-
-        self._api_key = api_key
-        self._live = ElectricityMapsProvider(api_key) if api_key else None
-        self._cached_value = None
-        self._cached_at = None
-        self._cached_forecast = []
-        self._forecast_cached_at = None
-        self._last_value_source = "static_fallback"
-        self._last_live_failure = None
-        return True
 
     def set_zone(self, zone: str, country_code: str | None = None) -> bool:
         #Cambia zona a caldo, e paese se passato: il ripiego statico e' per paese
@@ -214,8 +198,6 @@ class GridCarbonIntensityService:
 
     @property
     def has_live_provider(self) -> bool:
-        #chiave API configurata Non significa che l'ultimo valore sia live: 
-        # ElectricityMaps puo' essere irraggiungibile o la zona non coperta
         return self._live is not None
 
     @property
@@ -288,26 +270,17 @@ class GridCarbonIntensityService:
             try:
                 value = self._live.get_current_intensity(self.zone)
             except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
-                already_rejected = self._last_live_failure == LIVE_FAILURE_AUTH
+                previous = self._last_live_failure
                 self._last_live_failure = live_failure_reason(exc)
-                if self._last_live_failure == LIVE_FAILURE_AUTH:
-                    #si riprova a ogni intervallo, ma l'errore si scrive una volta:
-                    #altrimenti riempirebbe il registro ogni 5 minuti per sempre
-                    logger.log(
-                        logging.DEBUG if already_rejected else logging.ERROR,
-                        "ElectricityMaps ha rifiutato la chiave API (%s): i dati in "
-                        "tempo reale resteranno spenti finche' non viene sostituita",
-                        exc,
-                    )
-                else:
-                    logger.warning(
-                        "ElectricityMaps non raggiungibile (%s), uso il ripiego", exc
-                    )
+                logger.log(
+                    logging.DEBUG if previous == self._last_live_failure else logging.WARNING,
+                    "Dati di rete in tempo reale non disponibili per %s (%s), uso il ripiego",
+                    self.zone,
+                    exc,
+                )
         else:
             logger.debug(
-                "Nessuna chiave ElectricityMaps configurata: uso la media statica per %s. "
-                "Imposta electricitymaps_api_key nella configurazione o la variabile "
-                "d'ambiente ECOMONITOR_EM_API_KEY per i dati in tempo reale.",
+                "Nessun server EcoMonitor configurato: uso la media statica per %s",
                 self.zone,
             )
 
@@ -327,8 +300,7 @@ class GridCarbonIntensityService:
         return value
 
     def get_forecast(self) -> list[IntensityPoint]:
-        #Previsione oraria per le prossime 24 h. Lista vuota se non
-        #disponibile (nessuna chiave, API irraggiungibile, zona non coperta)
+        #Previsione oraria per le prossime 24 h
         now = time.monotonic()
         if (
             self._forecast_cached_at is not None
@@ -341,7 +313,7 @@ class GridCarbonIntensityService:
             try:
                 forecast = self._live.get_forecast(self.zone)
             except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
-                logger.warning("Forecast ElectricityMaps non disponibile (%s)", exc)
+                logger.warning("Previsione di rete non disponibile (%s)", exc)
 
         self._cached_forecast, self._forecast_cached_at = forecast, now
         return forecast
@@ -353,7 +325,7 @@ class GridCarbonIntensityService:
         try:
             return self._live.get_past_range(self.zone, start, end)
         except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
-            logger.warning("Storico ElectricityMaps non disponibile (%s)", exc)
+            logger.warning("Storico di rete non disponibile (%s)", exc)
             return []
 
     def get_mean_intensity_between(self, start: datetime, end: datetime) -> float | None:
@@ -371,7 +343,7 @@ class GridCarbonIntensityService:
                     self._last_mean_source = "reconstructed_api"
                     return sum(point.g_per_kwh for point in points) / len(points)
             except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
-                logger.warning("Storico ElectricityMaps non disponibile (%s)", exc)
+                logger.warning("Storico di rete non disponibile (%s)", exc)
 
         if self._local_history is not None:
             local_mean = self._local_history.mean_grid_intensity_between(start, end, self.zone)

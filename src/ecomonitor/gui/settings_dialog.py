@@ -1,5 +1,4 @@
 import logging
-import os
 import threading
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
@@ -22,13 +21,10 @@ from PySide6.QtWidgets import (
 
 from ecomonitor import autostart
 from ecomonitor.config import (
-    API_KEY_ENV_VAR,
     ATTRIBUTION_MODELS,
     STUDY_TOKEN_PATTERN,
     TOKEN_DIGEST_PATTERN,
-    AppConfig,
     ConfigManager,
-    packaged_api_key,
 )
 from ecomonitor.gui import study_pages
 from ecomonitor.gui.theme import LIGHT, Theme, build_palette
@@ -38,11 +34,6 @@ from ecomonitor.study_phase import StudyDates, StudyPhase, StudyStartFailed
 
 logger = logging.getLogger(__name__)
 
-
-def _default_key_validator(api_key: str, zone: str) -> str | None:
-    from ecomonitor.carbon.grid_intensity import check_api_key
-
-    return check_api_key(api_key, zone)
 
 #La configurazione vive in un JSON nella cartella utente
 
@@ -54,7 +45,7 @@ _TOKEN_DIGEST_PATTERN = TOKEN_DIGEST_PATTERN
 
 CHARGE_ADVICE_LABEL = "Consigli sulla ricarica"
 WORKLOAD_ADVICE_LABEL = "Consigli sul momento migliore per le attività pesanti"
-PROBLEM_NOTIFICATIONS_LABEL = "Problemi di misura, di chiave e di token"
+PROBLEM_NOTIFICATIONS_LABEL = "Problemi di misura e di token"
 ADVICE_TOOLTIP = "Poche al giorno, solo con la finestra chiusa e solo da previsione di rete"
 STUDY_ADVICE_TOOLTIP = "Nella prima fase dello studio i consigli restano spenti"
 
@@ -101,25 +92,16 @@ class WrappedTextBox(QWidget):
         self._reserve_space()
 
 
-def user_api_key(config: AppConfig) -> str | None:
-    #La chiave dell'utente l'unica che il campo puo' mostrare
-    saved = config.electricitymaps_api_key
-    if saved and saved == packaged_api_key():
-        return None
-    return saved
-
 class SettingsDialog(QDialog):
     def __init__(
         self,
         parent: QWidget | None = None,
         manager: ConfigManager | None = None,
         theme: Theme | None = None,
-        key_validator: Callable[[str, str], str | None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("EcoMonitor — impostazioni")
         self._manager = manager or ConfigManager()
-        self._validate_key = key_validator or _default_key_validator
         config = self._manager.config
 
         self._saved_zone = config.em_zone
@@ -142,20 +124,6 @@ class SettingsDialog(QDialog):
         form = QFormLayout()
 
         form.addRow("Codice paese (ISO):", self.country_edit)
-
-        self._saved_key = user_api_key(config)
-        self.saved_user_api_key = self._saved_key
-        self.api_key_changed = False
-        self.api_key_edit = QLineEdit(self._saved_key or "")
-        self.api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.api_key_edit.setPlaceholderText(self._api_key_placeholder())
-        self.api_key_edit.setToolTip(
-            "La tua chiave ha la precedenza su quella inclusa. "
-            "Per tornare a quella inclusa: cancella il campo e salva."
-            if packaged_api_key()
-            else "Per toglierla: cancella il campo e salva."
-        )
-        form.addRow("Chiave API ElectricityMaps:", self.api_key_edit)
 
         #il token del partecipante allo studio: e' suo, quindi si rilegge e si cancella
         self._saved_study_token = config.study_token
@@ -238,16 +206,8 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.zone_caption)
         layout.addLayout(form)
 
-        if os.environ.get(API_KEY_ENV_VAR):
-            layout.addWidget(
-                QLabel(
-                    f"Nota: la variabile d'ambiente {API_KEY_ENV_VAR} è impostata "
-                    "e ha la precedenza su questo campo."
-                )
-            )
-
         note = QLabel(
-            "Paese, zona, chiave, token e notifiche hanno effetto subito. Le altre "
+            "Paese, zona, token e notifiche hanno effetto subito. Le altre "
             "modifiche al prossimo avvio dell'applicazione."
         )
         note.setWordWrap(True)
@@ -327,11 +287,6 @@ class SettingsDialog(QDialog):
         self.advice_notifications_check.setToolTip(
             STUDY_ADVICE_TOOLTIP if in_baseline else ADVICE_TOOLTIP
         )
-
-    def _api_key_placeholder(self) -> str:
-        if packaged_api_key():
-            return "Inserisci la tua chiave per usarla al posto di quella inclusa"
-        return "senza chiave si usano le medie statiche"
 
     def _apply_autostart(self) -> bool:
         #Torna False se la finestra deve restare aperta
@@ -430,56 +385,6 @@ class SettingsDialog(QDialog):
         self._verified_study_dates = verified[0]
         return True
 
-    def _check_api_key(self) -> bool:
-        #Prova la chiave nuova prima di scriverla
-        key = self.api_key_edit.text().strip()
-        if not key or key == self._saved_key:
-            #si torna alla chiave inclusa
-            return True
-        if os.environ.get(API_KEY_ENV_VAR):
-            return True
-
-        zone = self.zone_map.selected_zone or self._manager.config.em_zone
-        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        try:
-            failure = self._validate_key(key, zone)
-        finally:
-            QGuiApplication.restoreOverrideCursor()
-
-        if failure is None:
-            return True
-
-        from ecomonitor.carbon.grid_intensity import LIVE_FAILURE_AUTH
-
-        if failure != LIVE_FAILURE_AUTH:
-            #senza rete non verificabile
-            logger.info(
-                "Chiave ElectricityMaps non verificabile prima del salvataggio (%s)",
-                failure,
-            )
-            return True
-        return self._confirm_rejected_key(zone)
-
-    def _confirm_rejected_key(self, zone: str) -> bool:
-        detail = (
-            "Salvandola, i dati in tempo reale resteranno spenti e l'applicazione "
-            "userà le medie di ripiego."
-        )
-        if packaged_api_key():
-            detail += " Lasciando il campo vuoto si usa la chiave inclusa nell'applicazione."
-
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Icon.Warning)
-        box.setWindowTitle("Chiave API rifiutata")
-        box.setText(f"ElectricityMaps ha rifiutato questa chiave per la zona {zone}.")
-        box.setInformativeText(detail)
-        fix = box.addButton("Correggi", QMessageBox.ButtonRole.RejectRole)
-        box.addButton("Salva comunque", QMessageBox.ButtonRole.AcceptRole)
-        box.setDefaultButton(fix)
-        box.exec()
-        clicked = box.clickedButton()
-        return clicked is not None and clicked is not fix
-
     def accept(self) -> None:
         country = normalize_country(self.country_edit.text()) or self._saved_country
         if country != self._saved_country and country not in COUNTRY_ZONES:
@@ -507,8 +412,6 @@ class SettingsDialog(QDialog):
             return
         if not self._check_study_token():
             return
-        if not self._check_api_key():
-            return
         if not self._apply_autostart():
             return
         config = self._manager.config
@@ -517,9 +420,6 @@ class SettingsDialog(QDialog):
         config.country_code = country
         self.saved_country = country
         self.zone_changed = self.saved_zone != self._saved_zone or country != self._saved_country
-        config.electricitymaps_api_key = self.api_key_edit.text().strip() or None
-        self.saved_user_api_key = config.electricitymaps_api_key
-        self.api_key_changed = self.saved_user_api_key != self._saved_key
         config.study_token = self.study_token_edit.text().strip() or None
         self.saved_study_token = config.study_token
         self.study_token_changed = self.saved_study_token != self._saved_study_token
@@ -542,7 +442,6 @@ class SettingsDialog(QDialog):
         try:
             self._manager.save()
         except OSError as exc:
-            self.api_key_changed = False
             self.zone_changed = False
             self.study_token_changed = False
             self.notifications_changed = False

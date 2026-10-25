@@ -24,15 +24,18 @@ from ecomonitor.study_phase import (
 )
 
 #Configurazione in JSON nella cartella utente di sistema, quindi fuori dal
-#repository: la chiave ElectricityMaps e' un segreto personale
+#repository: il token dello studio e' personale
 
 logger = logging.getLogger(__name__)
 
 APP_NAME = "ecomonitor"
-API_KEY_ENV_VAR = "ECOMONITOR_EM_API_KEY"
 
-PACKAGED_API_KEY_FILE = "api_key"
 PACKAGED_STUDY_ENDPOINT_FILE = "study_endpoint"
+
+#campi che le versioni precedenti scrivevano e che non devono restare sul disco: la
+#chiave ElectricityMaps ora sta solo sul server, e una copia nel config.json resterebbe
+#li' in chiaro per sempre
+REMOVED_FIELDS = ("electricitymaps_api_key",)
 
 #server dello studio in locale, per collaudare l'invio da sorgente
 LOCAL_STUDY_HOSTS = ("127.0.0.1", "localhost")
@@ -61,15 +64,13 @@ class AppConfig:
     #persistenza no
 
     grid_sample_interval_seconds: float = 300.0
-    #la rete si muove su scala oraria, e il tier gratuito dell'API ha un limite
+    #la rete si muove su scala oraria, e il server la rilegge ogni 5 minuti
 
     attribution_model: str = "weighted_average"  # weighted_average | fifo
 
     charge_rate_percent_per_hour: float = 50.0
     #velocita' tipica di ricarica, per stimare quando dentro una finestra ad
     #app chiusa la ricarica e' davvero avvenuta
-
-    electricitymaps_api_key: str | None = None
 
     tray_notice_shown: bool = False
     #l'avviso "continuo a misurare in background" si mostra una volta sola
@@ -81,7 +82,7 @@ class AppConfig:
     #l'avvio automatico nasce attivo, ma una volta sola
 
     study_endpoint: str | None = None
-    #indirizzo del server dello studio
+    #indirizzo del server dello studio, che da' anche i dati di rete a tutte le app
 
     study_token: str | None = None
     #token personale del partecipante
@@ -90,7 +91,7 @@ class AppConfig:
     #consigli sul momento migliore
 
     problem_notifications_enabled: bool = True
-    #misura scesa a stima, chiave o token rifiutati
+    #misura scesa a stima, token rifiutato
 
     study_starts_at: str | None = None
     study_advice_starts_at: str | None = None
@@ -105,14 +106,6 @@ class AppConfig:
 
     install_id: str | None = None
     #UUID casuale dell'installazione, inviato allo studio
-
-    @property
-    def api_key(self) -> str | None:
-        return (
-            os.environ.get(API_KEY_ENV_VAR)
-            or self.electricitymaps_api_key
-            or packaged_api_key()
-        )
 
     @property
     def effective_study_endpoint(self) -> str | None:
@@ -158,10 +151,6 @@ def _packaged_text(name: str) -> str | None:
         if text:
             return text
     return None
-
-def packaged_api_key() -> str | None:
-    return _packaged_text(PACKAGED_API_KEY_FILE)
-
 
 def packaged_study_endpoint() -> str | None:
     #passa dallo stesso controllo del config.json
@@ -254,8 +243,6 @@ def _sanitised(config: AppConfig) -> AppConfig:
     config.autostart_default_applied = bool(config.autostart_default_applied)
     config.advice_notifications_enabled = bool(config.advice_notifications_enabled)
     config.problem_notifications_enabled = bool(config.problem_notifications_enabled)
-    if config.electricitymaps_api_key is not None:
-        config.electricitymaps_api_key = str(config.electricitymaps_api_key).strip() or None
     config.study_token = _study_token(config.study_token)
     config.study_endpoint = _study_endpoint(config.study_endpoint)
     config.study_advice_announced = bool(config.study_advice_announced)
@@ -324,11 +311,28 @@ class ConfigManager:
         if not isinstance(data, dict):
             return self._recover_from_invalid("il contenuto non e' un oggetto JSON")
 
+        if any(name in data for name in REMOVED_FIELDS):
+            self._purge_removed_fields(data)
+
         #ignora le chiavi sconosciute invece di sollevare TypeError: un file
         #scritto da un'altra versione non deve impedire l'avvio
         known = {field.name for field in fields(AppConfig)}
         return _sanitised(
             AppConfig(**{key: value for key, value in data.items() if key in known})
+        )
+
+    def _purge_removed_fields(self, data: dict) -> None:
+        try:
+            self._write_atomically(
+                {key: value for key, value in data.items() if key not in REMOVED_FIELDS}
+            )
+        except OSError as exc:
+            #save() non li riscrive comunque: _read_raw() li lascia fuori
+            logger.warning("Configurazione: campi vecchi non tolti dal file (%s)", exc)
+            return
+        logger.info(
+            "Configurazione: tolta la chiave ElectricityMaps salvata, i dati di rete "
+            "arrivano dal server di EcoMonitor"
         )
 
     def _create_default(self) -> AppConfig:
@@ -379,7 +383,9 @@ class ConfigManager:
             data = json.loads(self.path.read_text(encoding="utf-8-sig"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return None
-        return data if isinstance(data, dict) else None
+        if not isinstance(data, dict):
+            return None
+        return {key: value for key, value in data.items() if key not in REMOVED_FIELDS}
 
     def _write_atomically(self, data: dict[str, object]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

@@ -445,9 +445,8 @@ class PollingWorker(QObject):
         self._poll_interval_ms = int(poll_interval_seconds * 1000)
         self._running = True
 
-        #Richiesta di cambio chiave o zona
+        #Richiesta di cambio zona o token
         self._pending_lock = threading.Lock()
-        self._pending_user_api_key: tuple[str | None, ...] = ()
         self._pending_zone: tuple[str, str | None] | None = None
         #(token, calendario ricevuto dalla verifica), oppure () se non c'e' richiesta
         self._pending_study_token: tuple[()] | tuple[str | None, StudyDates | None] = ()
@@ -471,26 +470,6 @@ class PollingWorker(QObject):
     def has_orchestrator(self) -> bool:
         #letto dal thread della GUI alla chiusura
         return self._orchestrator is not None
-
-    def request_user_api_key(self, user_api_key: str | None) -> None:
-        #chiamata dal thread della GUI quando le impostazioni vengono salvate
-        with self._pending_lock:
-            self._pending_user_api_key = (user_api_key,)
-
-    def _take_pending_user_api_key(self) -> tuple[str | None, ...]:
-        with self._pending_lock:
-            pending, self._pending_user_api_key = self._pending_user_api_key, ()
-        return pending
-
-    def _apply_pending_user_api_key(self) -> None:
-        pending = self._take_pending_user_api_key()
-        if not pending or self._orchestrator is None:
-            return
-        try:
-            self._orchestrator.apply_user_api_key(pending[0])
-        except Exception:
-            #una chiave rifiutata non deve fermare la misura
-            logger.exception("Chiave ElectricityMaps non applicata")
 
     def request_zone(self, zone: str, country_code: str | None = None) -> None:
         #chiamata dal thread della GUI quando si sceglie una zona 
@@ -597,11 +576,7 @@ class PollingWorker(QObject):
 
     def _has_pending_request(self) -> bool:
         with self._pending_lock:
-            return (
-                bool(self._pending_user_api_key)
-                or self._pending_zone is not None
-                or bool(self._pending_study_token)
-            )
+            return self._pending_zone is not None or bool(self._pending_study_token)
 
     @Slot()
     def run(self) -> None:
@@ -619,9 +594,6 @@ class PollingWorker(QObject):
         first_tick_done = False
 
         while self._running:
-            #prima del tick: cosi' il primo tick dopo il salvataggio interroga
-            #gia' l'API invece di restituire ancora il ripiego
-            self._apply_pending_user_api_key()
             zone_changed = self._apply_pending_zone()
             self._apply_pending_study_token()
             try:
@@ -1214,7 +1186,6 @@ def main() -> None:
     worker.tick_ready.connect(updater.on_tick_ready)
     worker.startup_failed.connect(updater.on_startup_failed)
 
-    window.on_api_key_changed = worker.request_user_api_key
     window.on_zone_changed = worker.request_zone
     window.on_study_token_changed = worker.request_study_token
 

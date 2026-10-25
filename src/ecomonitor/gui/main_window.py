@@ -96,9 +96,8 @@ _FIELD_HELP = {
         "è la carica."
     ),
     "settings": (
-        "Zona elettrica, chiave di accesso ai dati in tempo reale e modello di "
-        "attribuzione. Paese, zona, chiave e token valgono subito, il resto dal "
-        "prossimo avvio."
+        "Zona elettrica, token dello studio e modello di attribuzione. Paese, zona "
+        "e token valgono subito, il resto dal prossimo avvio."
     ),
     "measurement": (
         "Che cosa l'app sta misurando davvero e che cosa sta stimando. "
@@ -246,9 +245,8 @@ class MainWindow(QMainWindow):
         self.on_hidden: Callable[[], None] | None = None
         #quando la finestra e' stata nascosta chiudendola, None se mai
         self.hidden_at: float | None = None
-        #lo collega app.py al thread di polling, che possiede il servizio di rete
-        self.on_api_key_changed: Callable[[str | None], None] | None = None
-        #lo stesso per la zona scelta sulla cartina
+        #lo collega app.py al thread di polling, che possiede il servizio di rete:
+        #la zona scelta sulla cartina
         self.on_zone_changed: Callable[[str, str], None] | None = None
         #e per il token dello studio, col calendario ricevuto dalla verifica
         self.on_study_token_changed: (
@@ -640,9 +638,7 @@ class MainWindow(QMainWindow):
     def open_settings(self) -> None:
         dialog = SettingsDialog(self, theme=self._theme)
         dialog.exec()
-        #la chiave e la zona si applicano senza riavviare
-        if dialog.api_key_changed and self.on_api_key_changed is not None:
-            self.on_api_key_changed(dialog.saved_user_api_key)
+        #la zona si applica senza riavviare
         if dialog.zone_changed and self.on_zone_changed is not None:
             self.on_zone_changed(dialog.saved_zone, dialog.saved_country)
         if dialog.study_token_changed and self.on_study_token_changed is not None:

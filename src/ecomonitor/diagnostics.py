@@ -54,7 +54,7 @@ def _has_elevated_privileges() -> bool | None:
 
 
 def cmd_env(args: argparse.Namespace) -> None:
-    from ecomonitor.config import API_KEY_ENV_VAR, ConfigManager, default_config_path
+    from ecomonitor.config import ConfigManager, default_config_path
     from ecomonitor.power_context import read_power_source_state
     from ecomonitor.sensors.factory import get_backend
 
@@ -139,15 +139,12 @@ def cmd_env(args: argparse.Namespace) -> None:
     print(f"{INFO} config       : {default_config_path()}")
     print(f"{INFO} zona / paese : {config.em_zone} / {config.country_code}")
     print(f"{INFO} modello attr.: {config.attribution_model}")
-    source = (
-        f"variabile d'ambiente {API_KEY_ENV_VAR}"
-        if os.environ.get(API_KEY_ENV_VAR)
-        else "file di configurazione"
-    )
-    if config.api_key:
-        _line(OK, f"chiave ElectricityMaps: presente (da {source})")
+    #la chiave ElectricityMaps sta solo sul server: l'app chiede a lui
+    endpoint = config.effective_study_endpoint
+    if endpoint:
+        _line(OK, f"server EcoMonitor (dati di rete e studio): {endpoint}")
     else:
-        _line(WARN, "chiave ElectricityMaps: assente - si usera' il dataset statico")
+        _line(WARN, "server EcoMonitor: non configurato - si usera' il dataset statico")
 
 
 # -- sensors: i domini di potenza, campionati piu' volte --------------------
@@ -259,7 +256,8 @@ def cmd_grid(args: argparse.Namespace) -> None:
     from ecomonitor.carbon.grid_intensity import (
         HOUR_FALLBACK_DAYS,
         HOUR_MEDIAN_SOURCE,
-        LIVE_FAILURE_AUTH,
+        LIVE_FAILURE_UNAVAILABLE,
+        LIVE_FAILURE_ZONE,
         STATIC_FALLBACK_G_PER_KWH,
         GridCarbonIntensityService,
     )
@@ -269,13 +267,15 @@ def cmd_grid(args: argparse.Namespace) -> None:
 
     config = ConfigManager().config
     service = GridCarbonIntensityService(
-        zone=config.em_zone, api_key=config.api_key, country_code=config.country_code
+        zone=config.em_zone,
+        endpoint=config.effective_study_endpoint,
+        country_code=config.country_code,
     )
 
     _title(f"Intensita' di rete - zona {service.zone} (paese {service.country_code})")
 
     if not service.has_live_provider:
-        _line(WARN, "nessuna chiave API: verra' usato solo il dataset statico")
+        _line(WARN, "nessun server EcoMonitor: verra' usato solo il dataset statico")
 
     intensity = service.get_current_intensity()
     static = STATIC_FALLBACK_G_PER_KWH.get(
@@ -288,19 +288,24 @@ def cmd_grid(args: argparse.Namespace) -> None:
     )
     if service.last_value_source == "live":
         _line(OK, f"valore live: {intensity:.0f} gCO2/kWh (media statica del paese: {static:.0f})")
-    elif service.last_live_failure == LIVE_FAILURE_AUTH:
-        #la chiave va sostituita
+    elif service.last_live_failure == LIVE_FAILURE_ZONE:
         _line(
             FAIL,
-            "ElectricityMaps ha rifiutato la chiave API (HTTP 401 o 403): la chiave "
-            "e' assente dal proprio account, scaduta o senza accesso a questa zona "
-            f"({service.zone}). Valore di ripiego {intensity:.0f} gCO2/kWh dalla "
+            f"il server non serve la zona {service.zone} (HTTP 404): sceglierne una "
+            f"sulla cartina. Valore di ripiego {intensity:.0f} gCO2/kWh dalla {fallback_label}",
+        )
+    elif service.last_live_failure == LIVE_FAILURE_UNAVAILABLE:
+        #zona appena chiesta, oppure il raccoglitore sulla VM e' fermo
+        _line(
+            WARN,
+            "il server non ha un dato fresco per questa zona (HTTP 503): una zona nuova "
+            f"arriva entro 5 minuti. Valore di ripiego {intensity:.0f} gCO2/kWh dalla "
             f"{fallback_label}",
         )
     elif service.last_live_failure is not None:
         _line(
             WARN,
-            f"chiave presente ma ElectricityMaps non risponde: valore di ripiego "
+            f"il server EcoMonitor non risponde: valore di ripiego "
             f"{intensity:.0f} gCO2/kWh dalla {fallback_label}, controllare i log",
         )
     elif service.last_value_source == HOUR_MEDIAN_SOURCE:

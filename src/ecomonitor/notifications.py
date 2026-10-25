@@ -13,7 +13,6 @@ from ecomonitor.advisor import (
     ReferenceSource,
     _percent_phrase,
 )
-from ecomonitor.carbon.grid_intensity import LIVE_FAILURE_AUTH
 from ecomonitor.storage.db import LIVE_SAMPLE_SOURCE
 from ecomonitor.study_phase import StudyPhase
 
@@ -52,7 +51,6 @@ class NotificationKind(Enum):
     MEASUREMENT_DEGRADED = "measurement_degraded"
     # sensore perso durante la sessione
 
-    API_KEY_REJECTED = "api_key_rejected"
     STUDY_TOKEN_REJECTED = "study_token_rejected"
 
     STUDY_ADVICE_STARTED = "study_advice_started"
@@ -62,7 +60,6 @@ class NotificationKind(Enum):
 PROBLEM_KINDS = frozenset(
     {
         NotificationKind.MEASUREMENT_DEGRADED,
-        NotificationKind.API_KEY_REJECTED,
         NotificationKind.STUDY_TOKEN_REJECTED,
     }
 )
@@ -89,7 +86,6 @@ class TickSnapshot:
     battery_percent: float | None  # None su desktop
     measurement_is_native: bool
     grid_source: str
-    grid_failure: str | None
     study_token_rejected: bool
     window_in_foreground: bool
     advice_enabled: bool 
@@ -131,7 +127,6 @@ def snapshot_from_tick(
         battery_percent=power_state.battery_percent,
         measurement_is_native=result["measurement_mode"].is_complete,
         grid_source=result["grid_intensity_source"],
-        grid_failure=result["grid_intensity_failure"],
         study_token_rejected=bool(result.get("study_token_rejected", False)),
         window_in_foreground=window_in_foreground,
         advice_enabled=advice_enabled,
@@ -162,10 +157,6 @@ _PROBLEM_TEXTS = {
     NotificationKind.MEASUREMENT_DEGRADED: (
         "Misura passata a stima",
         _lines("Riavvia l'app per tornare a misurare", "Il sensore hardware non risponde più"),
-    ),
-    NotificationKind.API_KEY_REJECTED: (
-        "Chiave ElectricityMaps rifiutata",
-        _lines("Controlla la chiave nelle impostazioni", "Dati di rete in tempo reale spenti"),
     ),
     NotificationKind.STUDY_TOKEN_REJECTED: (
         "Token dello studio rifiutato",
@@ -228,7 +219,6 @@ class NotificationPolicy:
             NotificationKind.MEASUREMENT_DEGRADED: (
                 self._seen_native and not snapshot.measurement_is_native
             ),
-            NotificationKind.API_KEY_REJECTED: snapshot.grid_failure == LIVE_FAILURE_AUTH,
             NotificationKind.STUDY_TOKEN_REJECTED: snapshot.study_token_rejected,
         }
         resolved = tuple(
