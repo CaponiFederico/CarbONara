@@ -80,14 +80,17 @@ echo "== intensita' della rete"
 install -d -m 700 /etc/ecomonitor-study
 install -m 644 "$SOURCE_DIR/deploy/ecomonitor-study-grid.service" /etc/systemd/system/
 install -m 644 "$SOURCE_DIR/deploy/ecomonitor-study-grid.timer" /etc/systemd/system/
+install -m 644 "$SOURCE_DIR/deploy/ecomonitor-study-grid-live.service" /etc/systemd/system/
+install -m 644 "$SOURCE_DIR/deploy/ecomonitor-study-grid-live.timer" /etc/systemd/system/
 systemctl daemon-reload
 # prova dei permessi senza chiamare ElectricityMaps
 sudo -u ecomonitor_grid ECOMONITOR_STUDY_DSN="dbname=$DATABASE" /usr/local/bin/ecomonitor-study-grid --dry-run
+sudo -u ecomonitor_grid ECOMONITOR_STUDY_DSN="dbname=$DATABASE" /usr/local/bin/ecomonitor-study-grid --live --dry-run
 if [[ -s /etc/ecomonitor-study/em_api_key ]]; then
     chmod 600 /etc/ecomonitor-study/em_api_key
-    systemctl enable --now ecomonitor-study-grid.timer
+    systemctl enable --now ecomonitor-study-grid.timer ecomonitor-study-grid-live.timer
 else
-    systemctl disable --now ecomonitor-study-grid.timer 2>/dev/null || true
+    systemctl disable --now ecomonitor-study-grid.timer ecomonitor-study-grid-live.timer 2>/dev/null || true
     echo "ATTENZIONE: manca la chiave ElectricityMaps, raccolta spenta. Per accenderla:"
     echo "  sudo install -m 600 /dev/stdin /etc/ecomonitor-study/em_api_key   (incolla, Invio, Ctrl+D)"
     echo "  poi rilancia questo script"

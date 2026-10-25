@@ -1,0 +1,11 @@
+# Ogni 5 minuti
+
+[Unit]
+Description=Dati di rete per le app, ogni 5 minuti
+
+[Timer]
+OnCalendar=*:0/5
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
