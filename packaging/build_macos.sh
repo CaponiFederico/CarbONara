@@ -62,8 +62,6 @@ PKG="${OUT_DIR}/ecomonitor-${VERSION}-macos-${ARCH}.pkg"
 #Il pacchetto della build precedente non deve sopravvivere a una build fallita
 rm -f "${PKG}"
 
-#prima della build
-API_KEY="$(bash "${PACKAGING_DIR}/read_api_key.sh")"
 STUDY_ENDPOINT="$(bash "${PACKAGING_DIR}/read_study_endpoint.sh")"
 
 PERMISSIONS_SCRIPT="${PROJECT_ROOT}/scripts/install_powermetrics_permissions.sh"
@@ -88,8 +86,6 @@ if [[ ! -x ${APP}/Contents/MacOS/EcoMonitor ]]; then
 fi
 
 RESOURCES="${APP}/Contents/Resources"
-printf '%s' "${API_KEY}" >"${RESOURCES}/api_key"
-chmod 0644 "${RESOURCES}/api_key"
 printf '%s' "${STUDY_ENDPOINT}" >"${RESOURCES}/study_endpoint"
 chmod 0644 "${RESOURCES}/study_endpoint"
 cp "${PERMISSIONS_SCRIPT}" "${RESOURCES}/"

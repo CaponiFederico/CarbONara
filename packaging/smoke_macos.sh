@@ -37,13 +37,14 @@ else
     echo "  macOS potrebbe negare le notifiche native"
 fi
 
-#senza la chiave il pacchetto esce 
+#senza l'indirizzo del server il pacchetto esce senza dati di rete
 RESOURCES="${APP}/Contents/Resources"
 [[ -f ${RESOURCES}/install_powermetrics_permissions.sh ]] ||
     fail "manca lo script che autorizza powermetrics, a cui punta il consiglio dell'app"
-[[ -s ${RESOURCES}/api_key ]] || fail "manca ${RESOURCES}/api_key"
 [[ -s ${RESOURCES}/study_endpoint ]] || fail "manca ${RESOURCES}/study_endpoint"
-echo "dati spediti: api_key, study_endpoint"
+#la chiave ElectricityMaps sta solo sul server
+[[ ! -e ${RESOURCES}/api_key ]] || fail "c'e' ancora ${RESOURCES}/api_key"
+echo "dati spediti: study_endpoint"
 
 SMOKE_HOME="$(mktemp -d)"
 export HOME="${SMOKE_HOME}"

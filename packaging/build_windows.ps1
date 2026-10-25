@@ -61,11 +61,6 @@ $foreign = Get-ChildItem -Recurse -File $DistDir | Where-Object { $_.Name -match
 if ($foreign) { throw "dist contiene file di una build Linux ($($foreign[0].Name)): pacchetto non costruito" }
 
 & powershell.exe -NoProfile -ExecutionPolicy Bypass `
-    -File (Join-Path $PackagingDir "read_api_key.ps1") `
-    -OutFile (Join-Path (Join-Path $DistDir "EcoMonitor") "api_key")
-if ($LASTEXITCODE -ne 0) { throw "chiave ElectricityMaps non disponibile: pacchetto non costruito" }
-
-& powershell.exe -NoProfile -ExecutionPolicy Bypass `
     -File (Join-Path $PackagingDir "read_study_endpoint.ps1") `
     -OutFile (Join-Path (Join-Path $DistDir "EcoMonitor") "study_endpoint")
 if ($LASTEXITCODE -ne 0) { throw "indirizzo del server dello studio non disponibile: pacchetto non costruito" }

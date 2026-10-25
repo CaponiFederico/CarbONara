@@ -43,6 +43,8 @@ Name: "italiano"; MessagesFile: "compiler:Languages\Italian.isl"
 
 [InstallDelete]
 Type: filesandordirs; Name: "{app}\_internal"
+; la chiave ElectricityMaps spedita dalle versioni precedenti: ora sta solo sul server
+Type: files; Name: "{app}\api_key"
 Type: files; Name: "{autoprograms}\{#AppName} (amministratore).lnk"
 
 [Files]

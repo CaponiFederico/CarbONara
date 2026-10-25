@@ -9,6 +9,7 @@ APP="${2:-/Applications}/EcoMonitor.app"
 PERMISSIONS_SCRIPT="${APP}/Contents/Resources/install_powermetrics_permissions.sh"
 #scritto da preinstall
 RELAUNCH_LIST=/private/var/run/io.github.caponifederico.ecomonitor.relaunch
+rm -f "${APP}/Contents/Resources/api_key"
 
 #preinstall ha chiuso l'app
 relaunch() {

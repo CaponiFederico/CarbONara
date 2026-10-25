@@ -65,8 +65,6 @@ cp -r "${DIST_DIR}/EcoMonitor/." "${STAGE_DIR}/opt/ecomonitor/"
 chmod +x "${STAGE_DIR}/opt/ecomonitor/EcoMonitor"
 ln -sf /opt/ecomonitor/EcoMonitor "${STAGE_DIR}/usr/bin/ecomonitor"
 
-"${PACKAGING_DIR}/read_api_key.sh" >"${STAGE_DIR}/opt/ecomonitor/api_key"
-chmod 0644 "${STAGE_DIR}/opt/ecomonitor/api_key"
 "${PACKAGING_DIR}/read_study_endpoint.sh" >"${STAGE_DIR}/opt/ecomonitor/study_endpoint"
 chmod 0644 "${STAGE_DIR}/opt/ecomonitor/study_endpoint"
 
