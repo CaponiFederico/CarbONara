@@ -157,6 +157,8 @@ QFrame#adviceBanner[state="wait"] { background: $warning_soft; }
 QFrame#adviceBanner[state="wait"] QLabel { color: $warning; }
 QLabel#adviceTitle { font-size: $font_title; font-weight: 600; }
 QLabel#adviceDetail { font-size: $font_body; }
+QLabel#adviceSecond { font-size: $font_unit; font-weight: 600; }
+QFrame#adviceBanner QLabel#adviceThird { font-size: $font_small; color: $text_muted; }
 
 QLabel#detailKey { font-size: $font_small; color: $text_muted; }
 QLabel#detailValue { font-size: $font_small; color: $text; }

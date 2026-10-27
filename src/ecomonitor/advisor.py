@@ -52,6 +52,58 @@ _REFERENCE_LABELS = {
 }
 
 
+PODIUM_SIZE = 3
+MIN_SLOT_SEPARATION = timedelta(hours=2)
+
+@dataclass(frozen=True)
+class AdviceSlot:
+    starts_at: datetime | None
+    g_per_kwh: float
+
+    @property
+    def is_now(self) -> bool:
+        return self.starts_at is None
+
+    def when(self) -> str:
+        if self.starts_at is None:
+            return "adesso"
+        return self.starts_at.astimezone().strftime("%H:%M")
+
+
+def _podium(
+    current_intensity: float,
+    upcoming: list[IntensityPoint],
+    now: datetime,
+    now_first: bool,
+) -> tuple[AdviceSlot, ...]:
+    candidates = [(current_intensity, now, AdviceSlot(None, current_intensity))]
+    candidates += [
+        (point.g_per_kwh, point.timestamp, AdviceSlot(point.timestamp, point.g_per_kwh))
+        for point in upcoming
+    ]
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    if now_first:
+        candidates.sort(key=lambda item: not item[2].is_now)
+
+    chosen: list[tuple[datetime, AdviceSlot]] = []
+    for _, moment, slot in candidates:
+        if all(abs(moment - taken) >= MIN_SLOT_SEPARATION for taken, _ in chosen):
+            chosen.append((moment, slot))
+        if len(chosen) == PODIUM_SIZE:
+            break
+    return tuple(slot for _, slot in chosen)
+
+
+def _outlook(
+    current_intensity: float, upcoming: list[IntensityPoint]
+) -> tuple[AdviceSlot, ...]:
+    later = sorted(upcoming, key=lambda point: point.timestamp)
+    return (
+        AdviceSlot(None, current_intensity),
+        *(AdviceSlot(point.timestamp, point.g_per_kwh) for point in later),
+    )
+
+
 def _percent_phrase(value: float) -> str:
     #accenti
     n = round(value)
@@ -73,6 +125,51 @@ class ChargeAdvice:
 
     reference_horizon_hours: float | None = None
     #Su quante ore e' calcolato il riferimento
+
+    slots: tuple[AdviceSlot, ...] = ()
+
+    outlook: tuple[AdviceSlot, ...] = ()
+
+    def headline(self) -> str:
+        is_charge = self.target is AdviceTarget.CHARGE
+        if self.source is AdviceSource.UNAVAILABLE:
+            return "Ancora pochi dati sulla rete elettrica per consigliarti"
+        if self.source is AdviceSource.LOW_BATTERY:
+            return "Batteria quasi scarica: collega subito il caricatore"
+
+        best = self.slots[0] if self.slots else None
+        if best is not None and best.is_now:
+            return (
+                "Adesso è il momento migliore per ricaricare"
+                if is_charge
+                else "Adesso è il momento migliore per le attività pesanti"
+            )
+        if best is not None:
+            local_time = best.when()
+            if self.recommendation is ChargeRecommendation.WAIT:
+                return (
+                    f"Aspetta le {local_time} per ricaricare"
+                    if is_charge
+                    else f"Rimanda le attività pesanti alle {local_time}"
+                )
+            return (
+                f"Ricarica quando vuoi: alle {local_time} è solo un po' meglio"
+                if is_charge
+                else f"Attività pesanti quando vuoi: alle {local_time} è solo un po' meglio"
+            )
+
+        if self.recommendation is ChargeRecommendation.CHARGE_NOW:
+            return "Buon momento per ricaricare" if is_charge else "Buon momento per le attività pesanti"
+        if self.recommendation is ChargeRecommendation.WAIT:
+            return "Se puoi, ricarica più tardi" if is_charge else "Se puoi, rimanda le attività pesanti"
+        return (
+            "Momento nella media per ricaricare"
+            if is_charge
+            else "Momento nella media per le attività pesanti"
+        )
+
+    def runners_up(self) -> tuple[str, ...]:
+        return tuple(f"{place}°  {slot.when()}" for place, slot in enumerate(self.slots[1:], 2))
 
     def _reference_label(self, source: ReferenceSource) -> str:
         #La provenienza arriva come parametro invece di essere letta da self:
@@ -268,6 +365,8 @@ class CarbonAwareAdvisor:
                     reference_source=reference_source,
                     reference_horizon_hours=self.reference_horizon_hours,
                     saving_percent=saving * 100.0,
+                    slots=_podium(current_intensity, upcoming, now, now_first=False),
+                    outlook=_outlook(current_intensity, upcoming),
                 )
             #niente da aspettare. Se poi lo scarto dal minimo previsto e' dentro
             #at_minimum_ratio, adesso e' di fatto il minimo: decidere fra
@@ -288,6 +387,13 @@ class CarbonAwareAdvisor:
                 reference_source=reference_source,
                 reference_horizon_hours=self.reference_horizon_hours,
                 saving_percent=max(0.0, saving * 100.0),
+                slots=_podium(
+                    current_intensity,
+                    upcoming,
+                    now,
+                    now_first=recommendation is ChargeRecommendation.CHARGE_NOW,
+                ),
+                outlook=_outlook(current_intensity, upcoming),
             )
 
         if reference is not None:

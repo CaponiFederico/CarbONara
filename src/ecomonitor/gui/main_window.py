@@ -1,9 +1,11 @@
 import logging
 import platform
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
+from html import escape
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QEvent, QRect, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QHideEvent, QShowEvent
@@ -22,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from ecomonitor.config import ConfigManager
 from ecomonitor.gui import macos_dock, study_pages
+from ecomonitor.gui.charts import AdviceOutlook
 from ecomonitor.gui.history_page import HistoryPage
 from ecomonitor.gui.icon import app_icon
 from ecomonitor.gui.settings_dialog import SettingsDialog
@@ -43,6 +46,10 @@ from ecomonitor.study_phase import (
     current_phase,
     shows_dashboard,
 )
+
+if TYPE_CHECKING:
+    #solo per i tipi: advisor porta con se' httpx (vedi gui/charts.py)
+    from ecomonitor.advisor import AdviceSlot
 
 logger = logging.getLogger(__name__)
 
@@ -132,10 +139,7 @@ _MINIMUM_WIDTH = 460
 
 _STARTING_WIDTH = 700
 
-_LONGEST_ADVICE = (
-    "207 gCO2/kWh, il 20% sotto la media prevista per le prossime 12 h: "
-    "spostare le attività pesanti alle 05:00 farebbe risparmiare solo il 25%"
-)
+_LONGEST_ADVICE = "Attività pesanti quando vuoi: alle 05:00 è solo un po' meglio"
 
 _ADVICE_SIDE_MARGINS = 64
 
@@ -167,8 +171,9 @@ def _set_state(widget: QWidget, state: str) -> None:
         return
     widget.setProperty("state", state)
     style = widget.style()
-    style.unpolish(widget)
-    style.polish(widget)
+    for target in (widget, *widget.findChildren(QWidget)):
+        style.unpolish(target)
+        style.polish(target)
 
 
 class MainWindow(QMainWindow):
@@ -385,10 +390,29 @@ class MainWindow(QMainWindow):
         self.advisor_label.setWordWrap(True)
         self.advisor_label.setAccessibleName("Suggerimento")
 
+        self.advice_second = QLabel()
+        self.advice_second.setObjectName("adviceSecond")
+        self.advice_second.setAccessibleName("Seconda fascia consigliata")
+        self.advice_third = QLabel()
+        self.advice_third.setObjectName("adviceThird")
+        self.advice_third.setAccessibleName("Terza fascia consigliata")
+
         banner_layout.addWidget(self.advice_caption)
         banner_layout.addWidget(self.advisor_label)
+        banner_layout.addSpacing(2)
+        for runner in (self.advice_second, self.advice_third):
+            runner.setVisible(False)
+            banner_layout.addWidget(runner)
+
+        #le prossime ore, con le fasce del podio in evidenza
+        self.advice_outlook = AdviceOutlook(theme=self._theme)
+        self.advice_outlook.setAccessibleName("Andamento previsto della rete")
+        self.advice_outlook.setVisible(False)
+        banner_layout.addSpacing(4)
+        banner_layout.addWidget(self.advice_outlook)
 
         self._advice_target: str | None = None
+        self._advice_help = ""
         self._describe_advice("charge")
 
         #la proprieta' va impostata prima che il widget venga disegnato
@@ -406,7 +430,14 @@ class MainWindow(QMainWindow):
         if self._advice_target is not None:
             self.advice_caption.setText(caption)
             self.advisor_label.setAccessibleName(caption[0].upper() + caption[1:])
-        for widget in (self.advice_banner, self.advice_caption, self.advisor_label):
+        self._advice_help = help_text
+        for widget in (
+            self.advice_banner,
+            self.advice_caption,
+            self.advisor_label,
+            self.advice_second,
+            self.advice_third,
+        ):
             self._describe(widget, help_text)
 
     def _build_details(self) -> QGridLayout:
@@ -754,13 +785,38 @@ class MainWindow(QMainWindow):
         _set_state(self.measurement_label, "" if mode.is_complete else "estimated")
 
     def update_advisor(
-        self, text: str, recommendation: str | None = None, target: str | None = None
+        self,
+        text: str,
+        recommendation: str | None = None,
+        target: str | None = None,
+        runners_up: Sequence[str] = (),
+        detail: str | None = None,
+        outlook: "Sequence[AdviceSlot]" = (),
+        podium: "Sequence[AdviceSlot]" = (),
     ) -> None:
         self.advisor_label.setText(text)
+        self.advice_outlook.set_outlook(outlook, podium)
+        self.advice_outlook.setVisible(bool(outlook))
         _set_state(self.advice_banner, recommendation or "")
         if target is not None and target != self._advice_target:
             self._advice_target = target
             self._describe_advice(target)
+        for label, runner in zip(
+            (self.advice_second, self.advice_third),
+            (*runners_up, "", ""),
+            strict=False,
+        ):
+            label.setText(runner)
+            label.setVisible(bool(runner))
+        if detail:
+            self.advisor_label.setToolTip(
+                f"<qt>{self._advice_help}<br><br>Nel dettaglio: {escape(detail)}</qt>"
+            )
+            self.advisor_label.setAccessibleDescription(
+                f"{self._advice_help} Nel dettaglio: {detail}"
+            )
+        else:
+            self._describe(self.advisor_label, self._advice_help)
 
     def mark_startup_failed(self, reason: str) -> None:
         #il messaggio resta finche' non arriva un tick
@@ -815,10 +871,22 @@ class MainWindow(QMainWindow):
 
     def _starting_height(self) -> int:
         #altezza iniziale della finestra, senza contare i margini
-        reserve = self._advice_height_for(_LONGEST_ADVICE) - self._advice_height_for(
-            self.advisor_label.text()
+        reserve = max(
+            0,
+            self._advice_height_for(_LONGEST_ADVICE)
+            - self._advice_height_for(self.advisor_label.text()),
         )
-        return self.sizeHint().height() + max(0, reserve)
+        #secondo e terzo posto arrivano col primo tick
+        banner_layout = self.advice_banner.layout()
+        spacing = banner_layout.spacing() if banner_layout is not None else 0
+        for runner in (self.advice_second, self.advice_third):
+            if runner.isHidden():
+                runner.ensurePolished()
+                reserve += runner.fontMetrics().height() + spacing
+        if self.advice_outlook.isHidden():
+            #piu' la spaziatura aggiunta sopra il grafico
+            reserve += self.advice_outlook.height() + spacing + 4
+        return self.sizeHint().height() + reserve
 
     def _user_shrank_the_window(self) -> bool:
         #Vero se la finestra diversa da quella di default

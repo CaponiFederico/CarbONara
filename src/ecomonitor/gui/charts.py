@@ -1,10 +1,15 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QEvent, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPaintEvent
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
 from ecomonitor.gui.theme import LIGHT, Theme
+
+if TYPE_CHECKING:
+    from ecomonitor.advisor import AdviceSlot
 
 #Grafici 
 _BAR_GAP = 2
@@ -220,6 +225,127 @@ class BarChart(QWidget):
                 int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
                 bar.label,
             )
+        painter.end()
+
+
+class AdviceOutlook(QWidget):
+    #Il grafico del consiglio
+    _HEADER_HEIGHT = 14
+    _PLOT_HEIGHT = 72
+    _AXIS_HEIGHT = 14
+    _PODIUM_ALPHA = (255, 190, 140)
+
+    def __init__(self, parent: QWidget | None = None, theme: Theme | None = None) -> None:
+        super().__init__(parent)
+        self._theme = theme or LIGHT
+        self._outlook: list[AdviceSlot] = []
+        self._places: dict[int, int] = {}
+        self.setFixedHeight(self._HEADER_HEIGHT + self._PLOT_HEIGHT + self._AXIS_HEIGHT)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setMouseTracking(True)
+
+    def set_outlook(
+        self, outlook: "Sequence[AdviceSlot]", podium: "Sequence[AdviceSlot]"
+    ) -> None:
+        self._outlook = list(outlook)
+        self._places = {
+            index: place
+            for place, slot in enumerate(podium, 1)
+            for index, bar in enumerate(self._outlook)
+            if bar.starts_at == slot.starts_at
+        }
+        ranked = sorted(self._places.items(), key=lambda item: item[1])
+        self.setAccessibleDescription(
+            "Elettricità prevista per le prossime ore, più alta la barra più CO2. "
+            + ", ".join(f"{place}° {self._outlook[index].when()}" for index, place in ranked)
+        )
+        self.update()
+
+    def _slot_width(self) -> float:
+        return self.width() / len(self._outlook) if self._outlook else 0.0
+
+    def event(self, event) -> bool:
+        if event.type() == QEvent.Type.ToolTip:
+            return True
+        return super().event(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        slot = self._slot_width()
+        index = int(event.position().x() // slot) if slot > 0 else -1
+        if 0 <= index < len(self._outlook):
+            bar = self._outlook[index]
+            place = self._places.get(index)
+            prefix = f"{place}° posto · " if place else ""
+            QToolTip.showText(
+                event.globalPosition().toPoint(),
+                f"{prefix}{bar.when()}: {bar.g_per_kwh:.0f} gCO2/kWh",
+                self,
+            )
+        else:
+            QToolTip.hideText()
+        super().mouseMoveEvent(event)
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        small = QFont(self.font())
+        small.setPointSizeF(max(6.0, self.font().pointSizeF() - 2.0))
+        painter.setFont(small)
+
+        muted = QColor(self._theme.text_muted)
+        painter.setPen(muted)
+        painter.drawText(
+            QRectF(0.0, 0.0, float(self.width()), float(self._HEADER_HEIGHT)),
+            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+            "prossime ore · più bassa la barra, più pulita l'elettricità",
+        )
+        if not self._outlook:
+            painter.end()
+            return
+
+        maximum = max(bar.g_per_kwh for bar in self._outlook) or 1.0
+        slot = self._slot_width()
+        width = max(_MIN_BAR_WIDTH, slot - max(_BAR_GAP, slot * 0.25))
+        top = float(self._HEADER_HEIGHT)
+        bottom = top + self._PLOT_HEIGHT
+        #spazio per il "1°" sopra la barra piu' alta
+        usable = self._PLOT_HEIGHT - _VALUE_TEXT_HEIGHT
+
+        rest = QColor(self._theme.text_muted)
+        rest.setAlpha(90)
+        clean = QColor(self._theme.success)
+        bold = QFont(small)
+        bold.setBold(True)
+        for index, bar in enumerate(self._outlook):
+            height = max(2.0, usable * max(0.0, bar.g_per_kwh) / maximum)
+            rect = QRectF(index * slot + (slot - width) / 2.0, bottom - height, width, height)
+            place = self._places.get(index)
+            color = rest
+            if place is not None:
+                color = QColor(clean)
+                color.setAlpha(self._PODIUM_ALPHA[min(place, len(self._PODIUM_ALPHA)) - 1])
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(color)
+            painter.drawRoundedRect(rect, 2.0, 2.0)
+
+            label_rect = QRectF(index * slot - slot / 2.0, 0.0, slot * 2.0, 0.0)
+            center = int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+            if place is not None:
+                painter.setFont(bold)
+                painter.setPen(clean)
+                painter.drawText(
+                    label_rect.adjusted(0, rect.top() - _VALUE_TEXT_HEIGHT, 0, rect.top()),
+                    center,
+                    f"{place}°",
+                )
+            if place is not None or bar.is_now:
+                painter.setFont(bold if place is not None else small)
+                painter.setPen(clean if place is not None else muted)
+                painter.drawText(
+                    label_rect.adjusted(0, bottom + 1.0, 0, bottom + 1.0 + self._AXIS_HEIGHT),
+                    center,
+                    bar.when(),
+                )
         painter.end()
 
 
