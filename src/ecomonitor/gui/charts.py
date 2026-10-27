@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QEvent, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPaintEvent
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPaintEvent
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
 from ecomonitor.gui.theme import LIGHT, Theme
@@ -230,7 +230,6 @@ class BarChart(QWidget):
 
 class AdviceOutlook(QWidget):
     #Il grafico del consiglio
-    _HEADER_HEIGHT = 14
     _PLOT_HEIGHT = 72
     _AXIS_HEIGHT = 14
     _PODIUM_ALPHA = (255, 190, 140)
@@ -240,7 +239,7 @@ class AdviceOutlook(QWidget):
         self._theme = theme or LIGHT
         self._outlook: list[AdviceSlot] = []
         self._places: dict[int, int] = {}
-        self.setFixedHeight(self._HEADER_HEIGHT + self._PLOT_HEIGHT + self._AXIS_HEIGHT)
+        self.setFixedHeight(self._PLOT_HEIGHT + self._AXIS_HEIGHT)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setMouseTracking(True)
 
@@ -260,6 +259,12 @@ class AdviceOutlook(QWidget):
             + ", ".join(f"{place}° {self._outlook[index].when()}" for index, place in ranked)
         )
         self.update()
+
+    @staticmethod
+    def _hour_label(bar: "AdviceSlot", short: bool, now_fits: bool) -> str:
+        if bar.is_now:
+            return bar.when() if now_fits else "ora"
+        return bar.when()[:2] if short else bar.when()
 
     def _slot_width(self) -> float:
         return self.width() / len(self._outlook) if self._outlook else 0.0
@@ -293,12 +298,6 @@ class AdviceOutlook(QWidget):
         painter.setFont(small)
 
         muted = QColor(self._theme.text_muted)
-        painter.setPen(muted)
-        painter.drawText(
-            QRectF(0.0, 0.0, float(self.width()), float(self._HEADER_HEIGHT)),
-            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
-            "prossime ore · più bassa la barra, più pulita l'elettricità",
-        )
         if not self._outlook:
             painter.end()
             return
@@ -306,8 +305,7 @@ class AdviceOutlook(QWidget):
         maximum = max(bar.g_per_kwh for bar in self._outlook) or 1.0
         slot = self._slot_width()
         width = max(_MIN_BAR_WIDTH, slot - max(_BAR_GAP, slot * 0.25))
-        top = float(self._HEADER_HEIGHT)
-        bottom = top + self._PLOT_HEIGHT
+        bottom = float(self._PLOT_HEIGHT)
         #spazio per il "1°" sopra la barra piu' alta
         usable = self._PLOT_HEIGHT - _VALUE_TEXT_HEIGHT
 
@@ -316,6 +314,8 @@ class AdviceOutlook(QWidget):
         clean = QColor(self._theme.success)
         bold = QFont(small)
         bold.setBold(True)
+        fits = QFontMetrics(bold).horizontalAdvance
+        short = fits("00:00") > slot - 2
         for index, bar in enumerate(self._outlook):
             height = max(2.0, usable * max(0.0, bar.g_per_kwh) / maximum)
             rect = QRectF(index * slot + (slot - width) / 2.0, bottom - height, width, height)
@@ -328,7 +328,8 @@ class AdviceOutlook(QWidget):
             painter.setBrush(color)
             painter.drawRoundedRect(rect, 2.0, 2.0)
 
-            label_rect = QRectF(index * slot - slot / 2.0, 0.0, slot * 2.0, 0.0)
+            #una colonna per barra: le etichette non si possono accavallare
+            label_rect = QRectF(index * slot, 0.0, slot, 0.0)
             center = int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
             if place is not None:
                 painter.setFont(bold)
@@ -338,14 +339,13 @@ class AdviceOutlook(QWidget):
                     center,
                     f"{place}°",
                 )
-            if place is not None or bar.is_now:
-                painter.setFont(bold if place is not None else small)
-                painter.setPen(clean if place is not None else muted)
-                painter.drawText(
-                    label_rect.adjusted(0, bottom + 1.0, 0, bottom + 1.0 + self._AXIS_HEIGHT),
-                    center,
-                    bar.when(),
-                )
+            painter.setFont(bold if place is not None else small)
+            painter.setPen(clean if place is not None else muted)
+            painter.drawText(
+                label_rect.adjusted(0, bottom + 1.0, 0, bottom + 1.0 + self._AXIS_HEIGHT),
+                center,
+                self._hour_label(bar, short, fits(bar.when()) <= slot - 2),
+            )
         painter.end()
 
 
