@@ -184,6 +184,7 @@ class GridCarbonIntensityService:
         self._last_mean_source: str | None = None
         self._last_live_failure: str | None = None
         self._last_past_failed = False
+        self._last_mean_failed = False
 
     def set_zone(self, zone: str, country_code: str | None = None) -> bool:
         #Cambia zona a caldo, e paese se passato: il ripiego statico e' per paese
@@ -353,11 +354,16 @@ class GridCarbonIntensityService:
     def last_past_failed(self) -> bool:
         return self._last_past_failed
 
+    @property
+    def last_mean_failed(self) -> bool:
+        return self._last_mean_failed
+
     def get_mean_intensity_between(self, start: datetime, end: datetime) -> float | None:
         #Media dell'intensita' nella finestra [start, end], per ricostruire
         #l'intensita' di una ricarica avvenuta ad app chiusa
 
         self._last_mean_source = None
+        self._last_mean_failed = False
         if end <= start:
             return None
 
@@ -369,6 +375,7 @@ class GridCarbonIntensityService:
                     return sum(point.g_per_kwh for point in points) / len(points)
             except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
                 logger.warning("Storico di rete non disponibile (%s)", exc)
+                self._last_mean_failed = _worth_retrying(exc)
 
         if self._local_history is not None:
             local_mean = self._local_history.mean_grid_intensity_between(start, end, self.zone)

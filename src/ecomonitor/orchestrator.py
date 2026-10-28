@@ -81,6 +81,8 @@ SINGLE_CHARGE_WINDOW_SECONDS = 24 * 3600.0
 
 POOL_STALE_AFTER_SECONDS = 7 * 24 * 3600.0
 #Oltre una settimana senza osservare la batteria il pool e' considerato scaduto
+GAP_DEFER_LIMIT_SECONDS = 600.0
+GAP_RETRY_SECONDS = 60.0
 
 def _pool_is_stale(last_seen: datetime | None, now: datetime) -> bool:
     if last_seen is None:
@@ -156,6 +158,9 @@ class Orchestrator:
         #con la media della finestra scoperta quando c'e' e si riesce a leggerla
         self._unknown_origin_intensity = self.grid_service.static_country_mean
         self._unknown_origin_source = "static_country_mean"
+        self._gap_deferred_since: datetime | None = None
+        self._gap_next_try: datetime | None = None
+        self._unknown_origin_retry: tuple[datetime, datetime, datetime] | None = None
 
         self.advisor = CarbonAwareAdvisor()
         self._last_advice: ChargeAdvice | None = None
@@ -389,16 +394,59 @@ class Orchestrator:
         if mean is not None:
             self._unknown_origin_intensity = mean
             self._unknown_origin_source = self.grid_service.last_mean_source or "uncovered_local"
+            self._unknown_origin_retry = None
             return
 
         self._unknown_origin_intensity = self.grid_service.static_country_mean
         self._unknown_origin_source = "static_country_mean"
+        if self.grid_service.last_mean_failed:
+            first = self._unknown_origin_retry[2] if self._unknown_origin_retry else end
+            self._unknown_origin_retry = (start, end, first)
         logger.info(
             "Finestra scoperta di %.0f min senza storico di rete: l'energia di origine "
             "ignota sara' attribuita alla media nazionale (%.0f gCO2/kWh)",
             (end - start).total_seconds() / 60.0,
             self._unknown_origin_intensity,
         )
+
+    def _retry_unknown_origin_reference(self, now: datetime) -> None:
+        if self._unknown_origin_retry is None:
+            return
+        start, end, first_failed = self._unknown_origin_retry
+        if (now - first_failed).total_seconds() >= GAP_DEFER_LIMIT_SECONDS:
+            self._unknown_origin_retry = None
+            return
+        if self._gap_next_try is not None and now < self._gap_next_try:
+            return
+        self._gap_next_try = now + timedelta(seconds=GAP_RETRY_SECONDS)
+        self._refresh_unknown_origin_reference(start, end)
+        if self._unknown_origin_source != "static_country_mean":
+            logger.info(
+                "Finestra scoperta: storico di rete arrivato, riferimento %.0f gCO2/kWh",
+                self._unknown_origin_intensity,
+            )
+
+    def _defer_gap_charge(self, now: datetime, intensity_source: str) -> bool:
+        if intensity_source != "static_country_mean" or not self.grid_service.last_mean_failed:
+            self._gap_deferred_since = None
+            return False
+        if self._gap_deferred_since is None:
+            self._gap_deferred_since = now
+            logger.info(
+                "Ricarica ad app chiusa: server di rete non raggiungibile, la attribuisco "
+                "quando risponde (al piu' fra %.0f min)",
+                GAP_DEFER_LIMIT_SECONDS / 60.0,
+            )
+        elif (now - self._gap_deferred_since).total_seconds() >= GAP_DEFER_LIMIT_SECONDS:
+            logger.info(
+                "Ricarica ad app chiusa: server di rete ancora non raggiungibile dopo "
+                "%.0f min, uso la media nazionale",
+                GAP_DEFER_LIMIT_SECONDS / 60.0,
+            )
+            self._gap_deferred_since = None
+            return False
+        self._gap_next_try = now + timedelta(seconds=GAP_RETRY_SECONDS)
+        return True
 
     def _handle_uncovered_window(self, now: datetime) -> None:
         #Va chiamato prima di calcolare il Delta% del tick: se il pool e' scaduto
@@ -442,26 +490,47 @@ class Orchestrator:
 
         self._accumulate_active_time(now)
         self._refresh_grid_intensity(now)
-        self._handle_uncovered_window(now)
+
+        #una ricarica ad app chiusa in sospeso si richiede solo ogni
+        #GAP_RETRY_SECONDS
+        waiting = (
+            self._gap_deferred_since is not None
+            and self._gap_next_try is not None
+            and now < self._gap_next_try
+        )
+        reopened_at = self._gap_deferred_since or now
+        if not waiting:
+            self._handle_uncovered_window(reopened_at)
 
         charged_percent = 0.0
         if power_state.battery_percent is not None and self._last_battery_percent is not None:
             charged_percent = max(0.0, power_state.battery_percent - self._last_battery_percent)
 
-        charge_intensity, is_reconstructed, intensity_source = self._resolve_charge_intensity(
-            now, charged_percent
+        if waiting:
+            deferred = True
+            charge_intensity, is_reconstructed = None, False
+            intensity_source = self.grid_service.last_value_source
+        else:
+            charge_intensity, is_reconstructed, intensity_source = self._resolve_charge_intensity(
+                reopened_at, charged_percent
+            )
+            deferred = self._defer_gap_charge(now, intensity_source)
+        previous_percent = (
+            power_state.battery_percent if deferred else self._last_battery_percent
         )
         result = self.attribution.attribute(
             delta_wh=delta_wh,
             is_plugged_in=power_state.is_plugged_in,
             battery_percent=power_state.battery_percent,
-            previous_battery_percent=self._last_battery_percent,
+            previous_battery_percent=previous_percent,
             grid_intensity_g_per_kwh=self._current_intensity,
             charge_intensity_g_per_kwh=charge_intensity,
             unknown_origin_intensity_g_per_kwh=self._unknown_origin_intensity,
         )
-        self._last_battery_percent = power_state.battery_percent
-        self._last_seen_at = now
+        if not deferred:
+            self._last_battery_percent = power_state.battery_percent
+            self._last_seen_at = now
+            self._retry_unknown_origin_reference(now)
 
         interval = self.integrator.last_interval_seconds
         #dopo _read_sensor: un sensore perso cambia backend e livello
@@ -575,7 +644,9 @@ class Orchestrator:
             and (now - self._last_pool_save_at).total_seconds() < POOL_SAVE_INTERVAL_SECONDS
         ):
             return
-        self.db.save_pool_state(self.battery_pool, self._last_battery_percent, now)
+        self.db.save_pool_state(
+            self.battery_pool, self._last_battery_percent, self._last_seen_at or now
+        )
         self._last_pool_save_at = now
 
     def flush(self) -> None:
