@@ -51,6 +51,8 @@ _REFERENCE_LABELS = {
     ReferenceSource.OBSERVED: "la media recente",
 }
 
+ADVICE_HORIZON_HOURS = 8.0
+CRITICAL_BATTERY_PERCENT = 10.0
 
 PODIUM_SIZE = 3
 MIN_SLOT_SEPARATION = timedelta(hours=2)
@@ -248,8 +250,8 @@ class CarbonAwareAdvisor:
         bad_threshold_ratio: float = 1.15,
         min_saving_ratio: float = 0.10,
         at_minimum_ratio: float = 0.02,
-        horizon_hours: float = 12.0,
-        critical_battery_percent: float = 20.0,
+        horizon_hours: float = ADVICE_HORIZON_HOURS,
+        critical_battery_percent: float = CRITICAL_BATTERY_PERCENT,
     ) -> None:
         #le due soglie sono rapporti rispetto al riferimento, usate solo nel
         #ripiego su media mobile.

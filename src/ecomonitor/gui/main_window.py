@@ -384,6 +384,7 @@ class MainWindow(QMainWindow):
         #la didascalia dipende dall'alimentazione 
         self.advice_caption = QLabel("suggerimento")
         self.advice_caption.setObjectName("adviceDetail")
+        self.advice_caption.setVisible(False)
 
         self.advisor_label = QLabel("—")
         self.advisor_label.setObjectName("adviceTitle")
