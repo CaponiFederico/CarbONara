@@ -174,6 +174,8 @@ class GridCarbonIntensityService:
         self._cached_at: float | None = None
         self._cached_forecast: list[IntensityPoint] = []
         self._forecast_cached_at: float | None = None
+        self._forecast_valid_for = forecast_ttl_seconds
+        self._forecast_failing = False
         self._last_value_source: str = "static_fallback"
         self._last_mean_source: str | None = None
         self._last_live_failure: str | None = None
@@ -192,6 +194,7 @@ class GridCarbonIntensityService:
         self._cached_at = None
         self._cached_forecast = []
         self._forecast_cached_at = None
+        self._forecast_failing = False
         self._last_value_source = "static_fallback"
         self._last_live_failure = None
         return True
@@ -304,17 +307,28 @@ class GridCarbonIntensityService:
         now = time.monotonic()
         if (
             self._forecast_cached_at is not None
-            and now - self._forecast_cached_at < self._forecast_ttl
+            and now - self._forecast_cached_at < self._forecast_valid_for
         ):
             return self._cached_forecast
 
         forecast: list[IntensityPoint] = []
+        failed = False
         if self._live is not None:
             try:
                 forecast = self._live.get_forecast(self.zone)
             except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
-                logger.warning("Previsione di rete non disponibile (%s)", exc)
+                failed = True
+                #una volta per episodio
+                logger.log(
+                    logging.DEBUG if self._forecast_failing else logging.WARNING,
+                    "Previsione di rete non disponibile (%s)",
+                    exc,
+                )
 
+        self._forecast_failing = failed
+        self._forecast_valid_for = (
+            min(self._cache_ttl, self._forecast_ttl) if failed else self._forecast_ttl
+        )
         self._cached_forecast, self._forecast_cached_at = forecast, now
         return forecast
 
