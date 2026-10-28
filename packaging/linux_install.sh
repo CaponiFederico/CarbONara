@@ -14,7 +14,7 @@ APP_DIR="${HOME}/.local/lib/ecomonitor"
 BIN_DIR="${HOME}/.local/bin"
 DESKTOP_DIR="${HOME}/.local/share/applications"
 ICON_DIR="${HOME}/.local/share/icons/hicolor/256x256/apps"
-DATA_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/ecomonitor"
+DATA_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/carbonara"
 DESKTOP_FILE="${DESKTOP_DIR}/ecomonitor.desktop"
 
 if [[ ${1:-} == "--uninstall" ]]; then
