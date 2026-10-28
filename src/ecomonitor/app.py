@@ -156,6 +156,7 @@ def reopens_on_activation(
         return False
     return seconds_since_hidden is None or seconds_since_hidden >= HIDE_ACTIVATION_GRACE_SECONDS
 
+BACKFILL_RETRY_SECONDS = 15 * 60.0
 TRAY_WAIT_SECONDS = 30.0
 TRAY_WAIT_STEP_SECONDS = 0.25
 
@@ -455,16 +456,30 @@ class PollingWorker(QObject):
 
         #invio allo studio: nasce col primo tick, gira in un thread suo
         self._study_scheduler: StudyUploadScheduler | None = None
+        #quando riprovare un riempimento dello storico rimasto senza risposta
+        self._backfill_retry_at: float | None = None
         self._install_id: str | None = None
 
     def _backfill_grid_history(self) -> None:
         #Un errore non deve fermare il monitoraggio
+        self._backfill_retry_at = None
         if self._orchestrator is None:
             return
         try:
-            self._orchestrator.backfill_grid_history()
+            result = self._orchestrator.backfill_grid_history()
         except Exception:
             logger.exception("Riempimento dello storico di rete non riuscito")
+            return
+        if result.should_retry:
+            self._backfill_retry_at = time.monotonic() + BACKFILL_RETRY_SECONDS
+            logger.info(
+                "Storico di rete: %d richieste senza risposta, si riprova fra %.0f min",
+                result.failed_requests,
+                BACKFILL_RETRY_SECONDS / 60.0,
+            )
+
+    def _backfill_retry_due(self) -> bool:
+        return self._backfill_retry_at is not None and time.monotonic() >= self._backfill_retry_at
 
     @property
     def has_orchestrator(self) -> bool:
@@ -613,8 +628,8 @@ class PollingWorker(QObject):
                 if not first_tick_done:
                     first_tick_done = True
                     self._backfill_grid_history()
-                elif zone_changed:
-                    #dopo il tick 
+                elif zone_changed or self._backfill_retry_due():
+                    #dopo il tick
                     self._backfill_grid_history()
             except Exception:
                 #un tick fallito (sensore momentaneamente non leggibile, disco

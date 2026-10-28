@@ -24,10 +24,15 @@ class BackfillResult:
     hours_already_covered: int = 0
     requests: int = 0
     empty_requests: int = 0
+    failed_requests: int = 0
 
     @property
     def wrote_anything(self) -> bool:
         return self.hours_filled > 0
+
+    @property
+    def should_retry(self) -> bool:
+        return self.failed_requests > 0
 
 
 def _hour_key(moment: datetime) -> datetime:
@@ -65,7 +70,7 @@ def backfill_grid_history(
         )
     }
 
-    filled = already = requests = empty = 0
+    filled = already = requests = empty = failed = 0
     for window_start, window_end in _windows(start, end):
         #se la finestra e' gia' tutta coperta, la richiesta non serve
         wanted = _missing_hours(window_start, window_end, covered)
@@ -77,6 +82,8 @@ def backfill_grid_history(
         points = service.get_past_points(window_start, window_end)
         if not points:
             empty += 1
+            if service.last_past_failed:
+                failed += 1
             continue
 
         pending: list[tuple[datetime, str, float, str]] = []
@@ -98,6 +105,7 @@ def backfill_grid_history(
         hours_already_covered=already,
         requests=requests,
         empty_requests=empty,
+        failed_requests=failed,
     )
     if result.wrote_anything:
         logger.info(

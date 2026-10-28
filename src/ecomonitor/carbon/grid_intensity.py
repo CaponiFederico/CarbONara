@@ -87,6 +87,10 @@ def live_failure_reason(exc: Exception) -> str:
     return LIVE_FAILURE_UNREACHABLE
 
 
+def _worth_retrying(exc: Exception) -> bool:
+    return live_failure_reason(exc) != LIVE_FAILURE_ZONE
+
+
 class GridHourSample(Protocol):
     @property
     def timestamp(self) -> datetime: ...
@@ -179,6 +183,7 @@ class GridCarbonIntensityService:
         self._last_value_source: str = "static_fallback"
         self._last_mean_source: str | None = None
         self._last_live_failure: str | None = None
+        self._last_past_failed = False
 
     def set_zone(self, zone: str, country_code: str | None = None) -> bool:
         #Cambia zona a caldo, e paese se passato: il ripiego statico e' per paese
@@ -334,13 +339,19 @@ class GridCarbonIntensityService:
 
     def get_past_points(self, start: datetime, end: datetime) -> list[IntensityPoint]:
         #I punti orari della finestra
+        self._last_past_failed = False
         if self._live is None or end <= start:
             return []
         try:
             return self._live.get_past_range(self.zone, start, end)
         except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
             logger.warning("Storico di rete non disponibile (%s)", exc)
+            self._last_past_failed = _worth_retrying(exc)
             return []
+
+    @property
+    def last_past_failed(self) -> bool:
+        return self._last_past_failed
 
     def get_mean_intensity_between(self, start: datetime, end: datetime) -> float | None:
         #Media dell'intensita' nella finestra [start, end], per ricostruire
