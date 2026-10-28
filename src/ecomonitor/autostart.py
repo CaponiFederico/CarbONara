@@ -242,7 +242,7 @@ def set_enabled(enabled: bool, start_hidden: bool = False) -> None:
     script = script_path()
     if not script.is_file():
         raise AutostartError(
-            f"Manca {SCRIPT_NAME} accanto all'applicazione: reinstallare EcoMonitor."
+            f"Manca {SCRIPT_NAME} accanto all'applicazione: reinstallare CarbO'Nara."
         )
 
     arguments = ["-Unregister", "-UserId", _current_user_id()]
@@ -395,7 +395,7 @@ def _linux_entry_text(start_hidden: bool) -> str:
     return (
         "[Desktop Entry]\n"
         "Type=Application\n"
-        "Name=EcoMonitor\n"
+        "Name=CarbO'Nara\n"
         "Comment=Monitoraggio del consumo energetico, avviato all'accesso\n"
         f"Exec={command}\n"
         #se l'eseguibile non c'e' piu' la voce viene ignorata invece di fallire in
@@ -508,7 +508,7 @@ def _macos_set_enabled(enabled: bool, start_hidden: bool = False) -> None:
 
     if macos_temporary_location(_target_path()):
         raise AutostartError(
-            "EcoMonitor e' aperto dall'immagine disco o da una copia temporanea: "
+            "CarbO'Nara e' aperto dall'immagine disco o da una copia temporanea: "
             "spostalo in Applicazioni, riaprilo da li' e riattiva l'avvio automatico."
         )
 

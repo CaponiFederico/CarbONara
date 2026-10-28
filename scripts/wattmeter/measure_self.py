@@ -1,4 +1,4 @@
-# Quanto consuma EcoMonitor stesso, misurato alla presa
+# Quanto consuma CarbO'Nara stesso, misurato alla presa
 #
 # Una copia sola sta sotto il rumore della presa: se ne lanciano N nei bracci B,
 # alternati a bracci A senza copie, e la differenza si divide per N.
@@ -199,7 +199,7 @@ def analyze(arms: list[dict], samples: list[tuple[float, float]]) -> int:
 def main(argv: list[str] | None = None) -> int:
     #descrizione esplicita
     parser = argparse.ArgumentParser(
-        description="Misura alla presa il consumo di EcoMonitor lanciandone N copie a bracci alterni"
+        description="Misura alla presa il consumo di CarbO'Nara lanciandone N copie a bracci alterni"
     )
     parser.add_argument("--instance", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--db", default=None, help=argparse.SUPPRESS)

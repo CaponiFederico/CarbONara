@@ -109,7 +109,7 @@ def study_advice_started_notification() -> Notification:
     #una volta sola, all'inizio della fase 2
     return Notification(
         NotificationKind.STUDY_ADVICE_STARTED,
-        "EcoMonitor ora mostra i consigli",
+        "CarbO'Nara ora mostra i consigli",
         _lines("Ti dice quando la rete è più pulita", "Seconda settimana dello studio"),
     )
 

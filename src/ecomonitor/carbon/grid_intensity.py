@@ -11,7 +11,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-#I dati di ElectricityMaps arrivano dal server di EcoMonitor 
+#I dati di ElectricityMaps arrivano dal server di CarbO'Nara 
 GRID_LATEST_PATH = "/v1/grid/latest"
 GRID_FORECAST_PATH = "/v1/grid/forecast"
 GRID_PAST_PATH = "/v1/grid/past"
@@ -289,7 +289,7 @@ class GridCarbonIntensityService:
                 )
         else:
             logger.debug(
-                "Nessun server EcoMonitor configurato: uso la media statica per %s",
+                "Nessun server CarbO'Nara configurato: uso la media statica per %s",
                 self.zone,
             )
 

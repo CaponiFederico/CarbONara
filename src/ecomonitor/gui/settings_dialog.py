@@ -100,7 +100,7 @@ class SettingsDialog(QDialog):
         theme: Theme | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("EcoMonitor — impostazioni")
+        self.setWindowTitle("CarbO'Nara — impostazioni")
         self._manager = manager or ConfigManager()
         config = self._manager.config
 
@@ -149,7 +149,7 @@ class SettingsDialog(QDialog):
             self.attribution_combo.setCurrentText(config.attribution_model)
         form.addRow("Modello di attribuzione:", self.attribution_combo)
 
-        self.autostart_check = QCheckBox("Avvia EcoMonitor all'accesso")
+        self.autostart_check = QCheckBox("Avvia CarbO'Nara all'accesso")
         self._autostart_supported = autostart.is_supported()
         #letti una volta: su Windows ognuno e' un processo schtasks sul thread
         #della finestra, e al Save si confronta con questi invece di rileggerli
@@ -173,7 +173,7 @@ class SettingsDialog(QDialog):
             self.hidden_start_check.setEnabled(self.autostart_check.isChecked())
             self.autostart_check.toggled.connect(self.hidden_start_check.setEnabled)
             self.hidden_start_check.setToolTip(
-                "Vale solo all'accesso, se EcoMonitor parte automaticamente"
+                "Vale solo all'accesso, se CarbO'Nara parte automaticamente"
             )
         else:
             self.hidden_start_check.setChecked(False)

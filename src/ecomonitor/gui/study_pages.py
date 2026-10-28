@@ -23,12 +23,12 @@ _MONTHS = (
     "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
 )  # fmt: skip
 
-STUDY_TITLE = "Partecipi allo studio EcoMonitor"
-ONBOARDING_TITLE = "Benvenuto in EcoMonitor"
+STUDY_TITLE = "Partecipi allo studio CarbO'Nara"
+ONBOARDING_TITLE = "Benvenuto in CarbO'Nara"
 JOIN_TEXT = "Partecipa"
 VERIFYING_TEXT = "Verifica del codice…"
 NO_SERVER_TEXT = (
-    "Questa copia di EcoMonitor non conosce l'indirizzo del server dello studio, "
+    "Questa copia di CarbO'Nara non conosce l'indirizzo del server dello studio, "
     "quindi non può verificare il codice."
 )
 
@@ -58,7 +58,7 @@ def baseline_text(advice_starts_at: datetime | None) -> str:
         else "Per la prima settimana"
     )
     return (
-        f"{when} EcoMonitor raccoglie i dati in silenzio: non mostra consumi né "
+        f"{when} CarbO'Nara raccoglie i dati in silenzio: non mostra consumi né "
         "consigli, e non serve fare niente. Poi si aprirà da solo con tutte le sue "
         "funzioni.\n\nPuoi chiudere questa finestra: la raccolta continua."
     )

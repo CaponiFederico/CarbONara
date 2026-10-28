@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 #lo stesso identificativo del pacchetto macOS e dell'installer
 APP_USER_MODEL_ID = "io.github.caponifederico.ecomonitor"
-APP_DISPLAY_NAME = "EcoMonitor"
+APP_DISPLAY_NAME = "CarbO'Nara"
 
 URI_SCHEME = "ecomonitor"
 ACTIVATION_URI = f"{URI_SCHEME}:show"
@@ -26,8 +26,8 @@ ACTIVATION_URI = f"{URI_SCHEME}:show"
 TOAST_GROUP = "ecomonitor"
 ADVICE_TAG = "advice"
 
-#accanto a EcoMonitor.exe nel pacchetto
-SHOW_WINDOW_EXECUTABLE = "EcoMonitorShow.exe"
+#accanto a CarbONara.exe nel pacchetto
+SHOW_WINDOW_EXECUTABLE = "CarbONaraShow.exe"
 ICON_FILE_NAME = "notification_icon.png"
 ICON_SIZE = 256
 
@@ -126,7 +126,7 @@ class WinRtToastPlatform:
         setting = self._notifier.setting
         if setting != NotificationSetting.ENABLED:
             logger.warning(
-                "Le notifiche di EcoMonitor sono disattivate nelle impostazioni di "
+                "Le notifiche di CarbO'Nara sono disattivate nelle impostazioni di "
                 "Windows (%s): non compariranno finche' non vengono riattivate",
                 setting.name,
             )

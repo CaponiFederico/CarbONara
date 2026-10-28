@@ -1,18 +1,18 @@
 #!/bin/bash
-# Disinstalla EcoMonitor
+# Disinstalla CarbO'Nara
 # 
-#   doppio clic su EcoMonitorUninstall.command in Applicazioni
-#   sudo bash /Applications/EcoMonitorUninstall.command
+#   doppio clic su CarbONaraUninstall.command in Applicazioni
+#   sudo bash /Applications/CarbONaraUninstall.command
 #   ... --all-users   toglie anche i residui degli altri account
 
 set -uo pipefail
 
-APP="/Applications/EcoMonitor.app"
-EXECUTABLE="${APP}/Contents/MacOS/EcoMonitor"
+APP="/Applications/CarbONara.app"
+EXECUTABLE="${APP}/Contents/MacOS/CarbONara"
 SUDOERS_PATH=/etc/sudoers.d/ecomonitor-powermetrics
 RECEIPT=io.github.caponifederico.ecomonitor
 AGENT_RELATIVE="Library/LaunchAgents/${RECEIPT}.plist"
-DATA_RELATIVE="Library/Application Support/ecomonitor"
+DATA_RELATIVE="Library/Application Support/carbonara"
 
 if [[ $(uname -s) != Darwin ]]; then
     echo "ERRORE: questo script e' per macOS." >&2
@@ -32,7 +32,7 @@ done
 
 #doppio clic dal Finder
 if [[ ${EUID} -ne 0 ]]; then
-    echo "EcoMonitor — disinstallazione"
+    echo "CarbO'Nara — disinstallazione"
     echo
     echo "Serve la password di amministratore: l'autorizzazione a powermetrics"
     echo "sta in ${SUDOERS_PATH} e altrimenti resterebbe indietro."
@@ -51,7 +51,7 @@ home_of() {
     printf '%s' "${home:-/Users/${name}}"
 }
 
-echo "EcoMonitor — disinstallazione"
+echo "CarbO'Nara — disinstallazione"
 echo
 
 #un'applicazione viva continuerebbe a scrivere su file gia' cancellati
@@ -160,12 +160,12 @@ if [[ ${all_users} -eq 1 ]]; then
 elif [[ -n ${TARGET_USER} && ${TARGET_USER} != root ]]; then
     remove_user_files "$(home_of "${TARGET_USER}")" "${TARGET_USER}"
 else
-    report "nessun account da ripulire: rilanciarlo con sudo dall'utente che usa EcoMonitor"
+    report "nessun account da ripulire: rilanciarlo con sudo dall'utente che usa CarbO'Nara"
 fi
 
 echo
 if [[ ${all_users} -eq 0 ]]; then
-    echo "Fatto. Se altri account hanno usato EcoMonitor, per i loro residui:"
+    echo "Fatto. Se altri account hanno usato CarbO'Nara, per i loro residui:"
     echo "  sudo bash \"${SELF}\" --all-users"
 else
     echo "Fatto."

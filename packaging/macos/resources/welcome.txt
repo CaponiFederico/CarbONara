@@ -1,10 +1,10 @@
-EcoMonitor misura il consumo energetico di questo Mac e le emissioni di CO2
+CarbO'Nara misura il consumo energetico di questo Mac e le emissioni di CO2
 della corrente che usa.
 
 L'installazione fa due cose:
 
-  1. installa EcoMonitor in Applicazioni;
-  2. autorizza EcoMonitor a leggere i sensori di potenza del SoC.
+  1. installa CarbO'Nara in Applicazioni;
+  2. autorizza CarbO'Nara a leggere i sensori di potenza del SoC.
 
 Il motivo per cui viene chiesta la password: senza, l'app
 non fallisce, ma stima il consumo invece di misurarlo, e dai numeri non si

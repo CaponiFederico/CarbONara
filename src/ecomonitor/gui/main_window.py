@@ -182,7 +182,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, theme: Theme | None = None, database_path: Path | None = None) -> None:
         super().__init__()
-        self.setWindowTitle("EcoMonitor — impatto del tuo utilizzo attivo")
+        self.setWindowTitle("CarbO'Nara — impatto del tuo utilizzo attivo")
         self.setWindowIcon(app_icon())
 
         self._fitted_height: int | None = None

@@ -1,4 +1,4 @@
-#Punto di ingresso di EcoMonitorShow
+#Punto di ingresso di CarbONaraShow
 import sys
 
 from ecomonitor.show_window import main

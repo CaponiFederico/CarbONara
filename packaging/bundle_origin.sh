@@ -36,7 +36,7 @@ require_bundle_origin() {
     local origin_file="$1" expected="$2" rebuild_hint="$3" found
     if [[ ! -f ${origin_file} ]]; then
         echo "ERRORE: manca ${origin_file}: non si sa quale macchina" >&2
-        echo "        ha costruito il bundle in dist/EcoMonitor." >&2
+        echo "        ha costruito il bundle in dist/CarbONara." >&2
         echo "Un bundle della distribuzione sbagliata produce un pacchetto che si" >&2
         echo "installa e non parte. Ricostruirlo dove va impacchettato:" >&2
         echo "  ${rebuild_hint}" >&2
@@ -44,7 +44,7 @@ require_bundle_origin() {
     fi
     found="$(sed -n 's/^family=//p' "${origin_file}")"
     if [[ ${found} != "${expected}" ]]; then
-        echo "ERRORE: il bundle in dist/EcoMonitor l'ha costruito una macchina" >&2
+        echo "ERRORE: il bundle in dist/CarbONara l'ha costruito una macchina" >&2
         echo "        '${found}', ma questo pacchetto e' per '${expected}'." >&2
         echo "Impacchettarlo lo stesso darebbe un pacchetto che si installa e non parte." >&2
         echo "  ${rebuild_hint}" >&2

@@ -22,13 +22,13 @@ SERVICE = "org.freedesktop.Notifications"
 OBJECT_PATH = "/org/freedesktop/Notifications"
 INTERFACE = "org.freedesktop.Notifications"
 
-APP_NAME = "EcoMonitor"
+APP_NAME = "CarbO'Nara"
 DESKTOP_ENTRY = "ecomonitor"
 ICON_NAME = "ecomonitor"
 
 #l'azione che il desktop invoca cliccando la notifica
 DEFAULT_ACTION = "default"
-DEFAULT_ACTION_LABEL = "Apri EcoMonitor"
+DEFAULT_ACTION_LABEL = "Apri CarbO'Nara"
 
 ACTIONS_CAPABILITY = "actions"
 MARKUP_CAPABILITY = "body-markup"

@@ -28,7 +28,7 @@ from ecomonitor.study_phase import (
 
 logger = logging.getLogger(__name__)
 
-APP_NAME = "ecomonitor"
+APP_NAME = "carbonara"
 
 PACKAGED_STUDY_ENDPOINT_FILE = "study_endpoint"
 
@@ -157,8 +157,12 @@ def packaged_study_endpoint() -> str | None:
     return _study_endpoint(_packaged_text(PACKAGED_STUDY_ENDPOINT_FILE))
 
 
+def user_data_dir() -> Path:
+    return platformdirs.user_data_path(APP_NAME, appauthor=False)
+
+
 def default_config_path() -> Path:
-    return platformdirs.user_config_path(APP_NAME) / "config.json"
+    return platformdirs.user_config_path(APP_NAME, appauthor=False) / "config.json"
 
 
 def _positive_number(value: object, default: float, field_name: str, maximum: float) -> float:
@@ -332,7 +336,7 @@ class ConfigManager:
             return
         logger.info(
             "Configurazione: tolta la chiave ElectricityMaps salvata, i dati di rete "
-            "arrivano dal server di EcoMonitor"
+            "arrivano dal server di CarbO'Nara"
         )
 
     def _create_default(self) -> AppConfig:

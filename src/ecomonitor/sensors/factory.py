@@ -31,7 +31,7 @@ def _tagged(backend: SensorBackend, mode: MeasurementMode) -> SensorBackend:
 
 _INSTALL_PAWNIO = (
     "Manca il driver PawnIO, che serve a leggere la CPU: installalo "
-    "(l'installer di EcoMonitor lo propone, oppure da pawnio.eu), poi avvia l'app "
+    "(l'installer di CarbO'Nara lo propone, oppure da pawnio.eu), poi avvia l'app "
     "come amministratore."
 )
 _CPU_UNSUPPORTED = (

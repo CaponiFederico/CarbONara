@@ -53,11 +53,11 @@ DIST_DIR="${PACKAGING_DIR}/dist"
 OUT_DIR="${PACKAGING_DIR}/out"
 MACOS_DIR="${PACKAGING_DIR}/macos"
 STAGE_DIR="${BUILD_DIR}/stage-macos"
-APP="${DIST_DIR}/EcoMonitor.app"
+APP="${DIST_DIR}/CarbONara.app"
 BUNDLE_IDENTIFIER=io.github.caponifederico.ecomonitor
 #il nome che l'utente vede in Applicazioni: .command per il doppio clic
-UNINSTALLER="EcoMonitorUninstall.command"
-PKG="${OUT_DIR}/ecomonitor-${VERSION}-macos-${ARCH}.pkg"
+UNINSTALLER="CarbONaraUninstall.command"
+PKG="${OUT_DIR}/carbonara-${VERSION}-macos-${ARCH}.pkg"
 
 #Il pacchetto della build precedente non deve sopravvivere a una build fallita
 rm -f "${PKG}"
@@ -80,7 +80,7 @@ fi
     --distpath "${DIST_DIR}" --workpath "${BUILD_DIR}" \
     "${PACKAGING_DIR}/ecomonitor.spec"
 
-if [[ ! -x ${APP}/Contents/MacOS/EcoMonitor ]]; then
+if [[ ! -x ${APP}/Contents/MacOS/CarbONara ]]; then
     echo "ERRORE: PyInstaller non ha prodotto ${APP}." >&2
     exit 2
 fi
@@ -98,7 +98,7 @@ bash "${PACKAGING_DIR}/smoke_macos.sh" "${DIST_DIR}"
 
 rm -rf "${STAGE_DIR}"
 mkdir -p "${STAGE_DIR}/root" "${STAGE_DIR}/scripts" "${STAGE_DIR}/components" "${OUT_DIR}"
-ditto "${APP}" "${STAGE_DIR}/root/EcoMonitor.app"
+ditto "${APP}" "${STAGE_DIR}/root/CarbONara.app"
 
 cp "${MACOS_DIR}/uninstall.command" "${STAGE_DIR}/root/${UNINSTALLER}"
 chmod 0755 "${STAGE_DIR}/root/${UNINSTALLER}"
@@ -107,7 +107,7 @@ chmod 0755 "${STAGE_DIR}/root/${UNINSTALLER}"
 cp "${MACOS_DIR}/scripts/preinstall" "${MACOS_DIR}/scripts/postinstall" "${STAGE_DIR}/scripts/"
 chmod 0755 "${STAGE_DIR}/scripts/preinstall" "${STAGE_DIR}/scripts/postinstall"
 
-COMPONENT="${STAGE_DIR}/components/EcoMonitor.pkg"
+COMPONENT="${STAGE_DIR}/components/CarbONara.pkg"
 pkgbuild \
     --root "${STAGE_DIR}/root" \
     --component-plist "${MACOS_DIR}/component.plist" \
@@ -117,7 +117,7 @@ pkgbuild \
     --install-location /Applications \
     "${COMPONENT}"
 
-sed -e "s|__VERSION__|${VERSION}|" -e "s|__COMPONENT__|EcoMonitor.pkg|" \
+sed -e "s|__VERSION__|${VERSION}|" -e "s|__COMPONENT__|CarbONara.pkg|" \
     "${MACOS_DIR}/distribution.xml" >"${STAGE_DIR}/distribution.xml"
 productbuild \
     --distribution "${STAGE_DIR}/distribution.xml" \
@@ -131,7 +131,7 @@ rm -rf "${EXPANDED}"
 #--expand-full estrae Scripts come cartella; --expand lo lascia archivio, e
 #indovinarne il formato non ha funzionato: bsdtar lo rifiuta
 pkgutil --expand-full "${PKG}" "${EXPANDED}"
-for required in Distribution EcoMonitor.pkg/Scripts/preinstall EcoMonitor.pkg/Scripts/postinstall; do
+for required in Distribution CarbONara.pkg/Scripts/preinstall CarbONara.pkg/Scripts/postinstall; do
     if [[ ! -e ${EXPANDED}/${required} ]]; then
         echo "ERRORE: ${required} non e' finito in ${PKG}." >&2
         rm -f "${PKG}"
@@ -140,7 +140,7 @@ for required in Distribution EcoMonitor.pkg/Scripts/preinstall EcoMonitor.pkg/Sc
 done
 for script in preinstall postinstall; do
     #pkgbuild scarta senza dirlo uno script senza bit di esecuzione
-    if [[ ! -x ${EXPANDED}/EcoMonitor.pkg/Scripts/${script} ]]; then
+    if [[ ! -x ${EXPANDED}/CarbONara.pkg/Scripts/${script} ]]; then
         echo "ERRORE: ${script} dentro ${PKG} non e' eseguibile." >&2
         rm -f "${PKG}"
         exit 2

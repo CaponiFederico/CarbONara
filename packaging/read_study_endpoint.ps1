@@ -1,7 +1,7 @@
 # Equivalente Windows di read_study_endpoint.sh
 #
 #   powershell -ExecutionPolicy Bypass -File packaging\read_study_endpoint.ps1
-#   powershell -ExecutionPolicy Bypass -File packaging\read_study_endpoint.ps1 -OutFile dist\EcoMonitor\study_endpoint
+#   powershell -ExecutionPolicy Bypass -File packaging\read_study_endpoint.ps1 -OutFile dist\CarbONara\study_endpoint
 #
 # Senza -OutFile l'indirizzo finisce sullo standard output
 

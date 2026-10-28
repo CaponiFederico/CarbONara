@@ -79,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     lock = DatabaseLock(db_path)
     if not lock.acquire():
         parser.error(
-            f"il database {db_path} e' gia' in uso da un'altra istanza di EcoMonitor "
+            f"il database {db_path} e' gia' in uso da un'altra istanza di CarbO'Nara "
             "(l'applicazione grafica, o un'altra esecuzione di questo comando). "
             "Chiudila, oppure usa --db per lavorare su un file separato"
         )

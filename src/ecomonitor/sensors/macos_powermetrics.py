@@ -87,7 +87,7 @@ def sudoers_command_spec() -> str:
 
 def permissions_script_path() -> Path:
     if getattr(sys, "frozen", False):
-        #EcoMonitor.app/Contents/MacOS/EcoMonitor -> Contents/Resources
+        #CarbONara.app/Contents/MacOS/CarbONara -> Contents/Resources
         return Path(sys.executable).resolve().parent.parent / "Resources" / PERMISSIONS_SCRIPT
     return Path(__file__).resolve().parents[3] / "scripts" / PERMISSIONS_SCRIPT
 

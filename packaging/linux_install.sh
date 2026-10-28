@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installa EcoMonitor per l'utente corrente senza root
+# Installa CarbO'Nara per l'utente corrente senza root
 #
 # dalla root del progetto
 #   bash install.sh
@@ -22,34 +22,39 @@ if [[ ${1:-} == "--uninstall" ]]; then
     rm -f "${BIN_DIR}/ecomonitor"
     rm -f "${DESKTOP_FILE}" "${ICON_DIR}/ecomonitor.png"
     command -v update-desktop-database >/dev/null && update-desktop-database "${DESKTOP_DIR}" || true
-    echo "EcoMonitor rimosso."
+    echo "CarbO'Nara rimosso."
     echo "I dati misurati restano in ${DATA_DIR}: cancellarli a mano se non servono piu'."
     exit 0
 fi
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ ! -x ${SOURCE_DIR}/EcoMonitor/EcoMonitor ]]; then
-    echo "ERRORE: non trovo EcoMonitor/EcoMonitor accanto a questo script." >&2
+if [[ ! -x ${SOURCE_DIR}/CarbONara/CarbONara ]]; then
+    echo "ERRORE: non trovo CarbONara/CarbONara accanto a questo script." >&2
     echo "Eseguirlo dalla cartella estratta dall'archivio." >&2
     exit 2
 fi
 
-if pgrep -x EcoMonitor >/dev/null 2>&1; then
-    echo "ERRORE: EcoMonitor e' in esecuzione. Chiuderlo e riprovare." >&2
+if pgrep -x 'CarbONara|EcoMonitor' >/dev/null 2>&1; then
+    echo "ERRORE: CarbO'Nara e' in esecuzione. Chiuderlo e riprovare." >&2
     exit 3
 fi
 
 #doppia installazione: prima rimuovo la vecchia, poi installo la nuova
 rm -rf "${APP_DIR}"
 mkdir -p "${APP_DIR}" "${BIN_DIR}" "${DESKTOP_DIR}" "${ICON_DIR}"
-cp -r "${SOURCE_DIR}/EcoMonitor/." "${APP_DIR}/"
-chmod +x "${APP_DIR}/EcoMonitor"
+cp -r "${SOURCE_DIR}/CarbONara/." "${APP_DIR}/"
+chmod +x "${APP_DIR}/CarbONara"
 
-ln -sf "${APP_DIR}/EcoMonitor" "${BIN_DIR}/ecomonitor"
+ln -sf "${APP_DIR}/CarbONara" "${BIN_DIR}/ecomonitor"
 
 cp "${SOURCE_DIR}/ecomonitor.png" "${ICON_DIR}/ecomonitor.png"
-sed "s|__EXEC__|${APP_DIR}/EcoMonitor|" "${SOURCE_DIR}/ecomonitor.desktop" >"${DESKTOP_FILE}"
+sed "s|__EXEC__|${APP_DIR}/CarbONara|" "${SOURCE_DIR}/ecomonitor.desktop" >"${DESKTOP_FILE}"
 chmod 0644 "${DESKTOP_FILE}"
+
+AUTOSTART_ENTRY="${XDG_CONFIG_HOME:-${HOME}/.config}/autostart/ecomonitor.desktop"
+if [[ -f ${AUTOSTART_ENTRY} ]]; then
+    sed -i "s|${APP_DIR}/EcoMonitor|${APP_DIR}/CarbONara|g" "${AUTOSTART_ENTRY}"
+fi
 
 if command -v update-desktop-database >/dev/null; then
     update-desktop-database "${DESKTOP_DIR}" || true
@@ -58,7 +63,7 @@ if command -v gtk-update-icon-cache >/dev/null; then
     gtk-update-icon-cache -f -t "${HOME}/.local/share/icons/hicolor" >/dev/null 2>&1 || true
 fi
 
-echo "EcoMonitor installato in ${APP_DIR}"
+echo "CarbO'Nara installato in ${APP_DIR}"
 echo "Comando: ecomonitor (interfaccia grafica)"
 if [[ :${PATH}: != *:${BIN_DIR}:* ]]; then
     echo "NOTA: ${BIN_DIR} non e' nel PATH. Aggiungerlo per usare il comando per nome."

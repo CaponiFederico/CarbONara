@@ -1,11 +1,11 @@
 #!/bin/bash
-# Eseguito da Installer come root dopo aver copiato EcoMonitor.app
+# Eseguito da Installer come root dopo aver copiato CarbONara.app
 
 
 set -u
 
-APP="${2:-/Applications}/EcoMonitor.app"
-[ -d "${APP}" ] || APP="${3:-}/Applications/EcoMonitor.app"
+APP="${2:-/Applications}/CarbONara.app"
+[ -d "${APP}" ] || APP="${3:-}/Applications/CarbONara.app"
 PERMISSIONS_SCRIPT="${APP}/Contents/Resources/install_powermetrics_permissions.sh"
 #scritto da preinstall
 RELAUNCH_LIST=/private/var/run/io.github.caponifederico.ecomonitor.relaunch
@@ -23,11 +23,31 @@ relaunch() {
             launchctl asuser "${uid}" sudo -u "${name}" open -a "${APP}" --args --background
         else
             launchctl asuser "${uid}" sudo -u "${name}" open -a "${APP}"
-        fi && echo "EcoMonitor: riaperta per ${name}"
+        fi && echo "CarbO'Nara: riaperta per ${name}"
     done < <(sort -u "${RELAUNCH_LIST}")
     rm -f "${RELAUNCH_LIST}"
 }
 trap relaunch EXIT
+
+APPLICATIONS="${APP%/*}"
+APPLICATIONS="${APPLICATIONS/#\/\//\/}"
+LEGACY_APP="${APPLICATIONS}/EcoMonitor.app"
+LEGACY_EXECUTABLE="${LEGACY_APP}/Contents/MacOS/EcoMonitor"
+NEW_EXECUTABLE="${APPLICATIONS}/CarbONara.app/Contents/MacOS/CarbONara"
+if [ -x "${NEW_EXECUTABLE}" ]; then
+    if [ -d "${LEGACY_APP}" ]; then
+        rm -rf "${LEGACY_APP}" && echo "CarbO'Nara: rimossa la versione precedente ${LEGACY_APP}"
+    fi
+    rm -f "${APPLICATIONS}/EcoMonitorUninstall.command"
+    for agent in /Users/*/Library/LaunchAgents/io.github.caponifederico.ecomonitor.plist; do
+        [ -f "${agent}" ] && [ ! -L "${agent}" ] || continue
+        [ "$(plutil -extract ProgramArguments.0 raw -o - "${agent}" 2>/dev/null)" = "${LEGACY_EXECUTABLE}" ] ||
+            continue
+        owner="$(stat -f %Su "${agent}")" || continue
+        sudo -u "${owner}" plutil -replace ProgramArguments.0 -string "${NEW_EXECUTABLE}" "${agent}" &&
+            echo "CarbO'Nara: avvio automatico aggiornato per ${owner}"
+    done
+fi
 
 #La regola si aggiunge per chi installa: chi l'aveva gia' la conserva
 TARGET_USER="${USER:-}"
@@ -37,8 +57,8 @@ fi
 
 #in caso di errore
 give_up() {
-    echo "EcoMonitor: autorizzazione a powermetrics NON installata: $*" >&2
-    echo "EcoMonitor: l'app misurera' per stima. Per rimediare:" >&2
+    echo "CarbO'Nara: autorizzazione a powermetrics NON installata: $*" >&2
+    echo "CarbO'Nara: l'app misurera' per stima. Per rimediare:" >&2
     echo "  sudo bash \"${PERMISSIONS_SCRIPT}\"" >&2
     exit 0
 }
@@ -51,9 +71,9 @@ case "${TARGET_USER}" in
 *[!A-Za-z0-9._-]*) give_up "nome utente '${TARGET_USER}' non adatto a una regola sudoers" ;;
 esac
 
-echo "EcoMonitor: autorizzo powermetrics per l'utente ${TARGET_USER}"
+echo "CarbO'Nara: autorizzo powermetrics per l'utente ${TARGET_USER}"
 if bash "${PERMISSIONS_SCRIPT}" --user "${TARGET_USER}"; then
-    echo "EcoMonitor: autorizzazione installata, la misura sara' nativa"
+    echo "CarbO'Nara: autorizzazione installata, la misura sara' nativa"
 else
     give_up "lo script e' uscito con ${?}"
 fi

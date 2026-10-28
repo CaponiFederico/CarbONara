@@ -110,7 +110,7 @@ done < <(existing_users)
 if [[ ${uninstall} -eq 1 ]]; then
     if [[ -z ${TARGET_USER} ]]; then
         rm -f "${SUDOERS_PATH}"
-        echo "Regola rimossa per tutti: EcoMonitor tornera' a stimare il consumo."
+        echo "Regola rimossa per tutti: CarbO'Nara tornera' a stimare il consumo."
         exit 0
     fi
     remaining=()
@@ -120,14 +120,14 @@ if [[ ${uninstall} -eq 1 ]]; then
         fi
     done
     write_rules ${remaining[@]+"${remaining[@]}"}
-    echo "Regola rimossa per ${TARGET_USER}: su quell'account EcoMonitor tornera' a stimare il consumo."
+    echo "Regola rimossa per ${TARGET_USER}: su quell'account CarbO'Nara tornera' a stimare il consumo."
     exit 0
 fi
 
 #l'utente che usa l'app
 TARGET_USER="${TARGET_USER:-${SUDO_USER:-}}"
 if [[ -z ${TARGET_USER} || ${TARGET_USER} == root ]]; then
-    echo "ERRORE: lanciarlo con sudo dall'utente che usa EcoMonitor, non da root." >&2
+    echo "ERRORE: lanciarlo con sudo dall'utente che usa CarbO'Nara, non da root." >&2
     echo "        Oppure indicarlo:  --user NOME" >&2
     exit 2
 fi

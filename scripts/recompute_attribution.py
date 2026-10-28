@@ -7,8 +7,6 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
-import platformdirs
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from ecomonitor.carbon.attribution import (
@@ -16,7 +14,7 @@ from ecomonitor.carbon.attribution import (
     CarbonAttributionService,
 )
 from ecomonitor.carbon.battery_pool import AttributionModel, BatteryCarbonPool
-from ecomonitor.storage.db import LocalDatabase, TraceEvent
+from ecomonitor.storage.db import LocalDatabase, TraceEvent, default_database_path
 
 MIN_BATTERY_ROWS = 30
 MIN_CHARGE_EVENTS = 3
@@ -128,9 +126,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--to", dest="end", default=None, help="data finale esclusa")
     args = parser.parse_args(argv)
 
-    db_path = Path(args.db) if args.db else (
-        Path(platformdirs.user_data_path("ecomonitor")) / "local.db"
-    )
+    db_path = Path(args.db) if args.db else default_database_path()
     if not db_path.exists():
         print(f"database non trovato: {db_path}")
         return 2

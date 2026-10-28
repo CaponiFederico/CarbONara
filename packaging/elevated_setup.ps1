@@ -2,9 +2,9 @@
 #una sola finestra di UAC invece di una per compito.
 #
 #   powershell -ExecutionPolicy Bypass -File elevated_setup.ps1 -InstallPawnIO -PawnIOSetup "...\PawnIO_setup.exe"
-#   powershell -ExecutionPolicy Bypass -File elevated_setup.ps1 -RegisterAutostart -AutostartScript "...\autostart.ps1" -TargetPath "...\EcoMonitor.exe" -UserId "DOMINIO\utente" [-AutostartArguments "--background"]
-#   powershell -ExecutionPolicy Bypass -File elevated_setup.ps1 -RegisterLauncher -AutostartScript "...\autostart.ps1" -TargetPath "...\EcoMonitor.exe" -UserId "DOMINIO\utente"
-#   powershell -ExecutionPolicy Bypass -File elevated_setup.ps1 -RemoveStaleAutostart -AutostartScript "...\autostart.ps1" -TargetPath "...\EcoMonitor.exe" -UserId "DOMINIO\utente"
+#   powershell -ExecutionPolicy Bypass -File elevated_setup.ps1 -RegisterAutostart -AutostartScript "...\autostart.ps1" -TargetPath "...\CarbONara.exe" -UserId "DOMINIO\utente" [-AutostartArguments "--background"]
+#   powershell -ExecutionPolicy Bypass -File elevated_setup.ps1 -RegisterLauncher -AutostartScript "...\autostart.ps1" -TargetPath "...\CarbONara.exe" -UserId "DOMINIO\utente"
+#   powershell -ExecutionPolicy Bypass -File elevated_setup.ps1 -RemoveStaleAutostart -AutostartScript "...\autostart.ps1" -TargetPath "...\CarbONara.exe" -LegacyTargetPath "...\EcoMonitor.exe" -UserId "DOMINIO\utente"
 #
 #Codice di uscita, a bit: 1 PawnIO non installato, 2 avvio automatico non
 [CmdletBinding()]
@@ -16,6 +16,7 @@ param(
     [switch]$RemoveStaleAutostart,
     [string]$AutostartScript,
     [string]$TargetPath,
+    [string]$LegacyTargetPath,
     [string]$UserId,
     [string]$AutostartArguments
 )
@@ -102,7 +103,7 @@ if ($needsPawnIO) {
 
 if ($RemoveStaleAutostart) {
     try {
-        & $AutostartScript -Unregister -UnlessTargetPath $TargetPath -UserId $UserId
+        & $AutostartScript -Unregister -UnlessTargetPath $TargetPath -LegacyTargetPath $LegacyTargetPath -UserId $UserId
     } catch {
         Write-Warning "Avvio automatico di un'altra installazione: $_"
         $exitCode = $exitCode -bor $StaleAutostartFailed

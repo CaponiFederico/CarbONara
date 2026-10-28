@@ -1,7 +1,7 @@
 ; Procedura guidata di installazione per Windows (Inno Setup 6)
 ;
 ;
-;   ISCC.exe /DAppVersion=0.1.0 packaging\ecomonitor.iss
+;   ISCC.exe /DAppVersion=0.1.1 packaging\ecomonitor.iss
 ; la lancia packaging\build_windows.ps1 dopo PyInstaller
 ;
 ; L'AppId non va mai cambiato
@@ -10,8 +10,10 @@
   #define AppVersion "0.0.0"
 #endif
 
-#define AppName "EcoMonitor"
-#define AppExeName "EcoMonitor.exe"
+#define AppName "CarbO'Nara"
+#define AppFileName "CarbONara"
+#define AppExeName "CarbONara.exe"
+#define LegacyExeName "EcoMonitor.exe"
 
 #define PawnIOUrl "https://github.com/namazso/PawnIO.Setup/releases/download/2.2.0/PawnIO_setup.exe"
 #define PawnIOSha256 "1f519a22e47187f70a1379a48ca604981c4fcf694f4e65b734aaa74a9fba3032"
@@ -21,14 +23,14 @@ AppId={{ef2ed1a8-13dd-4d13-8813-a84e088939a6}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher=Tesi triennale di green computing
-DefaultDirName={autopf}\{#AppName}
+DefaultDirName={autopf}\{#AppFileName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=out
-OutputBaseFilename={#AppName}-{#AppVersion}-windows-x64-setup
+OutputBaseFilename={#AppFileName}-{#AppVersion}-windows-x64-setup
 SetupIconFile=ecomonitor.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName} {#AppVersion}
@@ -45,17 +47,21 @@ Name: "italiano"; MessagesFile: "compiler:Languages\Italian.isl"
 Type: filesandordirs; Name: "{app}\_internal"
 ; la chiave ElectricityMaps spedita dalle versioni precedenti: ora sta solo sul server
 Type: files; Name: "{app}\api_key"
-Type: files; Name: "{autoprograms}\{#AppName} (amministratore).lnk"
+Type: files; Name: "{autoprograms}\EcoMonitor (amministratore).lnk"
+; i file col nome di prima: un aggiornamento resta nella stessa cartella
+Type: files; Name: "{autoprograms}\EcoMonitor.lnk"
+Type: files; Name: "{app}\{#LegacyExeName}"
+Type: files; Name: "{app}\EcoMonitorShow.exe"
 
 [Files]
-Source: "dist\{#AppName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\{#AppFileName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "autostart.ps1"; DestDir: "{app}"
 Source: "elevated_setup.ps1"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Tasks]
 Name: "pawnio"; Description: "Installa il driver PawnIO, che serve a misurare la CPU"; \
     GroupDescription: "Misura:"; Check: not PawnIOInstalled
-Name: "autostart"; Description: "Avvia EcoMonitor all'accesso"; \
+Name: "autostart"; Description: "Avvia {#AppName} all'accesso"; \
     GroupDescription: "Avvio automatico:"
 Name: "autostart\background"; Description: "Parti nell'area di notifica, senza aprire la finestra"; \
     GroupDescription: "Avvio automatico:"; Flags: unchecked
@@ -113,13 +119,18 @@ begin
   end;
 end;
 
-function EcoMonitorIsRunning: Boolean;
+function ImageIsRunning(const ImageName: string): Boolean;
 var
   ResultCode: Integer;
 begin
   Result := Exec(ExpandConstant('{cmd}'),
-    '/c tasklist /fi "imagename eq {#AppExeName}" | find /i "{#AppExeName}" > nul',
+    '/c tasklist /fi "imagename eq ' + ImageName + '" | find /i "' + ImageName + '" > nul',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
+function AppIsRunning: Boolean;
+begin
+  Result := ImageIsRunning('{#AppExeName}') or ImageIsRunning('{#LegacyExeName}');
 end;
 
 function CurrentUserId: string;
@@ -183,18 +194,18 @@ begin
 end;
 
 // L'app gira elevata e Setup no
-procedure CloseEcoMonitor;
+procedure CloseApp;
 var
   ResultCode: Integer;
 begin
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im {#AppExeName}', '', SW_HIDE,
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im {#AppExeName} /im {#LegacyExeName}', '', SW_HIDE,
     ewWaitUntilTerminated, ResultCode);
   Sleep(1500);
 end;
 
 function CloseQuestion(const Action: string): string;
 begin
-  Result := 'EcoMonitor e'' in esecuzione e i suoi file non si possono ' + Action + '.'
+  Result := 'CarbO''Nara e'' in esecuzione e i suoi file non si possono ' + Action + '.'
     + #13#10#13#10 + 'Chiuderlo ora? I dati non ancora scritti, al massimo un minuto,'
     + #13#10 + 'andranno persi. In alternativa: Esci dall''area di notifica, poi riprova.';
 end;
@@ -202,14 +213,14 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
-  if not EcoMonitorIsRunning then
+  if not AppIsRunning then
     exit;
 
   if SuppressibleMsgBox(CloseQuestion('sostituire'), mbConfirmation, MB_YESNO, IDYES) = IDYES then
-    CloseEcoMonitor;
+    CloseApp;
 
-  if EcoMonitorIsRunning then
-    Result := 'EcoMonitor e'' ancora in esecuzione. Chiuderlo con Esci dall''area di notifica'
+  if AppIsRunning then
+    Result := 'CarbO''Nara e'' ancora in esecuzione. Chiuderlo con Esci dall''area di notifica'
       + #13#10 + 'e riavviare l''installazione.';
 end;
 
@@ -242,7 +253,7 @@ const
 procedure ReportPawnIOFailure;
 begin
   SuppressibleMsgBox('Driver PawnIO non installato.' + #13#10 +
-    'EcoMonitor stimera' + #39 + ' il consumo della CPU invece di misurarlo;' + #13#10 +
+    'CarbO''Nara stimera' + #39 + ' il consumo della CPU invece di misurarlo;' + #13#10 +
     'il driver si puo' + #39 + ' installare in seguito da pawnio.eu.',
     mbInformation, MB_OK, IDOK);
 end;
@@ -257,7 +268,7 @@ end;
 procedure ReportLauncherFailure;
 begin
   SuppressibleMsgBox('Avvio senza conferma non configurato.' + #13#10 +
-    'EcoMonitor funziona, ma ogni avvio dal menu Start chiedera' + #39 + ' la conferma' + #13#10 +
+    'CarbO''Nara funziona, ma ogni avvio dal menu Start chiedera' + #39 + ' la conferma' + #13#10 +
     'di Windows. Ripetere l' + #39 + 'installazione per sistemarlo.',
     mbInformation, MB_OK, IDOK);
 end;
@@ -271,7 +282,8 @@ begin
   WantsPawnIO := WizardIsTaskSelected('pawnio') and not PawnIOInstalled;
   WantsAutostart := WizardIsTaskSelected('autostart');
   Target := ' -AutostartScript "' + ExpandConstant('{app}\autostart.ps1') + '"'
-    + ' -TargetPath "' + ExpandConstant('{app}\{#AppExeName}') + '"';
+    + ' -TargetPath "' + ExpandConstant('{app}\{#AppExeName}') + '"'
+    + ' -LegacyTargetPath "' + ExpandConstant('{app}\{#LegacyExeName}') + '"';
   User := ' -UserId "' + CurrentUserId + '"';
 
   Arguments := ' -RegisterLauncher -RemoveStaleAutostart' + Target + User;
@@ -321,15 +333,15 @@ end;
 function InitializeUninstall: Boolean;
 begin
   Result := True;
-  if not EcoMonitorIsRunning then
+  if not AppIsRunning then
     exit;
 
   if SuppressibleMsgBox(CloseQuestion('rimuovere'), mbConfirmation, MB_YESNO, IDYES) = IDYES then
-    CloseEcoMonitor;
+    CloseApp;
 
-  if EcoMonitorIsRunning then
+  if AppIsRunning then
   begin
-    SuppressibleMsgBox('EcoMonitor e'' ancora in esecuzione: disinstallare adesso lascerebbe'
+    SuppressibleMsgBox('CarbO''Nara e'' ancora in esecuzione: disinstallare adesso lascerebbe'
       + #13#10 + 'i suoi file sul disco. Chiuderlo con Esci dall''area di notifica'
       + #13#10 + 'e riavviare la disinstallazione.', mbError, MB_OK, IDOK);
     Result := False;
@@ -354,6 +366,6 @@ begin
 
   if CurUninstallStep = usPostUninstall then
     SuppressibleMsgBox('I dati misurati restano in:' + #13#10 +
-           ExpandConstant('{localappdata}\ecomonitor') + #13#10#13#10 +
+           ExpandConstant('{localappdata}\carbonara') + #13#10#13#10 +
            'Cancellarli a mano se non servono piu''.', mbInformation, MB_OK, IDOK);
 end;

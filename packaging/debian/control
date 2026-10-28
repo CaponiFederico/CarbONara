@@ -7,7 +7,7 @@ Depends: libc6, libdrm2, libegl1, libgl1, libglvnd0, libglx0, libwayland-client0
 Section: utils
 Priority: optional
 Description: Misura consumo energetico e emissioni di CO2eq del computer
- EcoMonitor misura quanta energia consuma questo computer e attribuisce a ogni
+ CarbO'Nara misura quanta energia consuma questo computer e attribuisce a ogni
  wattora l'intensita' di carbonio della rete elettrica nel momento in cui e'
  stato consumato. Su un portatile a batteria l'attribuzione risale al momento
  della ricarica, non a quello dell'uso.

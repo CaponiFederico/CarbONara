@@ -2,7 +2,7 @@
 #
 #   pyinstaller --clean --noconfirm packaging/ecomonitor.spec
 #
-#   EcoMonitor/            applicazione grafica 
+#   CarbONara/            applicazione grafica 
 #   ecomonitor-cli(.exe)   eseguibile di collaudo, non spedito nel pacchetto
 
 import os
@@ -126,14 +126,14 @@ gui_exe = EXE(  # noqa: F821
     gui_analysis.scripts,
     [],
     exclude_binaries=True,
-    name="EcoMonitor",
+    name="CarbONara",
     console=False,  # applicazione grafica
     icon=EXE_ICON,
     uac_admin=REQUEST_UAC_ADMIN,
 )
 gui_collect_parts = [gui_exe, gui_analysis.binaries, gui_analysis.datas]
 
-SHOW_WINDOW_NAME = "EcoMonitorShow"
+SHOW_WINDOW_NAME = "CarbONaraShow"
 if IS_WINDOWS:
     show_analysis = Analysis(  # noqa: F821
         [str(PROJECT_ROOT / "packaging" / "entry_show.py")],
@@ -156,19 +156,19 @@ if IS_WINDOWS:
 
 gui_collect = COLLECT(  # noqa: F821
     *gui_collect_parts,
-    name="EcoMonitor",
+    name="CarbONara",
 )
 
-#Su macOS l'applicazione e' la cartella EcoMonitor.app accanto a EcoMonitor/
+#Su macOS l'applicazione e' la cartella CarbONara.app accanto a CarbONara/
 if IS_MACOS:
     BUNDLE(  # noqa: F821
         gui_collect,
-        name="EcoMonitor.app",
+        name="CarbONara.app",
         icon=str(ICNS_PATH),
         bundle_identifier=BUNDLE_IDENTIFIER,
         info_plist={
-            "CFBundleName": "EcoMonitor",
-            "CFBundleDisplayName": "EcoMonitor",
+            "CFBundleName": "CarbO'Nara",
+            "CFBundleDisplayName": "CarbO'Nara",
             "CFBundleShortVersionString": VERSION,
             "CFBundleVersion": VERSION,
             "NSHighResolutionCapable": True,

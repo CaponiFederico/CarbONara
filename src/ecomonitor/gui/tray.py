@@ -9,11 +9,11 @@ from ecomonitor.gui.icon import app_icon
 
 logger = logging.getLogger(__name__)
 
-TRAY_TOOLTIP = "EcoMonitor"
+TRAY_TOOLTIP = "CarbO'Nara"
 SHOW_ENTRY = "Apri dashboard"
 #fase 1 dello studio
 STUDY_SHOW_ENTRY = "Stato dello studio"
-STUDY_TOOLTIP = "EcoMonitor — raccolta dati per lo studio"
+STUDY_TOOLTIP = "CarbO'Nara — raccolta dati per lo studio"
 QUIT_ENTRY = "Esci"
 
 

@@ -52,7 +52,7 @@ def _on_authorization(granted: bool, error: Any) -> None:
             logger.info("Notifiche di macOS: autorizzate")
         else:
             logger.warning(
-                "Le notifiche di EcoMonitor non sono autorizzate nelle impostazioni di "
+                "Le notifiche di CarbO'Nara non sono autorizzate nelle impostazioni di "
                 "macOS%s: non compariranno finche' non vengono riattivate",
                 "" if error is None else f" ({_error_text(error)})",
             )

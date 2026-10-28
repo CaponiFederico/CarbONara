@@ -1,12 +1,14 @@
 
 #Amministratore
-#   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Register -TargetPath "...\EcoMonitor.exe" -UserId "DOMINIO\utente"
+#   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Register -TargetPath "...\CarbONara.exe" -UserId "DOMINIO\utente"
 #   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Register -TargetPath "..." -UserId "..." -Arguments "--background"
 #   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Unregister -UserId "DOMINIO\utente"
 #
 #Con -Launcher la stessa cosa per l'attivita' di lancio
 #   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Register -Launcher -TargetPath "..." -UserId "..."
-#   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Unregister -UnlessTargetPath "...\EcoMonitor.exe" -UserId "..."
+#   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Unregister -UnlessTargetPath "...\CarbONara.exe" -UserId "..."
+#Con -LegacyTargetPath un'attivita' sull'eseguibile di prima viene spostata invece che tolta
+#   powershell -ExecutionPolicy Bypass -File autostart.ps1 -Unregister -UnlessTargetPath "...\CarbONara.exe" -LegacyTargetPath "...\EcoMonitor.exe" -UserId "..."
 #
 [CmdletBinding()]
 param(
@@ -15,6 +17,7 @@ param(
     [switch]$Launcher,
     [string]$TargetPath,
     [string]$UnlessTargetPath,
+    [string]$LegacyTargetPath,
     [string]$UserId,
     [string]$Arguments
 )
@@ -49,10 +52,18 @@ if ($Unregister) {
             Write-Host "Attivita' $TaskName gia' su questo eseguibile: resta."
             exit 0
         }
+        if ($LegacyTargetPath -and ($registered -contains (Get-FullPath $LegacyTargetPath))) {
+            $Arguments = @($task.Actions | Where-Object { $_.Execute })[0].Arguments
+            $TargetPath = $UnlessTargetPath
+            $Register = $true
+        }
     }
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-    Write-Host "Attivita' $TaskName rimossa."
-    exit 0
+    if (-not $Register) {
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+        Write-Host "Attivita' $TaskName rimossa."
+        exit 0
+    }
+    Write-Host "Attivita' $TaskName spostata su $TargetPath."
 }
 
 if (-not $Register) { throw "Indicare -Register oppure -Unregister." }
@@ -76,7 +87,7 @@ if ($Launcher) {
         -MultipleInstances Parallel
     Register-ScheduledTask -TaskName $TaskName -Action $action `
         -Principal $principal -Settings $settings -Force `
-        -Description "Avvia EcoMonitor con i sensori leggibili, senza UAC" | Out-Null
+        -Description "Avvia CarbO'Nara con i sensori leggibili, senza UAC" | Out-Null
     Write-Host "Attivita' di lancio registrata per $UserId."
     exit 0
 }
@@ -90,6 +101,6 @@ $settings = New-ScheduledTaskSettingsSet `
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
     -Principal $principal -Settings $settings -Force `
-    -Description "Avvia EcoMonitor all'accesso" | Out-Null
+    -Description "Avvia CarbO'Nara all'accesso" | Out-Null
 
 Write-Host "Avvio automatico registrato per $UserId."

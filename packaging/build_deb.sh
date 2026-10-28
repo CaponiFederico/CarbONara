@@ -15,7 +15,7 @@ DIST_DIR="${PACKAGING_DIR}/dist"
 OUT_DIR="${PACKAGING_DIR}/out"
 STAGE_DIR="${PACKAGING_DIR}/build/deb"
 RAPL_SCRIPT="${PROJECT_ROOT}/scripts/install_rapl_permissions.sh"
-ORIGIN_FILE="${DIST_DIR}/EcoMonitor.origin"
+ORIGIN_FILE="${DIST_DIR}/CarbONara.origin"
 
 source "${PACKAGING_DIR}/bundle_origin.sh"
 
@@ -31,13 +31,13 @@ mkdir -p "${OUT_DIR}"
 rm -f "${DEB}"
 
 #Il .deb impacchetta quello che ha prodotto PyInstaller
-if [[ ! -x ${DIST_DIR}/EcoMonitor/EcoMonitor ]]; then
-    echo "ERRORE: manca ${DIST_DIR}/EcoMonitor/EcoMonitor." >&2
+if [[ ! -x ${DIST_DIR}/CarbONara/CarbONara ]]; then
+    echo "ERRORE: manca ${DIST_DIR}/CarbONara/CarbONara." >&2
     echo "Eseguire prima:  bash packaging/build_linux.sh" >&2
     exit 2
 fi
 
-if ! compgen -G "${DIST_DIR}/EcoMonitor/_internal/libxcb-cursor.so*" >/dev/null; then
+if ! compgen -G "${DIST_DIR}/CarbONara/_internal/libxcb-cursor.so*" >/dev/null; then
     echo "ERRORE: libxcb-cursor.so.0 non e' nella cartella prodotta da PyInstaller." >&2
     echo "Senza, l'interfaccia grafica aborta su qualunque sessione X11 (su Wayland parte)." >&2
     echo "Installarla sulla macchina di build e ricostruire:" >&2
@@ -61,14 +61,14 @@ mkdir -p "${STAGE_DIR}/DEBIAN" \
     "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps" \
     "${STAGE_DIR}/usr/lib/udev/rules.d"
 
-cp -r "${DIST_DIR}/EcoMonitor/." "${STAGE_DIR}/opt/ecomonitor/"
-chmod +x "${STAGE_DIR}/opt/ecomonitor/EcoMonitor"
-ln -sf /opt/ecomonitor/EcoMonitor "${STAGE_DIR}/usr/bin/ecomonitor"
+cp -r "${DIST_DIR}/CarbONara/." "${STAGE_DIR}/opt/ecomonitor/"
+chmod +x "${STAGE_DIR}/opt/ecomonitor/CarbONara"
+ln -sf /opt/ecomonitor/CarbONara "${STAGE_DIR}/usr/bin/ecomonitor"
 
 "${PACKAGING_DIR}/read_study_endpoint.sh" >"${STAGE_DIR}/opt/ecomonitor/study_endpoint"
 chmod 0644 "${STAGE_DIR}/opt/ecomonitor/study_endpoint"
 
-sed "s|__EXEC__|/opt/ecomonitor/EcoMonitor|" "${PACKAGING_DIR}/ecomonitor.desktop" \
+sed "s|__EXEC__|/opt/ecomonitor/CarbONara|" "${PACKAGING_DIR}/ecomonitor.desktop" \
     >"${STAGE_DIR}/usr/share/applications/ecomonitor.desktop"
 chmod 0644 "${STAGE_DIR}/usr/share/applications/ecomonitor.desktop"
 cp "${PACKAGING_DIR}/ecomonitor.png" \
@@ -104,7 +104,7 @@ for script in postinst prerm postrm; do
     fi
 done
 contents="$(dpkg-deb --contents "${DEB}")"
-for required in ./opt/ecomonitor/EcoMonitor ./usr/bin/ecomonitor \
+for required in ./opt/ecomonitor/CarbONara ./usr/bin/ecomonitor \
     ./usr/share/applications/ecomonitor.desktop \
     ./usr/lib/udev/rules.d/99-ecomonitor-rapl.rules; do
     #il symlink non chiude la riga

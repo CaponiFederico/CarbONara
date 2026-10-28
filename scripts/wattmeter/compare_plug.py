@@ -1,4 +1,4 @@
-# Confronto fra le righe di EcoMonitor e la presa di riferimento
+# Confronto fra le righe di CarbO'Nara e la presa di riferimento
 #
 #     P_presa = a * P_ecomonitor + b
 #
@@ -164,14 +164,14 @@ def print_summary(pairs: list[tuple[float, float]], rows: list[dict],
 
     print(f"\nFinestre confrontabili: {len(pairs)}")
     print(f"  copertura media della presa: {sum(coverages) / len(coverages) * 100:.1f}%")
-    print(f"  EcoMonitor: da {min(eco):.2f} a {max(eco):.2f} W, media {sum(eco) / len(eco):.2f} W")
+    print(f"  CarbO'Nara: da {min(eco):.2f} a {max(eco):.2f} W, media {sum(eco) / len(eco):.2f} W")
     print(f"  presa:      da {min(plug):.2f} a {max(plug):.2f} W, "
           f"media {sum(plug) / len(plug):.2f} W")
 
     ratios = [y / x for x, y in pairs if x > 0]
     if ratios:
         ratios.sort()
-        print(f"  rapporto presa/EcoMonitor: mediana {ratios[len(ratios) // 2]:.2f}")
+        print(f"  rapporto presa/CarbO'Nara: mediana {ratios[len(ratios) // 2]:.2f}")
 
     model = regression(pairs)
     if model is None:
@@ -201,7 +201,7 @@ def print_summary(pairs: list[tuple[float, float]], rows: list[dict],
     wh_eco = sum(row["wh"] for row in rows)
     wh_plug = sum(y * row["seconds"] / 3600.0 for (_, y), row in zip(pairs, rows, strict=True))
     if wh_eco > 0:
-        print(f"\nEnergia sulle stesse finestre: EcoMonitor {wh_eco:.2f} Wh, "
+        print(f"\nEnergia sulle stesse finestre: CarbO'Nara {wh_eco:.2f} Wh, "
               f"presa {wh_plug:.2f} Wh (rapporto {wh_plug / wh_eco:.2f})")
 
     estimated_rows = sum(1 for row in rows if row["estimated"])
@@ -213,7 +213,7 @@ def print_summary(pairs: list[tuple[float, float]], rows: list[dict],
 def main(argv: list[str] | None = None) -> int:
     #descrizione esplicita
     parser = argparse.ArgumentParser(
-        description="Allinea la serie della presa con le righe di EcoMonitor e le confronta"
+        description="Allinea la serie della presa con le righe di CarbO'Nara e le confronta"
     )
     parser.add_argument("--plug", required=True, help="CSV scritto da read_plug.py")
     parser.add_argument("--db", default=None, help="database da leggere")
@@ -251,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Presa:      {len(samples)} letture, "
           f"da {samples[0][0].isoformat()} a {samples[-1][0].isoformat()}")
-    print(f"EcoMonitor: {len(rows)} righe, "
+    print(f"CarbO'Nara: {len(rows)} righe, "
           f"da {rows[0]['start'].isoformat()} a {rows[-1]['end'].isoformat()}")
 
     pairs: list[tuple[float, float]] = []

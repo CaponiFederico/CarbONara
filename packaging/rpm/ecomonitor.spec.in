@@ -30,7 +30,7 @@ Requires:       fontconfig
 Requires:       freetype
 
 %description
-EcoMonitor misura quanta energia consuma questo computer e attribuisce a ogni
+CarbO'Nara misura quanta energia consuma questo computer e attribuisce a ogni
 wattora l'intensita' di carbonio della rete elettrica nel momento in cui e'
 stato consumato. Su un portatile a batteria l'attribuzione risale al momento
 della ricarica, non a quello dell'uso.
@@ -70,12 +70,12 @@ running_pids() {
     for proc_dir in /proc/[0-9]*; do
         read -r comm 2>/dev/null < "${proc_dir}/comm" || continue
         case "${comm}" in
-        EcoMonitor | ecomonitor) ;;
+        CarbONara | EcoMonitor | ecomonitor) ;;
         *) continue ;;
         esac
         exe="$(readlink "${proc_dir}/exe" 2>/dev/null || true)"
         case "${exe}" in
-        "/opt/ecomonitor/EcoMonitor" | "/opt/ecomonitor/EcoMonitor (deleted)")
+        "/opt/ecomonitor/CarbONara" | "/opt/ecomonitor/CarbONara (deleted)" | "/opt/ecomonitor/EcoMonitor" | "/opt/ecomonitor/EcoMonitor (deleted)")
             echo "${proc_dir#/proc/}"
             ;;
         esac
@@ -85,7 +85,7 @@ running_pids() {
 if [ "$1" = 0 ]; then
     pids=$(running_pids)
     if [ -n "${pids}" ]; then
-        echo "Chiusura di EcoMonitor in corso prima della rimozione..."
+        echo "Chiusura di CarbO'Nara in corso prima della rimozione..."
         kill -INT ${pids} 2>/dev/null || true
         for _ in 1 2 3 4 5 6 7 8 9 10; do
             [ -z "$(running_pids)" ] && break
@@ -111,8 +111,15 @@ for energy_file in /sys/class/powercap/intel-rapl:*/energy_uj; do
 done
 if [ "${applied}" -eq 0 ]; then
     echo "NOTA: nessun contatore RAPL trovato: questa CPU non li espone (AMD pre-Zen,"
-    echo "      ARM, macchina virtuale). EcoMonitor stimera' il consumo del processore."
+    echo "      ARM, macchina virtuale). CarbO'Nara stimera' il consumo del processore."
 fi
+
+for entry in /home/*/.config/autostart/ecomonitor.desktop; do
+    [ -f "${entry}" ] && [ ! -L "${entry}" ] || continue
+    grep -q /opt/ecomonitor/EcoMonitor "${entry}" || continue
+    owner="$(stat -c %%U "${entry}")" || continue
+    runuser -u "${owner}" -- sed -i 's|/opt/ecomonitor/EcoMonitor|/opt/ecomonitor/CarbONara|g' "${entry}" || true
+done
 
 if command -v udevadm >/dev/null; then
     udevadm control --reload-rules || true
@@ -126,7 +133,7 @@ fi
 exit 0
 
 %postun
-if [ "$1" = 0 ] && [ ! -e /opt/ecomonitor/EcoMonitor ]; then
+if [ "$1" = 0 ] && [ ! -e /opt/ecomonitor/CarbONara ]; then
     for energy_file in /sys/class/powercap/intel-rapl:*/energy_uj; do
         [ -e "${energy_file}" ] || continue
         chmod 0400 "${energy_file}" || true
@@ -137,7 +144,7 @@ if [ "$1" = 0 ] && [ ! -e /opt/ecomonitor/EcoMonitor ]; then
     if command -v update-desktop-database >/dev/null; then
         update-desktop-database -q /usr/share/applications || true
     fi
-    echo "Le misure raccolte restano in ~/.local/share/ecomonitor di ogni utente:"
+    echo "Le misure raccolte restano in ~/.local/share/carbonara di ogni utente:"
     echo "cancellarle a mano se non servono piu'."
 fi
 exit 0

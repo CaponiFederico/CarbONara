@@ -219,9 +219,9 @@ def to_utc_iso(moment: datetime) -> str:
 def default_database_path() -> Path:
     #GUI, CLI e script di ricalcolo devono aprire lo stesso file,
     #altrimenti il lock che li tiene separati protegge percorsi diversi
-    import platformdirs
+    from ecomonitor.config import user_data_dir
 
-    return Path(platformdirs.user_data_path("ecomonitor")) / "local.db"
+    return user_data_dir() / "local.db"
 
 
 def local_day_bounds(day: date) -> tuple[datetime, datetime]:

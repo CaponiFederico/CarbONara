@@ -20,7 +20,7 @@ RPM_DIR="${PACKAGING_DIR}/build/rpm"
 STAGE_DIR="${RPM_DIR}/root"
 TOP_DIR="${RPM_DIR}/topdir"
 SPEC_TEMPLATE="${PACKAGING_DIR}/rpm/ecomonitor.spec.in"
-ORIGIN_FILE="${DIST_DIR}/EcoMonitor.origin"
+ORIGIN_FILE="${DIST_DIR}/CarbONara.origin"
 RAPL_SCRIPT="${PROJECT_ROOT}/scripts/install_rapl_permissions.sh"
 LICENSE_FILE="${PROJECT_ROOT}/LICENSE"
 #Il nome del file e' l'id del componente AppStream li vuole uguali
@@ -50,13 +50,13 @@ mkdir -p "${OUT_DIR}"
 rm -f "${RPM}"
 
 #L'.rpm impacchetta quello che ha prodotto PyInstaller
-if [[ ! -x ${DIST_DIR}/EcoMonitor/EcoMonitor ]]; then
-    echo "ERRORE: manca ${DIST_DIR}/EcoMonitor/EcoMonitor." >&2
+if [[ ! -x ${DIST_DIR}/CarbONara/CarbONara ]]; then
+    echo "ERRORE: manca ${DIST_DIR}/CarbONara/CarbONara." >&2
     echo "Eseguire prima:  bash packaging/build_linux.sh" >&2
     exit 2
 fi
 
-if ! compgen -G "${DIST_DIR}/EcoMonitor/_internal/libxcb-cursor.so*" >/dev/null; then
+if ! compgen -G "${DIST_DIR}/CarbONara/_internal/libxcb-cursor.so*" >/dev/null; then
     echo "ERRORE: libxcb-cursor.so.0 non e' nella cartella prodotta da PyInstaller." >&2
     echo "Senza, l'interfaccia grafica aborta su qualunque sessione X11 (su Wayland parte)." >&2
     echo "Installarla sulla macchina di build e ricostruire:" >&2
@@ -65,7 +65,7 @@ if ! compgen -G "${DIST_DIR}/EcoMonitor/_internal/libxcb-cursor.so*" >/dev/null;
 fi
 
 #Un bundle copiato da un'altra macchina puo' arrivare con delle librerie troncate
-truncated="$(find "${DIST_DIR}/EcoMonitor" -type f -name '*.so*' -empty | head -5)"
+truncated="$(find "${DIST_DIR}/CarbONara" -type f -name '*.so*' -empty | head -5)"
 if [[ -n ${truncated} ]]; then
     echo "ERRORE: nel bundle ci sono librerie vuote, la copia e' incompleta:" >&2
     echo "${truncated}" >&2
@@ -111,14 +111,14 @@ mkdir -p "${STAGE_DIR}/opt/ecomonitor" \
     "${STAGE_DIR}/usr/share/metainfo" \
     "${TOP_DIR}/SPECS" "${TOP_DIR}/BUILD" "${TOP_DIR}/RPMS"
 
-cp -r "${DIST_DIR}/EcoMonitor/." "${STAGE_DIR}/opt/ecomonitor/"
-chmod +x "${STAGE_DIR}/opt/ecomonitor/EcoMonitor"
-ln -sf /opt/ecomonitor/EcoMonitor "${STAGE_DIR}/usr/bin/ecomonitor"
+cp -r "${DIST_DIR}/CarbONara/." "${STAGE_DIR}/opt/ecomonitor/"
+chmod +x "${STAGE_DIR}/opt/ecomonitor/CarbONara"
+ln -sf /opt/ecomonitor/CarbONara "${STAGE_DIR}/usr/bin/ecomonitor"
 
 "${PACKAGING_DIR}/read_study_endpoint.sh" >"${STAGE_DIR}/opt/ecomonitor/study_endpoint"
 chmod 0644 "${STAGE_DIR}/opt/ecomonitor/study_endpoint"
 
-sed "s|__EXEC__|/opt/ecomonitor/EcoMonitor|" "${PACKAGING_DIR}/ecomonitor.desktop" \
+sed "s|__EXEC__|/opt/ecomonitor/CarbONara|" "${PACKAGING_DIR}/ecomonitor.desktop" \
     >"${STAGE_DIR}/usr/share/applications/ecomonitor.desktop"
 chmod 0644 "${STAGE_DIR}/usr/share/applications/ecomonitor.desktop"
 cp "${PACKAGING_DIR}/ecomonitor.png" \
@@ -177,7 +177,7 @@ mv "${BUILT}" "${RPM}"
 
 rpm -qp --info "${RPM}" >/dev/null
 contents="$(rpm -qpl "${RPM}")"
-for required in /opt/ecomonitor/EcoMonitor /usr/bin/ecomonitor \
+for required in /opt/ecomonitor/CarbONara /usr/bin/ecomonitor \
     /usr/share/applications/ecomonitor.desktop \
     /usr/share/licenses/ecomonitor/LICENSE \
     "/usr/share/metainfo/${METAINFO_ID}.metainfo.xml" \
@@ -197,9 +197,9 @@ if rpm -qp --provides "${RPM}" | grep -q 'libQt6'; then
 fi
 
 #L'eseguibile deve restare quello di PyInstaller
-original_size="$(stat -c %s "${DIST_DIR}/EcoMonitor/EcoMonitor")"
+original_size="$(stat -c %s "${DIST_DIR}/CarbONara/CarbONara")"
 packed_size="$(rpm -qp --qf '[%{FILENAMES} %{FILESIZES}\n]' "${RPM}" |
-    awk '$1 == "/opt/ecomonitor/EcoMonitor" { print $2 }')"
+    awk '$1 == "/opt/ecomonitor/CarbONara" { print $2 }')"
 if [[ ${packed_size} != "${original_size}" ]]; then
     echo "ERRORE: l'eseguibile impacchettato misura ${packed_size} byte" >&2
     echo "        invece dei ${original_size} prodotti da PyInstaller." >&2

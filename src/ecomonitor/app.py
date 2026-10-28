@@ -13,13 +13,12 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-import platformdirs
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QIcon, QPalette
 from PySide6.QtWidgets import QApplication, QMessageBox, QStyleFactory, QSystemTrayIcon
 
 from ecomonitor import autostart
-from ecomonitor.config import AppConfig, ConfigManager
+from ecomonitor.config import AppConfig, ConfigManager, user_data_dir
 from ecomonitor.gui import macos_dock
 from ecomonitor.gui.icon import app_icon
 from ecomonitor.gui.main_window import MainWindow
@@ -104,7 +103,7 @@ def hand_over_to_elevated_instance(
     relaunch_as_administrator: Callable[[list[str]], bool],
 ) -> bool:
     if request_window():
-        logger.info("EcoMonitor e' gia' in esecuzione: mostrata la sua finestra")
+        logger.info("CarbO'Nara e' gia' in esecuzione: mostrata la sua finestra")
         return True
     if launcher_ready() and run_launcher():
         logger.info("Avvio passato all'attivita' di lancio, elevata senza UAC")
@@ -113,7 +112,7 @@ def hand_over_to_elevated_instance(
     logger.warning("Attivita' di lancio assente o non avviata: si chiede la conferma di Windows")
     if relaunch_as_administrator(list(arguments)):
         return True
-    logger.warning("Elevazione rifiutata: EcoMonitor parte senza privilegi e stima la CPU")
+    logger.warning("Elevazione rifiutata: CarbO'Nara parte senza privilegi e stima la CPU")
     return False
 
 
@@ -180,25 +179,25 @@ def wait_for_tray(
         sleep(step)
 
 #Testo dell'avviso
-TRAY_NOTICE_TITLE = "EcoMonitor continua a misurare"
+TRAY_NOTICE_TITLE = "CarbO'Nara continua a misurare"
 TRAY_NOTICE_TEXT = (
     "La finestra è nascosta, l'app resta attiva nella barra delle "
     "applicazioni. Per uscire davvero: clic destro sull'icona → Esci."
 )
-BACKGROUND_NOTICE_TITLE = "EcoMonitor continua a misurare"
+BACKGROUND_NOTICE_TITLE = "CarbO'Nara continua a misurare"
 BACKGROUND_NOTICE_TEXT = (
     "La finestra è stata chiusa ma l'applicazione resta attiva e continua "
-    "a misurare.\n\nPer rivederla, riavvia EcoMonitor dal menu delle "
+    "a misurare.\n\nPer rivederla, riavvia CarbO'Nara dal menu delle "
     "applicazioni: tornerà in primo piano.\n\nPer fermare davvero la "
     "misurazione, usa il pulsante «Esci» in fondo alla finestra."
 )
 
-DATABASE_BUSY_TITLE = "EcoMonitor è già in esecuzione"
+DATABASE_BUSY_TITLE = "CarbO'Nara è già in esecuzione"
 
 
 def database_busy_text(system: str) -> str:
     text = (
-        "Un'altra copia di EcoMonitor sta già misurando su questo computer, quindi "
+        "Un'altra copia di CarbO'Nara sta già misurando su questo computer, quindi "
         "questa si chiude senza toccare i dati."
     )
     if system == "Windows":
@@ -308,7 +307,7 @@ def run_default_autostart(config: AppConfig) -> bool:
             logger.warning("Non riesco ad attivare l'avvio automatico: %s", exc)
             return False
         logger.info(
-            "Avvio automatico attivato: EcoMonitor si aprira' all'accesso, in primo "
+            "Avvio automatico attivato: CarbO'Nara si aprira' all'accesso, in primo "
             "piano. Si disattiva dalle impostazioni"
         )
     return True
@@ -907,7 +906,7 @@ def _install_sigint_handler(app: QApplication) -> QTimer:
     return timer
 
 
-LOG_FILE_NAME = "ecomonitor.log"
+LOG_FILE_NAME = "carbonara.log"
 LOG_FILE_MAX_BYTES = 2_000_000
 LOG_FILE_BACKUPS = 3
 
@@ -945,7 +944,7 @@ def _configure_logging() -> None:
     root = logging.getLogger()
 
     try:
-        data_path = platformdirs.user_data_path("ecomonitor")
+        data_path = user_data_dir()
         data_path.mkdir(parents=True, exist_ok=True)
         handler = RotatingFileHandler(
             data_path / LOG_FILE_NAME,
@@ -986,7 +985,7 @@ def _hand_over_if_not_elevated() -> bool:
     from ecomonitor.gui.single_instance import server_name_for
     from ecomonitor.show_window import request_window
 
-    pipe_name = server_name_for(platformdirs.user_data_path("ecomonitor"))
+    pipe_name = server_name_for(user_data_dir())
     return hand_over_to_elevated_instance(
         sys.argv[1:],
         request_window=lambda: request_window(pipe_name),
@@ -1034,7 +1033,7 @@ def main() -> None:
         )
         if not tray_available:
             logger.warning(
-                "L'area di notifica non e' comparsa: EcoMonitor si apre in primo piano"
+                "L'area di notifica non e' comparsa: CarbO'Nara si apre in primo piano"
             )
 
     app.setQuitOnLastWindowClosed(not tray_available)
@@ -1054,11 +1053,11 @@ def main() -> None:
     #il lock va preso prima di costruire l'Orchestrator, che apre il database:
     #due istanze sullo stesso database raddoppiano ogni evento
     guard = SingleInstanceGuard(
-        platformdirs.user_data_path("ecomonitor"), on_second_launch=show_window
+        user_data_dir(), on_second_launch=show_window
     )
     if not guard.try_acquire():
         logger.warning(
-            "EcoMonitor e' gia' in esecuzione: questa istanza esce senza toccare il database"
+            "CarbO'Nara e' gia' in esecuzione: questa istanza esce senza toccare il database"
         )
         return
 
@@ -1074,7 +1073,7 @@ def main() -> None:
         #senza tray l'unico Esci è nella finestra
         window.enable_quit_button(app.quit)
         logger.info(
-            "Nessuna area di notifica: EcoMonitor continua a misurare in secondo piano. "
+            "Nessuna area di notifica: CarbO'Nara continua a misurare in secondo piano. "
             "Rilanciarlo riporta in primo piano la finestra, il pulsante «Esci» lo ferma"
         )
 
@@ -1111,14 +1110,14 @@ def main() -> None:
         logger.warning(
             "Avvio in secondo piano chiesto ma non possibile su questo desktop: senza "
             "area di notifica e senza modalita' in secondo piano la finestra non si "
-            "potrebbe piu' riaprire, quindi EcoMonitor si apre in primo piano"
+            "potrebbe piu' riaprire, quindi CarbO'Nara si apre in primo piano"
         )
 
     if start_hidden:
         macos_dock.set_dock_icon_visible(False)
         logger.info(
             "Avvio in secondo piano: la misurazione parte senza aprire la finestra. "
-            "Rilanciare EcoMonitor la riporta in primo piano"
+            "Rilanciare CarbO'Nara la riporta in primo piano"
         )
     else:
         window.show()
@@ -1216,7 +1215,7 @@ def main() -> None:
         lambda: create_notifier(
             tray,
             on_click=show_window,
-            data_path=platformdirs.user_data_path("ecomonitor"),
+            data_path=user_data_dir(),
             pipe_name=guard.server_name if guard.is_listening else None,
         ),
     )

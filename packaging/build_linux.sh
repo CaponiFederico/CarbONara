@@ -7,7 +7,7 @@
 # Serve un venv con l'extra [packaging]:
 #   python -m venv .venv && .venv/bin/pip install -e ".[gui,packaging]"
 #
-# Produce packaging/out/ecomonitor-<versione>-linux-<arch>.tar.gz, che contiene
+# Produce packaging/out/carbonara-<versione>-linux-<arch>.tar.gz, che contiene
 # l'applicazione e install.sh
 
 
@@ -30,14 +30,14 @@ BUILD_DIR="${PACKAGING_DIR}/build"
 DIST_DIR="${PACKAGING_DIR}/dist"
 OUT_DIR="${PACKAGING_DIR}/out"
 STAGE_DIR="${BUILD_DIR}/stage"
-ORIGIN_FILE="${DIST_DIR}/EcoMonitor.origin"
+ORIGIN_FILE="${DIST_DIR}/CarbONara.origin"
 
 #dichiara chi ha costruito il bundle, cosi' build_deb.sh e build_rpm.sh non
 #impacchettano quello di un'altra distribuzione
 source "${PACKAGING_DIR}/bundle_origin.sh"
 
 #Il pacchetto della build precedente non deve sopravvivere a una build fallita
-TARBALL="${OUT_DIR}/ecomonitor-${VERSION}-linux-${ARCH}.tar.gz"
+TARBALL="${OUT_DIR}/carbonara-${VERSION}-linux-${ARCH}.tar.gz"
 rm -f "${TARBALL}"
 
 #se PyInstaller fallisce non deve restare la dichiarazione della build precedente
@@ -51,7 +51,7 @@ rm -f "${ORIGIN_FILE}"
 
 #Il plugin Qt "xcb" dipende da libxcb-cursor.so.0, che non e' una dipendenza pip di
 #PySide6: se manca dalla macchina di build PyInstaller non la incapsula
-if ! compgen -G "${DIST_DIR}/EcoMonitor/_internal/libxcb-cursor.so*" >/dev/null; then
+if ! compgen -G "${DIST_DIR}/CarbONara/_internal/libxcb-cursor.so*" >/dev/null; then
     echo "ERRORE: libxcb-cursor.so.0 non e' finita nel pacchetto." >&2
     echo "Senza, l'interfaccia grafica aborta su qualunque sessione X11" >&2
     echo "Installarla sulla macchina di build e ricostruire:" >&2
@@ -63,16 +63,16 @@ write_bundle_origin "${ORIGIN_FILE}" "${PYTHON}"
 
 rm -rf "${STAGE_DIR}"
 mkdir -p "${STAGE_DIR}" "${OUT_DIR}"
-cp -r "${DIST_DIR}/EcoMonitor" "${STAGE_DIR}/EcoMonitor"
+cp -r "${DIST_DIR}/CarbONara" "${STAGE_DIR}/CarbONara"
 cp "${PACKAGING_DIR}/linux_install.sh" "${STAGE_DIR}/install.sh"
-"${PACKAGING_DIR}/read_study_endpoint.sh" >"${STAGE_DIR}/EcoMonitor/study_endpoint"
-chmod 0644 "${STAGE_DIR}/EcoMonitor/study_endpoint"
+"${PACKAGING_DIR}/read_study_endpoint.sh" >"${STAGE_DIR}/CarbONara/study_endpoint"
+chmod 0644 "${STAGE_DIR}/CarbONara/study_endpoint"
 cp "${PACKAGING_DIR}/ecomonitor.desktop" "${PACKAGING_DIR}/ecomonitor.png" "${STAGE_DIR}/"
 #le regole udev per RAPL servono all'utente dopo l'installazione
 mkdir -p "${STAGE_DIR}/scripts"
 cp "${PROJECT_ROOT}/scripts/install_rapl_permissions.sh" "${STAGE_DIR}/scripts/"
 echo -n "${VERSION}" >"${STAGE_DIR}/version.txt"
-chmod +x "${STAGE_DIR}/install.sh" "${STAGE_DIR}/EcoMonitor/EcoMonitor"
+chmod +x "${STAGE_DIR}/install.sh" "${STAGE_DIR}/CarbONara/CarbONara"
 
 "${DIST_DIR}/ecomonitor-cli" --help >/dev/null
 

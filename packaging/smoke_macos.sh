@@ -7,8 +7,8 @@
 set -euo pipefail
 
 DIST_DIR="$(cd "${1:?serve la cartella dist di PyInstaller}" && pwd)"
-APP="${DIST_DIR}/EcoMonitor.app"
-EXECUTABLE="${APP}/Contents/MacOS/EcoMonitor"
+APP="${DIST_DIR}/CarbONara.app"
+EXECUTABLE="${APP}/Contents/MacOS/CarbONara"
 CLI="${DIST_DIR}/ecomonitor-cli"
 GUI_SECONDS="${GUI_SECONDS:-20}"
 EXPECTED_IDENTIFIER=io.github.caponifederico.ecomonitor
@@ -48,8 +48,8 @@ echo "dati spediti: study_endpoint"
 
 SMOKE_HOME="$(mktemp -d)"
 export HOME="${SMOKE_HOME}"
-DATA_DIR="${HOME}/Library/Application Support/ecomonitor"
-LOG_FILE="${DATA_DIR}/ecomonitor.log"
+DATA_DIR="${HOME}/Library/Application Support/carbonara"
+LOG_FILE="${DATA_DIR}/carbonara.log"
 
 echo
 echo "=== CLI impacchettata"
@@ -96,7 +96,7 @@ AGENT="${HOME}/Library/LaunchAgents/${EXPECTED_IDENTIFIER}.plist"
 if [[ -f ${AGENT} ]]; then
     plutil -lint "${AGENT}"
     target="$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "${AGENT}")"
-    [[ ${target} == "$(cd "$(dirname "${EXECUTABLE}")" && pwd -P)/EcoMonitor" ]] ||
+    [[ ${target} == "$(cd "$(dirname "${EXECUTABLE}")" && pwd -P)/CarbONara" ]] ||
         fail "l'avvio automatico punta a ${target}"
     echo "avvio automatico: ${target}"
 else

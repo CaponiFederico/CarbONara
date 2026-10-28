@@ -5,13 +5,14 @@
 
 set -u
 
-APP_EXECUTABLE="/Applications/EcoMonitor.app/Contents/MacOS/EcoMonitor"
+APP_EXECUTABLE="/Applications/CarbONara.app/Contents/MacOS/CarbONara"
+LEGACY_EXECUTABLE="/Applications/EcoMonitor.app/Contents/MacOS/EcoMonitor"
 
 RELAUNCH_LIST=/private/var/run/io.github.caponifederico.ecomonitor.relaunch
 
 running_pids() {
     #( |$): l'avvio automatico nascosto la lancia con --background
-    pgrep -f "^${APP_EXECUTABLE}( |$)" 2>/dev/null || true
+    pgrep -f "^(${APP_EXECUTABLE}|${LEGACY_EXECUTABLE})( |$)" 2>/dev/null || true
 }
 
 #un elenco rimasto da un'installazione interrotta non deve riaprire niente
@@ -30,7 +31,7 @@ if [ -n "${pids}" ]; then
             esac
         done >"${RELAUNCH_LIST}"
     )
-    echo "EcoMonitor: chiusura dell'app in esecuzione (${pids})"
+    echo "CarbO'Nara: chiusura dell'app in esecuzione (${pids})"
     # shellcheck disable=SC2086
     kill -TERM ${pids} 2>/dev/null || true
     for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -39,7 +40,7 @@ if [ -n "${pids}" ]; then
     done
     pids="$(running_pids)"
     if [ -n "${pids}" ]; then
-        echo "EcoMonitor: non si e' chiusa, la termino"
+        echo "CarbO'Nara: non si e' chiusa, la termino"
         # shellcheck disable=SC2086
         kill -KILL ${pids} 2>/dev/null || true
     fi

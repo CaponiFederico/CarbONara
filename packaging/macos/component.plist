@@ -14,7 +14,7 @@
 		<key>BundleOverwriteAction</key>
 		<string>upgrade</string>
 		<key>RootRelativeBundlePath</key>
-		<string>EcoMonitor.app</string>
+		<string>CarbONara.app</string>
 	</dict>
 </array>
 </plist>

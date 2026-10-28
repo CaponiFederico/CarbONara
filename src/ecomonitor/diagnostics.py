@@ -142,9 +142,9 @@ def cmd_env(args: argparse.Namespace) -> None:
     #la chiave ElectricityMaps sta solo sul server: l'app chiede a lui
     endpoint = config.effective_study_endpoint
     if endpoint:
-        _line(OK, f"server EcoMonitor (dati di rete e studio): {endpoint}")
+        _line(OK, f"server CarbO'Nara (dati di rete e studio): {endpoint}")
     else:
-        _line(WARN, "server EcoMonitor: non configurato - si usera' il dataset statico")
+        _line(WARN, "server CarbO'Nara: non configurato - si usera' il dataset statico")
 
 
 # -- sensors: i domini di potenza, campionati piu' volte --------------------
@@ -275,7 +275,7 @@ def cmd_grid(args: argparse.Namespace) -> None:
     _title(f"Intensita' di rete - zona {service.zone} (paese {service.country_code})")
 
     if not service.has_live_provider:
-        _line(WARN, "nessun server EcoMonitor: verra' usato solo il dataset statico")
+        _line(WARN, "nessun server CarbO'Nara: verra' usato solo il dataset statico")
 
     intensity = service.get_current_intensity()
     static = STATIC_FALLBACK_G_PER_KWH.get(
@@ -305,7 +305,7 @@ def cmd_grid(args: argparse.Namespace) -> None:
     elif service.last_live_failure is not None:
         _line(
             WARN,
-            f"il server EcoMonitor non risponde: valore di ripiego "
+            f"il server CarbO'Nara non risponde: valore di ripiego "
             f"{intensity:.0f} gCO2/kWh dalla {fallback_label}, controllare i log",
         )
     elif service.last_value_source == HOUR_MEDIAN_SOURCE:

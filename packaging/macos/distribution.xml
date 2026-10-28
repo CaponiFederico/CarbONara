@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<!-- Installer grafico di EcoMonitor
+<!-- Installer grafico di CarbO'Nara
 
     domains: solo installazione di sistema
     hostArchitectures: solo Apple Silicon-->
     
 <installer-gui-script minSpecVersion="2">
-    <title>EcoMonitor</title>
+    <title>CarbO'Nara</title>
     <organization>io.github.caponifederico</organization>
     <options customize="never" require-scripts="true" hostArchitectures="arm64"/>
     <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>

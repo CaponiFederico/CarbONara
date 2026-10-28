@@ -16,7 +16,7 @@ remove | purge)
     if command -v update-desktop-database >/dev/null; then
         update-desktop-database -q /usr/share/applications || true
     fi
-    echo "Le misure raccolte restano in ~/.local/share/ecomonitor di ogni utente:"
+    echo "Le misure raccolte restano in ~/.local/share/carbonara di ogni utente:"
     echo "cancellarle a mano se non servono piu'."
     ;;
 esac

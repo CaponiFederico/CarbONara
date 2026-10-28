@@ -6,12 +6,12 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
 
-  <name>EcoMonitor</name>
+  <name>CarbO'Nara</name>
   <summary>Consumo energetico e emissioni di CO2eq del computer</summary>
 
   <description>
     <p>
-      EcoMonitor misura quanta energia consuma questo computer e attribuisce a
+      CarbO'Nara misura quanta energia consuma questo computer e attribuisce a
       ogni wattora l'intensita' di carbonio della rete elettrica nel momento in
       cui e' stato consumato. Su un portatile a batteria l'attribuzione risale
       al momento della ricarica, non a quello dell'uso.
@@ -56,6 +56,7 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.1.1" date="2026-10-28" />
     <release version="0.1.0" date="2026-09-01" />
   </releases>
 </component>

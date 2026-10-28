@@ -10,7 +10,7 @@
 #   winget install --id JRSoftware.InnoSetup -e
 #
 # Produce:
-#   EcoMonitor-<versione>-windows-x64-setup.exe 
+#   CarbONara-<versione>-windows-x64-setup.exe 
 
 [CmdletBinding()]
 param(
@@ -62,14 +62,14 @@ if ($foreign) { throw "dist contiene file di una build Linux ($($foreign[0].Name
 
 & powershell.exe -NoProfile -ExecutionPolicy Bypass `
     -File (Join-Path $PackagingDir "read_study_endpoint.ps1") `
-    -OutFile (Join-Path (Join-Path $DistDir "EcoMonitor") "study_endpoint")
+    -OutFile (Join-Path (Join-Path $DistDir "CarbONara") "study_endpoint")
 if ($LASTEXITCODE -ne 0) { throw "indirizzo del server dello studio non disponibile: pacchetto non costruito" }
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 & $iscc "/DAppVersion=$Version" (Join-Path $PackagingDir "ecomonitor.iss") | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup ha fallito la compilazione" }
 
-$SetupPath = Join-Path $OutDir "EcoMonitor-$Version-windows-x64-setup.exe"
+$SetupPath = Join-Path $OutDir "CarbONara-$Version-windows-x64-setup.exe"
 $setupMb = [math]::Round((Get-Item $SetupPath).Length / 1MB, 1)
 Write-Host ""
 Write-Host "Setup pronto: $SetupPath ($setupMb MB)"

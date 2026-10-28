@@ -1,4 +1,4 @@
-EcoMonitor e' in Applicazioni ed e' autorizzato a misurare.
+CarbO'Nara e' in Applicazioni ed e' autorizzato a misurare.
 
 Alla prima apertura la finestra dice che cosa sta misurando davvero: deve
 riportare "misura nativa". Se dice che sta stimando, l'autorizzazione non e'
@@ -7,13 +7,13 @@ mostrato dall'app stessa indica il comando per rimediare.
 
 Per togliere l'autorizzazione senza disinstallare l'app, a tutti gli account:
 
-  sudo bash "/Applications/EcoMonitor.app/Contents/Resources/install_powermetrics_permissions.sh" --uninstall
+  sudo bash "/Applications/CarbONara.app/Contents/Resources/install_powermetrics_permissions.sh" --uninstall
 
 Solo a uno, aggiungendo in fondo:  --user NOME
 
 Per disinstallare del tutto, in Applicazioni c'e' accanto all'app:
 
-  EcoMonitorUninstall.command
+  CarbONaraUninstall.command
 
 Doppio clic. Chiede la password, toglie l'app, l'autorizzazione e l'avvio
 automatico, e domanda se cancellare anche le misure raccolte. Trascinare l'app

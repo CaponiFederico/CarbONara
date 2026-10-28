@@ -14,8 +14,15 @@ configure)
     done
     if [ "${applied}" -eq 0 ]; then
         echo "NOTA: nessun contatore RAPL trovato: questa CPU non li espone (AMD pre-Zen,"
-        echo "      ARM, macchina virtuale). EcoMonitor stimera' il consumo del processore."
+        echo "      ARM, macchina virtuale). CarbO'Nara stimera' il consumo del processore."
     fi
+
+    for entry in /home/*/.config/autostart/ecomonitor.desktop; do
+        [ -f "${entry}" ] && [ ! -L "${entry}" ] || continue
+        grep -q /opt/ecomonitor/EcoMonitor "${entry}" || continue
+        owner="$(stat -c %U "${entry}")" || continue
+        runuser -u "${owner}" -- sed -i 's|/opt/ecomonitor/EcoMonitor|/opt/ecomonitor/CarbONara|g' "${entry}" || true
+    done
 
     if command -v udevadm >/dev/null; then
         udevadm control --reload-rules || true
