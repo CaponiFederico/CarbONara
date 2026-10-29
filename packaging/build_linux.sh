@@ -65,7 +65,7 @@ rm -rf "${STAGE_DIR}"
 mkdir -p "${STAGE_DIR}" "${OUT_DIR}"
 cp -r "${DIST_DIR}/CarbONara" "${STAGE_DIR}/CarbONara"
 cp "${PACKAGING_DIR}/linux_install.sh" "${STAGE_DIR}/install.sh"
-"${PACKAGING_DIR}/read_study_endpoint.sh" >"${STAGE_DIR}/CarbONara/study_endpoint"
+bash "${PACKAGING_DIR}/read_study_endpoint.sh" >"${STAGE_DIR}/CarbONara/study_endpoint"
 chmod 0644 "${STAGE_DIR}/CarbONara/study_endpoint"
 cp "${PACKAGING_DIR}/ecomonitor.desktop" "${PACKAGING_DIR}/ecomonitor.png" "${STAGE_DIR}/"
 #le regole udev per RAPL servono all'utente dopo l'installazione

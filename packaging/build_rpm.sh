@@ -115,7 +115,7 @@ cp -r "${DIST_DIR}/CarbONara/." "${STAGE_DIR}/opt/ecomonitor/"
 chmod +x "${STAGE_DIR}/opt/ecomonitor/CarbONara"
 ln -sf /opt/ecomonitor/CarbONara "${STAGE_DIR}/usr/bin/ecomonitor"
 
-"${PACKAGING_DIR}/read_study_endpoint.sh" >"${STAGE_DIR}/opt/ecomonitor/study_endpoint"
+bash "${PACKAGING_DIR}/read_study_endpoint.sh" >"${STAGE_DIR}/opt/ecomonitor/study_endpoint"
 chmod 0644 "${STAGE_DIR}/opt/ecomonitor/study_endpoint"
 
 sed "s|__EXEC__|/opt/ecomonitor/CarbONara|" "${PACKAGING_DIR}/ecomonitor.desktop" \
