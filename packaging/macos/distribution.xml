@@ -21,7 +21,7 @@
         <line choice="default"/>
     </choices-outline>
     <choice id="default" visible="false">
-        <pkg-ref id="io.github.caponifederico.ecomonitor"/>
+        <pkg-ref id="io.github.caponifederico.carbonara"/>
     </choice>
-    <pkg-ref id="io.github.caponifederico.ecomonitor" version="__VERSION__">__COMPONENT__</pkg-ref>
+    <pkg-ref id="io.github.caponifederico.carbonara" version="__VERSION__">__COMPONENT__</pkg-ref>
 </installer-gui-script>

@@ -35,7 +35,7 @@ IS_LINUX = sys.platform.startswith("linux")
 IS_MACOS = sys.platform == "darwin"
 
 #lo stesso di autostart.LAUNCH_AGENT_LABEL
-BUNDLE_IDENTIFIER = "io.github.caponifederico.ecomonitor"
+BUNDLE_IDENTIFIER = "io.github.caponifederico.carbonara"
 
 #Su Windows i sensori veri richiedono un processo elevato. 
 #build con permessi alti obbligati: ECOMONITOR_UAC_ADMIN=1

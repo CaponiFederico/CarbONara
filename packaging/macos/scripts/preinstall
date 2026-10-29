@@ -8,7 +8,7 @@ set -u
 APP_EXECUTABLE="/Applications/CarbONara.app/Contents/MacOS/CarbONara"
 LEGACY_EXECUTABLE="/Applications/EcoMonitor.app/Contents/MacOS/EcoMonitor"
 
-RELAUNCH_LIST=/private/var/run/io.github.caponifederico.ecomonitor.relaunch
+RELAUNCH_LIST=/private/var/run/io.github.caponifederico.carbonara.relaunch
 
 running_pids() {
     #( |$): l'avvio automatico nascosto la lancia con --background

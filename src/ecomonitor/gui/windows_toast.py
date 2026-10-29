@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 #lo stesso identificativo del pacchetto macOS e dell'installer
-APP_USER_MODEL_ID = "io.github.caponifederico.ecomonitor"
+APP_USER_MODEL_ID = "io.github.caponifederico.carbonara"
 APP_DISPLAY_NAME = "CarbO'Nara"
 
 URI_SCHEME = "ecomonitor"

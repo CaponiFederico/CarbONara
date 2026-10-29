@@ -11,7 +11,7 @@ APP="${DIST_DIR}/CarbONara.app"
 EXECUTABLE="${APP}/Contents/MacOS/CarbONara"
 CLI="${DIST_DIR}/ecomonitor-cli"
 GUI_SECONDS="${GUI_SECONDS:-20}"
-EXPECTED_IDENTIFIER=io.github.caponifederico.ecomonitor
+EXPECTED_IDENTIFIER=io.github.caponifederico.carbonara
 
 fail() {
     echo "FALLITO: $*" >&2

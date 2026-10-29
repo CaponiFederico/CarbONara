@@ -54,7 +54,7 @@ OUT_DIR="${PACKAGING_DIR}/out"
 MACOS_DIR="${PACKAGING_DIR}/macos"
 STAGE_DIR="${BUILD_DIR}/stage-macos"
 APP="${DIST_DIR}/CarbONara.app"
-BUNDLE_IDENTIFIER=io.github.caponifederico.ecomonitor
+BUNDLE_IDENTIFIER=io.github.caponifederico.carbonara
 #il nome che l'utente vede in Applicazioni: .command per il doppio clic
 UNINSTALLER="CarbONaraUninstall.command"
 PKG="${OUT_DIR}/carbonara-${VERSION}-macos-${ARCH}.pkg"

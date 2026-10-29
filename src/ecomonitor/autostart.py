@@ -27,7 +27,7 @@ SCRIPT_NAME = "autostart.ps1"
 XDG_AUTOSTART_ENTRY = "carbonara.desktop"
 
 #lo stesso identificativo del bundle in packaging/ecomonitor.spec
-LAUNCH_AGENT_LABEL = "io.github.caponifederico.ecomonitor"
+LAUNCH_AGENT_LABEL = "io.github.caponifederico.carbonara"
 
 HIDDEN_START_FLAG = "--background"
 

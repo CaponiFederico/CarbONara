@@ -8,7 +8,7 @@ APP="${2:-/Applications}/CarbONara.app"
 [ -d "${APP}" ] || APP="${3:-}/Applications/CarbONara.app"
 PERMISSIONS_SCRIPT="${APP}/Contents/Resources/install_powermetrics_permissions.sh"
 #scritto da preinstall
-RELAUNCH_LIST=/private/var/run/io.github.caponifederico.ecomonitor.relaunch
+RELAUNCH_LIST=/private/var/run/io.github.caponifederico.carbonara.relaunch
 rm -f "${APP}/Contents/Resources/api_key"
 
 #preinstall ha chiuso l'app
@@ -32,21 +32,12 @@ trap relaunch EXIT
 APPLICATIONS="${APP%/*}"
 APPLICATIONS="${APPLICATIONS/#\/\//\/}"
 LEGACY_APP="${APPLICATIONS}/EcoMonitor.app"
-LEGACY_EXECUTABLE="${LEGACY_APP}/Contents/MacOS/EcoMonitor"
 NEW_EXECUTABLE="${APPLICATIONS}/CarbONara.app/Contents/MacOS/CarbONara"
 if [ -x "${NEW_EXECUTABLE}" ]; then
     if [ -d "${LEGACY_APP}" ]; then
         rm -rf "${LEGACY_APP}" && echo "CarbO'Nara: rimossa la versione precedente ${LEGACY_APP}"
     fi
     rm -f "${APPLICATIONS}/EcoMonitorUninstall.command"
-    for agent in /Users/*/Library/LaunchAgents/io.github.caponifederico.ecomonitor.plist; do
-        [ -f "${agent}" ] && [ ! -L "${agent}" ] || continue
-        [ "$(plutil -extract ProgramArguments.0 raw -o - "${agent}" 2>/dev/null)" = "${LEGACY_EXECUTABLE}" ] ||
-            continue
-        owner="$(stat -f %Su "${agent}")" || continue
-        sudo -u "${owner}" plutil -replace ProgramArguments.0 -string "${NEW_EXECUTABLE}" "${agent}" &&
-            echo "CarbO'Nara: avvio automatico aggiornato per ${owner}"
-    done
 fi
 
 #La regola si aggiunge per chi installa: chi l'aveva gia' la conserva

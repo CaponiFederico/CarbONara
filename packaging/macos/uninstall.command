@@ -10,7 +10,7 @@ set -uo pipefail
 APP="/Applications/CarbONara.app"
 EXECUTABLE="${APP}/Contents/MacOS/CarbONara"
 SUDOERS_PATH=/etc/sudoers.d/ecomonitor-powermetrics
-RECEIPT=io.github.caponifederico.ecomonitor
+RECEIPT=io.github.caponifederico.carbonara
 AGENT_RELATIVE="Library/LaunchAgents/${RECEIPT}.plist"
 DATA_RELATIVE="Library/Application Support/carbonara"
 
