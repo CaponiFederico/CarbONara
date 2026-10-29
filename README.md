@@ -31,12 +31,15 @@ osserva il momento della ricarica e non quello dell'uso.
 | **Altre distribuzioni Linux** | `carbonara-<versione>-linux-x86_64.tar.gz` | senza root, in `~/.local` |
 
 **Windows.** L'installer non è firmato: SmartScreen può bloccarlo finché non si sceglie
-*Ulteriori informazioni › Esegui comunque*. Per misurare la CPU serve il driver
-PawnIO, che l'installer propone di scaricare e installare.
+*Ulteriori informazioni › Esegui comunque*. Installa per tutto il computer, in
+*Programmi*, e chiede i permessi di amministratore una volta sola, all'inizio: dopo,
+l'app parte senza altre richieste. Per misurare la CPU serve il driver PawnIO: se
+manca, l'installer propone di scaricarlo e installarlo.
 
 **macOS.** Al primo avvio può essere necessario aprirlo da *Impostazioni › Privacy e
-sicurezza*. Il pacchetto autorizza da solo la lettura dei sensori (*powermetrics*).
-Per disinstallare c'è *CarbONaraUninstall.command* in Applicazioni.
+sicurezza*. Il pacchetto autorizza da solo la lettura dei sensori (*powermetrics*)
+per l'utente che lo installa; un altro utente dello stesso Mac la ottiene con
+`sudo bash /Applications/CarbONara.app/Contents/Resources/install_powermetrics_permissions.sh`.
 
 **Linux, `.tar.gz`:**
 
@@ -47,9 +50,22 @@ sudo bash /tmp/carbonara/scripts/install_rapl_permissions.sh   # per misurare la
 ```
 
 `.deb` e `.rpm` installano da soli la regola che rende leggibili i contatori RAPL.
+Su Linux l'app compare nel menu delle applicazioni e si avvia anche col comando
+`carbonara`.
 
-I dati restano sul computer, nella cartella *carbonara* dei dati utente, anche dopo
-una disinstallazione.
+### Disinstallazione
+
+| sistema | come |
+| --- | --- |
+| **Windows** | *Impostazioni › App › CarbO'Nara › Disinstalla* |
+| **macOS** | doppio clic su *CarbONaraUninstall.command* in Applicazioni |
+| **Debian / Ubuntu** | `sudo apt remove carbonara` |
+| **Fedora** | `sudo dnf remove carbonara` |
+| **`.tar.gz`** | `bash /tmp/carbonara/install.sh --uninstall`, dalla cartella estratta |
+
+Le misure restano sul computer, nella cartella *carbonara* dei dati utente
+(`~/.local/share/carbonara` su Linux): solo il disinstallatore di macOS chiede se
+cancellarle, altrove vanno tolte a mano.
 
 ---
 

@@ -4,6 +4,8 @@ Architecture: __ARCH__
 Maintainer: Federico Caponi <f.caponi7@studenti.unipi.it>
 Installed-Size: __SIZE__
 Depends: libc6, libdrm2, libegl1, libgl1, libglvnd0, libglx0, libwayland-client0, libwayland-cursor0, libwayland-egl1, libxcb1
+Conflicts: ecomonitor
+Replaces: ecomonitor
 Section: utils
 Priority: optional
 Description: Misura consumo energetico e emissioni di CO2eq del computer

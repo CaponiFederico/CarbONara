@@ -16,6 +16,9 @@ OUT_DIR="${PACKAGING_DIR}/out"
 STAGE_DIR="${PACKAGING_DIR}/build/deb"
 RAPL_SCRIPT="${PROJECT_ROOT}/scripts/install_rapl_permissions.sh"
 ORIGIN_FILE="${DIST_DIR}/CarbONara.origin"
+LICENSE_FILE="${PROJECT_ROOT}/LICENSE"
+METAINFO_ID="io.github.caponifederico.carbonara"
+METAINFO_FILE="${PACKAGING_DIR}/${METAINFO_ID}.metainfo.xml"
 
 source "${PACKAGING_DIR}/bundle_origin.sh"
 
@@ -53,13 +56,41 @@ if [[ ${rule_count} -ne 1 ]]; then
 fi
 RULE_LINE="$(grep -E '^SUBSYSTEM=="powercap"' "${RAPL_SCRIPT}")"
 
+if [[ ! -f ${LICENSE_FILE} ]]; then
+    echo "ERRORE: manca ${LICENSE_FILE}." >&2
+    exit 2
+fi
+
+if [[ ! -f ${METAINFO_FILE} ]]; then
+    echo "ERRORE: manca ${METAINFO_FILE}." >&2
+    exit 2
+fi
+
+if command -v appstreamcli >/dev/null; then
+    if ! appstreamcli validate --no-net "${METAINFO_FILE}" >/dev/null 2>&1; then
+        echo "ERRORE: ${METAINFO_FILE} non supera la convalida AppStream:" >&2
+        appstreamcli validate --no-net "${METAINFO_FILE}" >&2 || true
+        exit 2
+    fi
+else
+    echo "NOTA: appstreamcli non installato, metadati non convalidati (sudo apt install appstream)."
+fi
+
+metainfo_version="$(grep -m1 -o '<release version="[^"]*"' "${METAINFO_FILE}" | cut -d'"' -f2)"
+if [[ ${metainfo_version} != "${VERSION}" ]]; then
+    echo "ERRORE: in ${METAINFO_FILE} la prima release e' '${metainfo_version}', il pacchetto e' ${VERSION}." >&2
+    exit 2
+fi
+
 rm -rf "${STAGE_DIR}"
 mkdir -p "${STAGE_DIR}/DEBIAN" \
     "${STAGE_DIR}/opt/carbonara" \
     "${STAGE_DIR}/usr/bin" \
     "${STAGE_DIR}/usr/share/applications" \
     "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps" \
-    "${STAGE_DIR}/usr/lib/udev/rules.d"
+    "${STAGE_DIR}/usr/lib/udev/rules.d" \
+    "${STAGE_DIR}/usr/share/doc/carbonara" \
+    "${STAGE_DIR}/usr/share/metainfo"
 
 cp -r "${DIST_DIR}/CarbONara/." "${STAGE_DIR}/opt/carbonara/"
 chmod +x "${STAGE_DIR}/opt/carbonara/CarbONara"
@@ -74,6 +105,12 @@ chmod 0644 "${STAGE_DIR}/usr/share/applications/carbonara.desktop"
 cp "${PACKAGING_DIR}/carbonara.png" \
     "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps/carbonara.png"
 
+cp "${LICENSE_FILE}" "${STAGE_DIR}/usr/share/doc/carbonara/copyright"
+chmod 0644 "${STAGE_DIR}/usr/share/doc/carbonara/copyright"
+
+cp "${METAINFO_FILE}" "${STAGE_DIR}/usr/share/metainfo/${METAINFO_ID}.metainfo.xml"
+chmod 0644 "${STAGE_DIR}/usr/share/metainfo/${METAINFO_ID}.metainfo.xml"
+
 {
     echo "# Installata dal pacchetto carbonara: rende leggibili i contatori RAPL"
     echo "# deve restare su una riga sola"
@@ -83,6 +120,17 @@ chmod 0644 "${STAGE_DIR}/usr/lib/udev/rules.d/99-carbonara-rapl.rules"
 
 find "${STAGE_DIR}" -type d -exec chmod 0755 {} +
 chmod 0644 "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps/carbonara.png"
+
+icon_name="$(sed -n 's/^Icon=//p' "${STAGE_DIR}/usr/share/applications/carbonara.desktop")"
+if [[ ! -f ${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps/${icon_name}.png ]]; then
+    echo "ERRORE: il file .desktop chiede l'icona '${icon_name}', che non e' nel pacchetto." >&2
+    exit 2
+fi
+launchable="$(sed -n 's|.*<launchable type="desktop-id">\(.*\)</launchable>.*|\1|p' "${METAINFO_FILE}")"
+if [[ ! -f ${STAGE_DIR}/usr/share/applications/${launchable} ]]; then
+    echo "ERRORE: il metainfo rimanda a '${launchable}', che non e' nel pacchetto." >&2
+    exit 2
+fi
 
 INSTALLED_SIZE="$(du -sk --exclude=DEBIAN "${STAGE_DIR}" | cut -f1)"
 sed -e "s|__VERSION__|${VERSION}|" -e "s|__ARCH__|${ARCH}|" -e "s|__SIZE__|${INSTALLED_SIZE}|" \
@@ -106,6 +154,8 @@ done
 contents="$(dpkg-deb --contents "${DEB}")"
 for required in ./opt/carbonara/CarbONara ./usr/bin/carbonara \
     ./usr/share/applications/carbonara.desktop \
+    ./usr/share/doc/carbonara/copyright \
+    "./usr/share/metainfo/${METAINFO_ID}.metainfo.xml" \
     ./usr/lib/udev/rules.d/99-carbonara-rapl.rules; do
     #il symlink non chiude la riga
     if ! grep -qE " ${required}( -> |$)" <<<"${contents}"; then

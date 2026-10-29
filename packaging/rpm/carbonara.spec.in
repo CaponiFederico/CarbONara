@@ -28,6 +28,8 @@ Requires:       libwayland-egl
 Requires:       libxcb
 Requires:       fontconfig
 Requires:       freetype
+Obsoletes:      ecomonitor < 0.1.1
+Conflicts:      ecomonitor
 
 %description
 CarbO'Nara misura quanta energia consuma questo computer e attribuisce a ogni
@@ -102,7 +104,9 @@ if [ "$1" = 0 ]; then
 fi
 exit 0
 
-%post
+#a fine transazione e non dopo l'installazione: togliendo ecomonitor, il suo postun
+#gira dopo il nostro post e rimetterebbe i contatori RAPL a 0400
+%posttrans
 applied=0
 for energy_file in /sys/class/powercap/intel-rapl:*/energy_uj; do
     [ -e "${energy_file}" ] || continue
