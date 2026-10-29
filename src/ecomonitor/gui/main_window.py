@@ -908,7 +908,7 @@ class MainWindow(QMainWindow):
         central = self.centralWidget()
         central_layout = central.layout() if central is not None else None
         needed = self.sizeHint().height()
-        if central_layout is not None:
+        if central is not None and central_layout is not None:
             central_layout.activate()
             if central_layout.hasHeightForWidth():
                 chrome = self.height() - central.height()
