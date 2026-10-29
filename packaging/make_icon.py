@@ -1,7 +1,7 @@
 #Genera i file d'icona che servono agli installatori
 #   python packaging/make_icon.py
 #
-#packaging/ecomonitor.ico (Windows), packaging/ecomonitor.png (Linux) e
+#packaging/ecomonitor.ico (Windows), packaging/carbonara.png (Linux) e
 #packaging/ecomonitor.icns (macOS), senza iconutil
 
 from __future__ import annotations
@@ -98,7 +98,7 @@ def main() -> int:
 
     ico_path = out_dir / "ecomonitor.ico"
     ico_path.write_bytes(build_ico(frames))
-    png_path = out_dir / "ecomonitor.png"
+    png_path = out_dir / "carbonara.png"
     png_path.write_bytes(frames[PNG_SIZE])
 
     icns_frames = {size: render_png(size) for _, size in ICNS_TYPES}

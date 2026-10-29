@@ -67,7 +67,7 @@ cp -r "${DIST_DIR}/CarbONara" "${STAGE_DIR}/CarbONara"
 cp "${PACKAGING_DIR}/linux_install.sh" "${STAGE_DIR}/install.sh"
 bash "${PACKAGING_DIR}/read_study_endpoint.sh" >"${STAGE_DIR}/CarbONara/study_endpoint"
 chmod 0644 "${STAGE_DIR}/CarbONara/study_endpoint"
-cp "${PACKAGING_DIR}/ecomonitor.desktop" "${PACKAGING_DIR}/ecomonitor.png" "${STAGE_DIR}/"
+cp "${PACKAGING_DIR}/carbonara.desktop" "${PACKAGING_DIR}/carbonara.png" "${STAGE_DIR}/"
 #le regole udev per RAPL servono all'utente dopo l'installazione
 mkdir -p "${STAGE_DIR}/scripts"
 cp "${PROJECT_ROOT}/scripts/install_rapl_permissions.sh" "${STAGE_DIR}/scripts/"

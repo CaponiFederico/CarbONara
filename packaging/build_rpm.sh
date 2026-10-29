@@ -4,7 +4,7 @@
 # dalla root del progetto dopo packaging/build_linux.sh
 #   bash packaging/build_rpm.sh
 #
-# Produce packaging/out/ecomonitor-<versione>-1.<dist>.<arch>.rpm
+# Produce packaging/out/carbonara-<versione>-1.<dist>.<arch>.rpm
 #
 # Serve rpmbuild, che non chiede root ma deve esserci:
 #   sudo dnf install rpm-build
@@ -19,12 +19,12 @@ OUT_DIR="${PACKAGING_DIR}/out"
 RPM_DIR="${PACKAGING_DIR}/build/rpm"
 STAGE_DIR="${RPM_DIR}/root"
 TOP_DIR="${RPM_DIR}/topdir"
-SPEC_TEMPLATE="${PACKAGING_DIR}/rpm/ecomonitor.spec.in"
+SPEC_TEMPLATE="${PACKAGING_DIR}/rpm/carbonara.spec.in"
 ORIGIN_FILE="${DIST_DIR}/CarbONara.origin"
 RAPL_SCRIPT="${PROJECT_ROOT}/scripts/install_rapl_permissions.sh"
 LICENSE_FILE="${PROJECT_ROOT}/LICENSE"
 #Il nome del file e' l'id del componente AppStream li vuole uguali
-METAINFO_ID="io.github.caponifederico.ecomonitor"
+METAINFO_ID="io.github.caponifederico.carbonara"
 METAINFO_FILE="${PACKAGING_DIR}/${METAINFO_ID}.metainfo.xml"
 
 source "${PACKAGING_DIR}/bundle_origin.sh"
@@ -45,7 +45,7 @@ DIST_TAG="$(rpm --eval '%{?dist}')"
 require_bundle_origin "${ORIGIN_FILE}" fedora \
     "su Fedora:  bash packaging/build_linux.sh && bash packaging/build_rpm.sh" || exit 2
 
-RPM="${OUT_DIR}/ecomonitor-${VERSION}-1${DIST_TAG}.${ARCH}.rpm"
+RPM="${OUT_DIR}/carbonara-${VERSION}-1${DIST_TAG}.${ARCH}.rpm"
 mkdir -p "${OUT_DIR}"
 rm -f "${RPM}"
 
@@ -102,45 +102,45 @@ else
 fi
 
 rm -rf "${RPM_DIR}"
-mkdir -p "${STAGE_DIR}/opt/ecomonitor" \
+mkdir -p "${STAGE_DIR}/opt/carbonara" \
     "${STAGE_DIR}/usr/bin" \
     "${STAGE_DIR}/usr/share/applications" \
     "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps" \
     "${STAGE_DIR}/usr/lib/udev/rules.d" \
-    "${STAGE_DIR}/usr/share/licenses/ecomonitor" \
+    "${STAGE_DIR}/usr/share/licenses/carbonara" \
     "${STAGE_DIR}/usr/share/metainfo" \
     "${TOP_DIR}/SPECS" "${TOP_DIR}/BUILD" "${TOP_DIR}/RPMS"
 
-cp -r "${DIST_DIR}/CarbONara/." "${STAGE_DIR}/opt/ecomonitor/"
-chmod +x "${STAGE_DIR}/opt/ecomonitor/CarbONara"
-ln -sf /opt/ecomonitor/CarbONara "${STAGE_DIR}/usr/bin/ecomonitor"
+cp -r "${DIST_DIR}/CarbONara/." "${STAGE_DIR}/opt/carbonara/"
+chmod +x "${STAGE_DIR}/opt/carbonara/CarbONara"
+ln -sf /opt/carbonara/CarbONara "${STAGE_DIR}/usr/bin/carbonara"
 
-bash "${PACKAGING_DIR}/read_study_endpoint.sh" >"${STAGE_DIR}/opt/ecomonitor/study_endpoint"
-chmod 0644 "${STAGE_DIR}/opt/ecomonitor/study_endpoint"
+bash "${PACKAGING_DIR}/read_study_endpoint.sh" >"${STAGE_DIR}/opt/carbonara/study_endpoint"
+chmod 0644 "${STAGE_DIR}/opt/carbonara/study_endpoint"
 
-sed "s|__EXEC__|/opt/ecomonitor/CarbONara|" "${PACKAGING_DIR}/ecomonitor.desktop" \
-    >"${STAGE_DIR}/usr/share/applications/ecomonitor.desktop"
-chmod 0644 "${STAGE_DIR}/usr/share/applications/ecomonitor.desktop"
-cp "${PACKAGING_DIR}/ecomonitor.png" \
-    "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps/ecomonitor.png"
+sed "s|__EXEC__|/opt/carbonara/CarbONara|" "${PACKAGING_DIR}/carbonara.desktop" \
+    >"${STAGE_DIR}/usr/share/applications/carbonara.desktop"
+chmod 0644 "${STAGE_DIR}/usr/share/applications/carbonara.desktop"
+cp "${PACKAGING_DIR}/carbonara.png" \
+    "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps/carbonara.png"
 
-cp "${LICENSE_FILE}" "${STAGE_DIR}/usr/share/licenses/ecomonitor/LICENSE"
-chmod 0644 "${STAGE_DIR}/usr/share/licenses/ecomonitor/LICENSE"
+cp "${LICENSE_FILE}" "${STAGE_DIR}/usr/share/licenses/carbonara/LICENSE"
+chmod 0644 "${STAGE_DIR}/usr/share/licenses/carbonara/LICENSE"
 
 cp "${METAINFO_FILE}" "${STAGE_DIR}/usr/share/metainfo/${METAINFO_ID}.metainfo.xml"
 chmod 0644 "${STAGE_DIR}/usr/share/metainfo/${METAINFO_ID}.metainfo.xml"
 
 {
-    echo "# Installata dal pacchetto ecomonitor: rende leggibili i contatori RAPL"
+    echo "# Installata dal pacchetto carbonara: rende leggibili i contatori RAPL"
     echo "# deve restare su una riga sola"
     echo "${RULE_LINE}"
-} >"${STAGE_DIR}/usr/lib/udev/rules.d/99-ecomonitor-rapl.rules"
-chmod 0644 "${STAGE_DIR}/usr/lib/udev/rules.d/99-ecomonitor-rapl.rules"
+} >"${STAGE_DIR}/usr/lib/udev/rules.d/99-carbonara-rapl.rules"
+chmod 0644 "${STAGE_DIR}/usr/lib/udev/rules.d/99-carbonara-rapl.rules"
 
 find "${STAGE_DIR}" -type d -exec chmod 0755 {} +
-chmod 0644 "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps/ecomonitor.png"
+chmod 0644 "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps/carbonara.png"
 
-icon_name="$(sed -n 's/^Icon=//p' "${STAGE_DIR}/usr/share/applications/ecomonitor.desktop")"
+icon_name="$(sed -n 's/^Icon=//p' "${STAGE_DIR}/usr/share/applications/carbonara.desktop")"
 if [[ ! -f ${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps/${icon_name}.png ]]; then
     echo "ERRORE: il file .desktop chiede l'icona '${icon_name}', che non e' nel pacchetto." >&2
     exit 2
@@ -151,7 +151,7 @@ if [[ ! -f ${STAGE_DIR}/usr/share/applications/${launchable} ]]; then
     exit 2
 fi
 
-SPEC="${TOP_DIR}/SPECS/ecomonitor.spec"
+SPEC="${TOP_DIR}/SPECS/carbonara.spec"
 sed -e "s|__VERSION__|${VERSION}|" -e "s|__ARCH__|${ARCH}|" -e "s|__STAGE_DIR__|${STAGE_DIR}|" \
     "${SPEC_TEMPLATE}" >"${SPEC}"
 
@@ -168,7 +168,7 @@ if grep -q "Couldn't exec" "${RPMBUILD_LOG}"; then
     exit 2
 fi
 
-BUILT="${TOP_DIR}/RPMS/${ARCH}/ecomonitor-${VERSION}-1${DIST_TAG}.${ARCH}.rpm"
+BUILT="${TOP_DIR}/RPMS/${ARCH}/carbonara-${VERSION}-1${DIST_TAG}.${ARCH}.rpm"
 if [[ ! -f ${BUILT} ]]; then
     echo "ERRORE: rpmbuild non ha prodotto ${BUILT}." >&2
     exit 2
@@ -177,11 +177,11 @@ mv "${BUILT}" "${RPM}"
 
 rpm -qp --info "${RPM}" >/dev/null
 contents="$(rpm -qpl "${RPM}")"
-for required in /opt/ecomonitor/CarbONara /usr/bin/ecomonitor \
-    /usr/share/applications/ecomonitor.desktop \
-    /usr/share/licenses/ecomonitor/LICENSE \
+for required in /opt/carbonara/CarbONara /usr/bin/carbonara \
+    /usr/share/applications/carbonara.desktop \
+    /usr/share/licenses/carbonara/LICENSE \
     "/usr/share/metainfo/${METAINFO_ID}.metainfo.xml" \
-    /usr/lib/udev/rules.d/99-ecomonitor-rapl.rules; do
+    /usr/lib/udev/rules.d/99-carbonara-rapl.rules; do
     if ! grep -qxF "${required}" <<<"${contents}"; then
         echo "ERRORE: ${required} non e' finito nel pacchetto." >&2
         rm -f "${RPM}"
@@ -199,7 +199,7 @@ fi
 #L'eseguibile deve restare quello di PyInstaller
 original_size="$(stat -c %s "${DIST_DIR}/CarbONara/CarbONara")"
 packed_size="$(rpm -qp --qf '[%{FILENAMES} %{FILESIZES}\n]' "${RPM}" |
-    awk '$1 == "/opt/ecomonitor/CarbONara" { print $2 }')"
+    awk '$1 == "/opt/carbonara/CarbONara" { print $2 }')"
 if [[ ${packed_size} != "${original_size}" ]]; then
     echo "ERRORE: l'eseguibile impacchettato misura ${packed_size} byte" >&2
     echo "        invece dei ${original_size} prodotti da PyInstaller." >&2
@@ -211,4 +211,4 @@ echo
 echo "Pacchetto pronto: ${RPM} ($(du -h "${RPM}" | cut -f1))"
 echo "Per installarlo:  doppio clic sul file, oppure"
 echo "                  sudo dnf install ${RPM}"
-echo "Per rimuoverlo:   sudo dnf remove ecomonitor"
+echo "Per rimuoverlo:   sudo dnf remove carbonara"

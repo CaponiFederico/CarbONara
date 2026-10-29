@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-RULE_PATH=/etc/udev/rules.d/99-ecomonitor-rapl.rules
+RULE_PATH=/etc/udev/rules.d/99-carbonara-rapl.rules
 OLD_RULE=/etc/udev/rules.d/99-rapl.rules
 
 if [[ ${EUID} -ne 0 ]]; then
@@ -45,7 +45,7 @@ echo "Permessi applicati a ${applied} domini RAPL nella sessione corrente."
 
 # cambio la regola udev per mantenere le modifiche tra i riavvi
 cat >"${RULE_PATH}" <<'RULE'
-# Installata da ecomonitor/scripts/install_rapl_permissions.sh
+# Installata da carbonara/scripts/install_rapl_permissions.sh
 SUBSYSTEM=="powercap", ACTION=="add", KERNEL=="intel-rapl:*", RUN+="/bin/chmod a+r /sys%p/energy_uj"
 RULE
 

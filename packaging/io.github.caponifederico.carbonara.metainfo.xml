@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <component type="desktop-application">
-  <id>io.github.caponifederico.ecomonitor</id>
+  <id>io.github.caponifederico.carbonara</id>
 
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
@@ -29,9 +29,9 @@
     </p>
   </description>
 
-  <pkgname>ecomonitor</pkgname>
+  <pkgname>carbonara</pkgname>
 
-  <launchable type="desktop-id">ecomonitor.desktop</launchable>
+  <launchable type="desktop-id">carbonara.desktop</launchable>
 
   <url type="homepage">https://github.com/CaponiFederico/CarbONara</url>
 
@@ -41,9 +41,8 @@
   </developer>
 
   <categories>
-    <category>Utility</category>
-    <category>Monitor</category>
     <category>System</category>
+    <category>Monitor</category>
   </categories>
 
   <keywords>

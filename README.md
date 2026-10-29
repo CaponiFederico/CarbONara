@@ -26,8 +26,8 @@ osserva il momento della ricarica e non quello dell'uso.
 | --- | --- | --- |
 | **Windows 10/11** (x64) | `CarbONara-<versione>-windows-x64-setup.exe` | doppio clic |
 | **macOS** (Apple Silicon) | `carbonara-<versione>-macos-arm64.pkg` | doppio clic |
-| **Debian / Ubuntu** | `ecomonitor_<versione>_amd64.deb` | `sudo apt install ./ecomonitor_<versione>_amd64.deb` |
-| **Fedora** | `ecomonitor-<versione>-1.<dist>.x86_64.rpm` | `sudo dnf install ./ecomonitor-<versione>-*.rpm` |
+| **Debian / Ubuntu** | `carbonara_<versione>_amd64.deb` | `sudo apt install ./carbonara_<versione>_amd64.deb` |
+| **Fedora** | `carbonara-<versione>-1.<dist>.x86_64.rpm` | `sudo dnf install ./carbonara-<versione>-*.rpm` |
 | **Altre distribuzioni Linux** | `carbonara-<versione>-linux-x86_64.tar.gz` | senza root, in `~/.local` |
 
 **Windows.** L'installer non è firmato: SmartScreen può bloccarlo finché non si sceglie

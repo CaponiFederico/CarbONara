@@ -4,7 +4,7 @@
 # dalla root del progetto dopo packaging/build_linux.sh
 #   bash packaging/build_deb.sh
 #
-# Produce packaging/out/ecomonitor_<versione>_<arch>.deb
+# Produce packaging/out/carbonara_<versione>_<arch>.deb
 
 set -euo pipefail
 
@@ -26,7 +26,7 @@ ARCH="$(dpkg --print-architecture)"
 require_bundle_origin "${ORIGIN_FILE}" debian \
     "su Debian/Ubuntu:  bash packaging/build_linux.sh && bash packaging/build_deb.sh" || exit 2
 
-DEB="${OUT_DIR}/ecomonitor_${VERSION}_${ARCH}.deb"
+DEB="${OUT_DIR}/carbonara_${VERSION}_${ARCH}.deb"
 mkdir -p "${OUT_DIR}"
 rm -f "${DEB}"
 
@@ -55,34 +55,34 @@ RULE_LINE="$(grep -E '^SUBSYSTEM=="powercap"' "${RAPL_SCRIPT}")"
 
 rm -rf "${STAGE_DIR}"
 mkdir -p "${STAGE_DIR}/DEBIAN" \
-    "${STAGE_DIR}/opt/ecomonitor" \
+    "${STAGE_DIR}/opt/carbonara" \
     "${STAGE_DIR}/usr/bin" \
     "${STAGE_DIR}/usr/share/applications" \
     "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps" \
     "${STAGE_DIR}/usr/lib/udev/rules.d"
 
-cp -r "${DIST_DIR}/CarbONara/." "${STAGE_DIR}/opt/ecomonitor/"
-chmod +x "${STAGE_DIR}/opt/ecomonitor/CarbONara"
-ln -sf /opt/ecomonitor/CarbONara "${STAGE_DIR}/usr/bin/ecomonitor"
+cp -r "${DIST_DIR}/CarbONara/." "${STAGE_DIR}/opt/carbonara/"
+chmod +x "${STAGE_DIR}/opt/carbonara/CarbONara"
+ln -sf /opt/carbonara/CarbONara "${STAGE_DIR}/usr/bin/carbonara"
 
-bash "${PACKAGING_DIR}/read_study_endpoint.sh" >"${STAGE_DIR}/opt/ecomonitor/study_endpoint"
-chmod 0644 "${STAGE_DIR}/opt/ecomonitor/study_endpoint"
+bash "${PACKAGING_DIR}/read_study_endpoint.sh" >"${STAGE_DIR}/opt/carbonara/study_endpoint"
+chmod 0644 "${STAGE_DIR}/opt/carbonara/study_endpoint"
 
-sed "s|__EXEC__|/opt/ecomonitor/CarbONara|" "${PACKAGING_DIR}/ecomonitor.desktop" \
-    >"${STAGE_DIR}/usr/share/applications/ecomonitor.desktop"
-chmod 0644 "${STAGE_DIR}/usr/share/applications/ecomonitor.desktop"
-cp "${PACKAGING_DIR}/ecomonitor.png" \
-    "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps/ecomonitor.png"
+sed "s|__EXEC__|/opt/carbonara/CarbONara|" "${PACKAGING_DIR}/carbonara.desktop" \
+    >"${STAGE_DIR}/usr/share/applications/carbonara.desktop"
+chmod 0644 "${STAGE_DIR}/usr/share/applications/carbonara.desktop"
+cp "${PACKAGING_DIR}/carbonara.png" \
+    "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps/carbonara.png"
 
 {
-    echo "# Installata dal pacchetto ecomonitor: rende leggibili i contatori RAPL"
+    echo "# Installata dal pacchetto carbonara: rende leggibili i contatori RAPL"
     echo "# deve restare su una riga sola"
     echo "${RULE_LINE}"
-} >"${STAGE_DIR}/usr/lib/udev/rules.d/99-ecomonitor-rapl.rules"
-chmod 0644 "${STAGE_DIR}/usr/lib/udev/rules.d/99-ecomonitor-rapl.rules"
+} >"${STAGE_DIR}/usr/lib/udev/rules.d/99-carbonara-rapl.rules"
+chmod 0644 "${STAGE_DIR}/usr/lib/udev/rules.d/99-carbonara-rapl.rules"
 
 find "${STAGE_DIR}" -type d -exec chmod 0755 {} +
-chmod 0644 "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps/ecomonitor.png"
+chmod 0644 "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps/carbonara.png"
 
 INSTALLED_SIZE="$(du -sk --exclude=DEBIAN "${STAGE_DIR}" | cut -f1)"
 sed -e "s|__VERSION__|${VERSION}|" -e "s|__ARCH__|${ARCH}|" -e "s|__SIZE__|${INSTALLED_SIZE}|" \
@@ -104,9 +104,9 @@ for script in postinst prerm postrm; do
     fi
 done
 contents="$(dpkg-deb --contents "${DEB}")"
-for required in ./opt/ecomonitor/CarbONara ./usr/bin/ecomonitor \
-    ./usr/share/applications/ecomonitor.desktop \
-    ./usr/lib/udev/rules.d/99-ecomonitor-rapl.rules; do
+for required in ./opt/carbonara/CarbONara ./usr/bin/carbonara \
+    ./usr/share/applications/carbonara.desktop \
+    ./usr/lib/udev/rules.d/99-carbonara-rapl.rules; do
     #il symlink non chiude la riga
     if ! grep -qE " ${required}( -> |$)" <<<"${contents}"; then
         echo "ERRORE: ${required} non e' finito nel pacchetto." >&2
@@ -119,4 +119,4 @@ echo
 echo "Pacchetto pronto: ${DEB} ($(du -h "${DEB}" | cut -f1))"
 echo "Per installarlo:  doppio clic sul file, oppure"
 echo "                  sudo apt install ${DEB}"
-echo "Per rimuoverlo:   sudo apt remove ecomonitor"
+echo "Per rimuoverlo:   sudo apt remove carbonara"

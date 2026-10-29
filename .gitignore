@@ -17,7 +17,7 @@ packaging/build/
 packaging/dist/
 packaging/out/
 packaging/ecomonitor.ico
-packaging/ecomonitor.png
+packaging/carbonara.png
 
 tests_macos/
 pytest.ini

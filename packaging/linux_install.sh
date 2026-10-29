@@ -5,22 +5,22 @@
 #   bash install.sh
 #   bash install.sh --uninstall
 #
-# Installa in ~/.local/lib/ecomonitor, con i comandi in ~/.local/bin e la voce
+# Installa in ~/.local/lib/carbonara, con i comandi in ~/.local/bin e la voce
 # di menu in ~/.local/share/applications
 
 set -euo pipefail
 
-APP_DIR="${HOME}/.local/lib/ecomonitor"
+APP_DIR="${HOME}/.local/lib/carbonara"
 BIN_DIR="${HOME}/.local/bin"
 DESKTOP_DIR="${HOME}/.local/share/applications"
 ICON_DIR="${HOME}/.local/share/icons/hicolor/256x256/apps"
 DATA_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/carbonara"
-DESKTOP_FILE="${DESKTOP_DIR}/ecomonitor.desktop"
+DESKTOP_FILE="${DESKTOP_DIR}/carbonara.desktop"
 
 if [[ ${1:-} == "--uninstall" ]]; then
     rm -rf "${APP_DIR}"
-    rm -f "${BIN_DIR}/ecomonitor"
-    rm -f "${DESKTOP_FILE}" "${ICON_DIR}/ecomonitor.png"
+    rm -f "${BIN_DIR}/carbonara"
+    rm -f "${DESKTOP_FILE}" "${ICON_DIR}/carbonara.png"
     command -v update-desktop-database >/dev/null && update-desktop-database "${DESKTOP_DIR}" || true
     echo "CarbO'Nara rimosso."
     echo "I dati misurati restano in ${DATA_DIR}: cancellarli a mano se non servono piu'."
@@ -34,7 +34,7 @@ if [[ ! -x ${SOURCE_DIR}/CarbONara/CarbONara ]]; then
     exit 2
 fi
 
-if pgrep -x 'CarbONara|EcoMonitor' >/dev/null 2>&1; then
+if pgrep -x 'CarbONara|carbonara' >/dev/null 2>&1; then
     echo "ERRORE: CarbO'Nara e' in esecuzione. Chiuderlo e riprovare." >&2
     exit 3
 fi
@@ -45,16 +45,11 @@ mkdir -p "${APP_DIR}" "${BIN_DIR}" "${DESKTOP_DIR}" "${ICON_DIR}"
 cp -r "${SOURCE_DIR}/CarbONara/." "${APP_DIR}/"
 chmod +x "${APP_DIR}/CarbONara"
 
-ln -sf "${APP_DIR}/CarbONara" "${BIN_DIR}/ecomonitor"
+ln -sf "${APP_DIR}/CarbONara" "${BIN_DIR}/carbonara"
 
-cp "${SOURCE_DIR}/ecomonitor.png" "${ICON_DIR}/ecomonitor.png"
-sed "s|__EXEC__|${APP_DIR}/CarbONara|" "${SOURCE_DIR}/ecomonitor.desktop" >"${DESKTOP_FILE}"
+cp "${SOURCE_DIR}/carbonara.png" "${ICON_DIR}/carbonara.png"
+sed "s|__EXEC__|${APP_DIR}/CarbONara|" "${SOURCE_DIR}/carbonara.desktop" >"${DESKTOP_FILE}"
 chmod 0644 "${DESKTOP_FILE}"
-
-AUTOSTART_ENTRY="${XDG_CONFIG_HOME:-${HOME}/.config}/autostart/ecomonitor.desktop"
-if [[ -f ${AUTOSTART_ENTRY} ]]; then
-    sed -i "s|${APP_DIR}/EcoMonitor|${APP_DIR}/CarbONara|g" "${AUTOSTART_ENTRY}"
-fi
 
 if command -v update-desktop-database >/dev/null; then
     update-desktop-database "${DESKTOP_DIR}" || true
@@ -64,7 +59,7 @@ if command -v gtk-update-icon-cache >/dev/null; then
 fi
 
 echo "CarbO'Nara installato in ${APP_DIR}"
-echo "Comando: ecomonitor (interfaccia grafica)"
+echo "Comando: carbonara (interfaccia grafica)"
 if [[ :${PATH}: != *:${BIN_DIR}:* ]]; then
     echo "NOTA: ${BIN_DIR} non e' nel PATH. Aggiungerlo per usare il comando per nome."
 fi

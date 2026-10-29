@@ -24,7 +24,7 @@ TASK_NAME = "EcoMonitor"
 LAUNCHER_TASK_NAME = "EcoMonitor avvio"
 SCRIPT_NAME = "autostart.ps1"
 
-XDG_AUTOSTART_ENTRY = "ecomonitor.desktop"
+XDG_AUTOSTART_ENTRY = "carbonara.desktop"
 
 #lo stesso identificativo del bundle in packaging/ecomonitor.spec
 LAUNCH_AGENT_LABEL = "io.github.caponifederico.ecomonitor"
@@ -401,7 +401,7 @@ def _linux_entry_text(start_hidden: bool) -> str:
         #se l'eseguibile non c'e' piu' la voce viene ignorata invece di fallire in
         #silenzio a ogni accesso
         f"TryExec={_target_path()}\n"
-        "Icon=ecomonitor\n"
+        "Icon=carbonara\n"
         "Terminal=false\n"
         "X-GNOME-Autostart-enabled=true\n"
     )

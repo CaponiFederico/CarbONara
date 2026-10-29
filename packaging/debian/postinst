@@ -17,13 +17,6 @@ configure)
         echo "      ARM, macchina virtuale). CarbO'Nara stimera' il consumo del processore."
     fi
 
-    for entry in /home/*/.config/autostart/ecomonitor.desktop; do
-        [ -f "${entry}" ] && [ ! -L "${entry}" ] || continue
-        grep -q /opt/ecomonitor/EcoMonitor "${entry}" || continue
-        owner="$(stat -c %U "${entry}")" || continue
-        runuser -u "${owner}" -- sed -i 's|/opt/ecomonitor/EcoMonitor|/opt/ecomonitor/CarbONara|g' "${entry}" || true
-    done
-
     if command -v udevadm >/dev/null; then
         udevadm control --reload-rules || true
     fi

@@ -23,8 +23,8 @@ OBJECT_PATH = "/org/freedesktop/Notifications"
 INTERFACE = "org.freedesktop.Notifications"
 
 APP_NAME = "CarbO'Nara"
-DESKTOP_ENTRY = "ecomonitor"
-ICON_NAME = "ecomonitor"
+DESKTOP_ENTRY = "carbonara"
+ICON_NAME = "carbonara"
 
 #l'azione che il desktop invoca cliccando la notifica
 DEFAULT_ACTION = "default"

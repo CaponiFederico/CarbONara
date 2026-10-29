@@ -7,7 +7,7 @@
 #un .rpm costruito su Ubuntu porta 343 percorsi in piu' che puntano dentro il bundle
 %global _build_id_links none
 
-Name:           ecomonitor
+Name:           carbonara
 Version:        __VERSION__
 Release:        1%{?dist}
 Summary:        Misura consumo energetico e emissioni di CO2eq del computer
@@ -53,29 +53,29 @@ cp -a __STAGE_DIR__/. %{buildroot}/
 
 %defattr(-,root,root,-)
 
-%dir /usr/share/licenses/ecomonitor
-%license /usr/share/licenses/ecomonitor/LICENSE
-/opt/ecomonitor
-/usr/bin/ecomonitor
-/usr/share/applications/ecomonitor.desktop
-/usr/share/metainfo/io.github.caponifederico.ecomonitor.metainfo.xml
-/usr/share/icons/hicolor/256x256/apps/ecomonitor.png
-/usr/lib/udev/rules.d/99-ecomonitor-rapl.rules
+%dir /usr/share/licenses/carbonara
+%license /usr/share/licenses/carbonara/LICENSE
+/opt/carbonara
+/usr/bin/carbonara
+/usr/share/applications/carbonara.desktop
+/usr/share/metainfo/io.github.caponifederico.carbonara.metainfo.xml
+/usr/share/icons/hicolor/256x256/apps/carbonara.png
+/usr/lib/udev/rules.d/99-carbonara-rapl.rules
 
 %preun
 #Un'applicazione lasciata viva continuerebbe a girare su file cancellatito.
 #
-#Il pacchetto installa anche /usr/bin/ecomonitor come collegamento
+#Il pacchetto installa anche /usr/bin/carbonara come collegamento
 running_pids() {
     for proc_dir in /proc/[0-9]*; do
         read -r comm 2>/dev/null < "${proc_dir}/comm" || continue
         case "${comm}" in
-        CarbONara | EcoMonitor | ecomonitor) ;;
+        CarbONara | carbonara) ;;
         *) continue ;;
         esac
         exe="$(readlink "${proc_dir}/exe" 2>/dev/null || true)"
         case "${exe}" in
-        "/opt/ecomonitor/CarbONara" | "/opt/ecomonitor/CarbONara (deleted)" | "/opt/ecomonitor/EcoMonitor" | "/opt/ecomonitor/EcoMonitor (deleted)")
+        "/opt/carbonara/CarbONara" | "/opt/carbonara/CarbONara (deleted)")
             echo "${proc_dir#/proc/}"
             ;;
         esac
@@ -114,13 +114,6 @@ if [ "${applied}" -eq 0 ]; then
     echo "      ARM, macchina virtuale). CarbO'Nara stimera' il consumo del processore."
 fi
 
-for entry in /home/*/.config/autostart/ecomonitor.desktop; do
-    [ -f "${entry}" ] && [ ! -L "${entry}" ] || continue
-    grep -q /opt/ecomonitor/EcoMonitor "${entry}" || continue
-    owner="$(stat -c %%U "${entry}")" || continue
-    runuser -u "${owner}" -- sed -i 's|/opt/ecomonitor/EcoMonitor|/opt/ecomonitor/CarbONara|g' "${entry}" || true
-done
-
 if command -v udevadm >/dev/null; then
     udevadm control --reload-rules || true
 fi
@@ -133,7 +126,7 @@ fi
 exit 0
 
 %postun
-if [ "$1" = 0 ] && [ ! -e /opt/ecomonitor/CarbONara ]; then
+if [ "$1" = 0 ] && [ ! -e /opt/carbonara/CarbONara ]; then
     for energy_file in /sys/class/powercap/intel-rapl:*/energy_uj; do
         [ -e "${energy_file}" ] || continue
         chmod 0400 "${energy_file}" || true

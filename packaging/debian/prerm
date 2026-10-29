@@ -8,12 +8,12 @@ running_pids() {
     for proc_dir in /proc/[0-9]*; do
         read -r comm 2>/dev/null < "${proc_dir}/comm" || continue
         case "${comm}" in
-        CarbONara | EcoMonitor | ecomonitor) ;;
+        CarbONara | carbonara) ;;
         *) continue ;;
         esac
         exe="$(readlink "${proc_dir}/exe" 2>/dev/null || true)"
         case "${exe}" in
-        "/opt/ecomonitor/CarbONara" | "/opt/ecomonitor/CarbONara (deleted)" | "/opt/ecomonitor/EcoMonitor" | "/opt/ecomonitor/EcoMonitor (deleted)")
+        "/opt/carbonara/CarbONara" | "/opt/carbonara/CarbONara (deleted)")
             echo "${proc_dir#/proc/}"
             ;;
         esac
