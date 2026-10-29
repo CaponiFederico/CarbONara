@@ -80,4 +80,4 @@ tar -czf "${TARBALL}" -C "${STAGE_DIR}" .
 
 echo
 echo "Pacchetto pronto: ${TARBALL} ($(du -h "${TARBALL}" | cut -f1))"
-echo "Per installarlo:  tar -xzf $(basename "${TARBALL}") -C /tmp/ecomonitor && bash /tmp/ecomonitor/install.sh"
+echo "Per installarlo:  mkdir -p /tmp/carbonara && tar -xzf $(basename "${TARBALL}") -C /tmp/carbonara && bash /tmp/carbonara/install.sh"
