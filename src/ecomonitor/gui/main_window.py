@@ -182,7 +182,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, theme: Theme | None = None, database_path: Path | None = None) -> None:
         super().__init__()
-        self.setWindowTitle("CarbO'Nara — impatto del tuo utilizzo attivo")
+        self.setWindowTitle("CarbO'Nara")
         self.setWindowIcon(app_icon())
 
         self._fitted_height: int | None = None
@@ -907,8 +907,11 @@ class MainWindow(QMainWindow):
 
         central = self.centralWidget()
         central_layout = central.layout() if central is not None else None
+        needed = self.sizeHint().height()
         if central_layout is not None:
             central_layout.activate()
-        needed = self.sizeHint().height()
+            if central_layout.hasHeightForWidth():
+                chrome = self.height() - central.height()
+                needed = central_layout.totalHeightForWidth(central.width()) + chrome
         if needed > self.height():
             self._set_height(needed)

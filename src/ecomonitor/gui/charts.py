@@ -6,7 +6,7 @@ from PySide6.QtCore import QEvent, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPaintEvent
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
-from ecomonitor.gui.theme import LIGHT, Theme
+from ecomonitor.gui.theme import LIGHT, Theme, system_point_size
 
 if TYPE_CHECKING:
     from ecomonitor.advisor import AdviceSlot
@@ -230,8 +230,7 @@ class BarChart(QWidget):
 
 class AdviceOutlook(QWidget):
     #Il grafico del consiglio
-    _PLOT_HEIGHT = 72
-    _AXIS_HEIGHT = 14
+    _PLOT_HEIGHT = 84
     _PODIUM_ALPHA = (255, 190, 140)
 
     def __init__(self, parent: QWidget | None = None, theme: Theme | None = None) -> None:
@@ -239,9 +238,19 @@ class AdviceOutlook(QWidget):
         self._theme = theme or LIGHT
         self._outlook: list[AdviceSlot] = []
         self._places: dict[int, int] = {}
-        self.setFixedHeight(self._PLOT_HEIGHT + self._AXIS_HEIGHT)
+        self.setFixedHeight(self._PLOT_HEIGHT + self._text_height())
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setMouseTracking(True)
+
+    def _label_font(self, bold: bool = False) -> QFont:
+        #grandi come le didascalie della finestra (font_small)
+        font = QFont(self.font())
+        font.setPointSizeF(round(system_point_size()))
+        font.setBold(bold)
+        return font
+
+    def _text_height(self) -> int:
+        return QFontMetrics(self._label_font(bold=True)).height()
 
     def set_outlook(
         self, outlook: "Sequence[AdviceSlot]", podium: "Sequence[AdviceSlot]"
@@ -293,8 +302,7 @@ class AdviceOutlook(QWidget):
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        small = QFont(self.font())
-        small.setPointSizeF(max(6.0, self.font().pointSizeF() - 2.0))
+        small = self._label_font()
         painter.setFont(small)
 
         muted = QColor(self._theme.text_muted)
@@ -307,13 +315,13 @@ class AdviceOutlook(QWidget):
         width = max(_MIN_BAR_WIDTH, slot - max(_BAR_GAP, slot * 0.25))
         bottom = float(self._PLOT_HEIGHT)
         #spazio per il "1°" sopra la barra piu' alta
-        usable = self._PLOT_HEIGHT - _VALUE_TEXT_HEIGHT
+        text_height = self._text_height()
+        usable = self._PLOT_HEIGHT - text_height
 
         rest = QColor(self._theme.text_muted)
         rest.setAlpha(90)
         clean = QColor(self._theme.success)
-        bold = QFont(small)
-        bold.setBold(True)
+        bold = self._label_font(bold=True)
         fits = QFontMetrics(bold).horizontalAdvance
         short = fits("00:00") > slot - 2
         for index, bar in enumerate(self._outlook):
@@ -335,14 +343,14 @@ class AdviceOutlook(QWidget):
                 painter.setFont(bold)
                 painter.setPen(clean)
                 painter.drawText(
-                    label_rect.adjusted(0, rect.top() - _VALUE_TEXT_HEIGHT, 0, rect.top()),
+                    label_rect.adjusted(0, rect.top() - text_height, 0, rect.top()),
                     center,
                     f"{place}°",
                 )
             painter.setFont(bold if place is not None else small)
             painter.setPen(clean if place is not None else muted)
             painter.drawText(
-                label_rect.adjusted(0, bottom + 1.0, 0, bottom + 1.0 + self._AXIS_HEIGHT),
+                label_rect.adjusted(0, bottom + 1.0, 0, bottom + 1.0 + text_height),
                 center,
                 self._hour_label(bar, short, fits(bar.when()) <= slot - 2),
             )

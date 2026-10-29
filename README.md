@@ -65,47 +65,6 @@ python -m venv .venv
 
 ---
 
-## Ricreare i pacchetti
-
-Tutte le build vogliono l'indirizzo `https://` del server che fornisce i dati di rete,
-in un file `.study_endpoint` nella radice del progetto (escluso da git) oppure nella
-variabile `ECOMONITOR_STUDY_ENDPOINT`. Senza, si rifiutano di partire.
-
-Il pacchetto si costruisce sul sistema a cui è destinato, con un venv che ha l'extra
-`packaging`. Se l'ultima build in `packaging/dist/` era di un altro sistema, svuotala
-prima.
-
-**Windows**, con [Inno Setup 6](https://jrsoftware.org/isinfo.php)
-(`winget install --id JRSoftware.InnoSetup -e`):
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[gui,windows,packaging]"
-powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
-```
-
-**Linux**: prima l'archivio, poi, se servono, `.deb` e `.rpm` a partire da quello.
-Sulla macchina di build serve `libxcb-cursor0`, altrimenti il pacchetto non parte
-sotto X11.
-
-```bash
-.venv/bin/pip install -e ".[gui,packaging]"
-bash packaging/build_linux.sh
-bash packaging/build_deb.sh      # Debian/Ubuntu
-bash packaging/build_rpm.sh      # Fedora, serve rpm-build
-```
-
-**macOS**, solo con un Python arm64:
-
-```bash
-.venv/bin/pip install -e ".[gui,macos,packaging]"
-bash packaging/build_macos.sh
-bash packaging/smoke_macos.sh    # controllo del pacchetto appena costruito
-```
-
-I pacchetti finiscono in `packaging/out/`.
-
----
-
 ## Appendice: licenza
 
 Il codice di CarbO'Nara è distribuito con licenza **MIT**: vedi [LICENSE](LICENSE).

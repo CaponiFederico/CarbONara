@@ -107,6 +107,10 @@ _FONT_SCALE = {
     "font_title": 1.6,
     "font_card_value": 1.7,
     "font_hero": 2.2,
+    "font_advice_title": 2.0,
+    "font_advice_second": 1.55,
+    "font_advice_detail": 1.4,
+    "font_advice_third": 1.25,
 }
 
 def system_point_size() -> float:
@@ -155,10 +159,10 @@ QFrame#adviceBanner[state="charge_now"] { background: $success_soft; }
 QFrame#adviceBanner[state="charge_now"] QLabel { color: $success; }
 QFrame#adviceBanner[state="wait"] { background: $warning_soft; }
 QFrame#adviceBanner[state="wait"] QLabel { color: $warning; }
-QLabel#adviceTitle { font-size: $font_title; font-weight: 600; }
-QLabel#adviceDetail { font-size: $font_body; }
-QLabel#adviceSecond { font-size: $font_unit; font-weight: 600; }
-QFrame#adviceBanner QLabel#adviceThird { font-size: $font_small; color: $text_muted; }
+QLabel#adviceTitle { font-size: $font_advice_title; font-weight: 600; }
+QLabel#adviceDetail { font-size: $font_advice_detail; }
+QLabel#adviceSecond { font-size: $font_advice_second; font-weight: 600; }
+QFrame#adviceBanner QLabel#adviceThird { font-size: $font_advice_third; color: $text_muted; }
 
 QLabel#detailKey { font-size: $font_small; color: $text_muted; }
 QLabel#detailValue { font-size: $font_small; color: $text; }

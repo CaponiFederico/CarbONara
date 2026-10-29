@@ -1,3 +1,4 @@
+import html
 import logging
 from pathlib import Path
 
@@ -451,9 +452,9 @@ class HistoryPage(QWidget):
         self.grid_profile_note.setText("")
         self.quality_bar.set_segments([])
         self.quality_legend.setText("")
-        self.bias_label.setText("")
-        self.intensity_label.setText("")
-        self.avoided_label.setText("")
+        self._set_note(self.bias_label, "", "bias")
+        self._set_note(self.intensity_label, "", "intensity")
+        self._set_note(self.avoided_label, "", "avoided")
         self.provenance_bar.set_segments([])
         self.provenance_legend.setText("")
 
@@ -569,47 +570,76 @@ class HistoryPage(QWidget):
             ]
         )
 
-        share = summary.measured_share
-        if share is None:
-            self.quality_legend.setText("")
-        else:
-            self.quality_legend.setText(
-                f"{format_energy(summary.measured_wh)} da contatore hardware "
-                f"({share * 100:.0f}%) · {format_energy(summary.estimated_wh)} da modello"
-            )
+        parts = []
+        if summary.measured_wh > 0:
+            parts.append(f"{format_energy(summary.measured_wh)} misurati")
+        if summary.estimated_wh > 0:
+            parts.append(f"{format_energy(summary.estimated_wh)} stimati")
+        self.quality_legend.setText(" · ".join(parts))
 
         bias = summary.estimated_bias_ratio
         if bias is None and not summary.has_both_populations:
-            self.bias_label.setText(
-                "Confronto fra stima e misura non disponibile: nel periodo c'è un solo "
-                "tipo di dato."
-            )
+            #un solo tipo di dato: non c'e' niente da confrontare
+            self._set_note(self.bias_label, "", "bias")
         elif bias is None:
             #entrambe presenti ma troppo corte
             minutes = MIN_COMPARABLE_SECONDS / 60.0
-            self.bias_label.setText(
-                f"Tempo di misura insufficiente per confrontare stima e misura: servono almeno "
-                f"{minutes:.0f} minuti per ciascun tipo. Finora: "
-                f"{format_duration(summary.measured_seconds)} misurati e "
-                f"{format_duration(summary.estimated_seconds)} stimati."
+            self._set_note(
+                self.bias_label,
+                f"Stima e misura confrontabili dopo {minutes:.0f} minuti di ciascuna.",
+                "bias",
+                f"Finora: {format_duration(summary.measured_seconds)} misurati e "
+                f"{format_duration(summary.estimated_seconds)} stimati.",
             )
         else:
             direction = "sopra" if bias > 0 else "sotto"
-            self.bias_label.setText(
-                f"Il modello di ripiego stima {abs(bias) * 100:.0f}% {direction} la misura "
-                f"reale su questa macchina ({summary.mean_w_estimated:.1f} W contro "
-                f"{summary.mean_w_measured:.1f} W medi)."
+            self._set_note(
+                self.bias_label,
+                f"Stima {abs(bias) * 100:.0f}% {direction} la misura "
+                f"({summary.mean_w_estimated:.1f} contro {summary.mean_w_measured:.1f} W).",
+                "bias",
             )
 
         applied = summary.applied_intensity
         if applied is None:
-            self.intensity_label.setText("")
+            self._set_note(self.intensity_label, "", "intensity")
             return
-        self.intensity_label.setText(
-            f"Intensità media pagata: {applied:.0f} gCO2/kWh. "
-            + self._intensity_comparison(summary)
-            + self._battery_note(summary)
+        self._set_note(
+            self.intensity_label,
+            f"Intensità pagata: {applied:.0f} gCO2/kWh" + self._intensity_verdict(summary) + ".",
+            "intensity",
+            (self._intensity_comparison(summary) + self._battery_note(summary)).strip(),
         )
+
+    def _set_note(self, label: QLabel, text: str, help_key: str, detail: str = "") -> None:
+        #a vista la frase corta, la spiegazione intera nel suggerimento
+        label.setText(text)
+        label.setVisible(bool(text))
+        full = f"{_HELP[help_key]}\n\n{detail}" if detail else _HELP[help_key]
+        label.setToolTip("<qt>" + html.escape(full, quote=False).replace("\n", "<br>") + "</qt>")
+        label.setAccessibleDescription(full)
+
+    def _intensity_verdict(self, summary: RangeSummary) -> str:
+        delta = summary.intensity_delta
+        if delta is None:
+            if summary.grid_wh > 0 and summary.grid_mean_intensity is not None:
+                return " · rete osservata troppo poco per un confronto"
+            return ""
+
+        grid_applied = summary.applied_grid_intensity or 0.0
+        mean = summary.grid_mean_intensity or 0.0
+        if abs(delta) <= _INTENSITY_NOISE_RATIO * (mean or 0.1):
+            verdict = f" · dalla rete {grid_applied:.0f}, in linea con la media"
+        else:
+            cleaner = "più pulita" if delta < 0 else "più sporca"
+            verdict = f" · dalla rete {grid_applied:.0f} contro {mean:.0f} di media: {cleaner}"
+
+        grams = summary.load_shift_gco2
+        if grams is None:
+            return verdict
+        if grams >= 0:
+            return f"{verdict}, {format_gco2(grams)} evitati"
+        return f"{verdict}, {format_gco2(-grams)} in più"
 
     def _intensity_comparison(self, summary: RangeSummary) -> str:
         #Il confronto con la rete vale solo per l'energia presa dalla rete
@@ -693,12 +723,26 @@ class HistoryPage(QWidget):
         avoided = summary.avoided
         if not avoided.has_battery:
             #su una macchina sempre collegata il numero non esiste
-            self.avoided_label.setText("")
+            self._set_note(self.avoided_label, "", "avoided")
             return
 
-        self.avoided_label.setText(
-            self._avoided_verdict(avoided) + self._avoided_excluded(avoided)
+        self._set_note(
+            self.avoided_label,
+            self._avoided_short(avoided),
+            "avoided",
+            self._avoided_verdict(avoided) + self._avoided_excluded(avoided),
         )
+
+    @staticmethod
+    def _avoided_short(avoided: AvoidedEmissions) -> str:
+        if avoided.rows < MIN_AVOIDED_ROWS or not avoided.is_publishable:
+            return "Saldo della batteria: dati insufficienti."
+        balance = avoided.balance_gco2
+        if abs(balance) < 1.0:
+            return "Batteria: emissioni pari a quelle dalla presa."
+        if balance > 0:
+            return f"Batteria: {format_gco2(balance)} evitati rispetto alla presa."
+        return f"Batteria: {format_gco2(-balance)} in più rispetto alla presa."
 
     def _avoided_verdict(self, avoided: AvoidedEmissions) -> str:
         if avoided.rows == 0:
