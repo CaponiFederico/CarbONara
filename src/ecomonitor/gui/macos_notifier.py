@@ -203,6 +203,7 @@ class MacNotifier(QObject):
         timer = self._expiry_timers.get(identifier)
         if timer is None:
             timer = QTimer(self)
+            timer.setObjectName(identifier)
             timer.setSingleShot(True)
             timer.timeout.connect(self._on_expired)
             self._expiry_timers[identifier] = timer
