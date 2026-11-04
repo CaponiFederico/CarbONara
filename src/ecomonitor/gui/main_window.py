@@ -76,9 +76,10 @@ _FIELD_HELP = {
         "per ricarica completa."
     ),
     "emails": (
-        "A quante email inviate corrispondono i grammi di CO2 emessi oggi dal "
-        f"computer, contando {G_CO2_PER_EMAIL:g} grammi per una email breve "
-        "scritta e letta su un portatile."
+        "Un paragone per dare un'idea dei grammi di CO2 emessi oggi dal computer: "
+        "sono quelli di altrettante email brevi, scritte e lette su un portatile, "
+        f"contando {G_CO2_PER_EMAIL:g} grammi ciascuna. È solo un confronto: "
+        "l'app non legge e non conta la tua posta."
     ),
     "intensity": (
         "Quanto è pulita l'elettricità che stai usando: grammi di CO2 per ogni "
@@ -117,6 +118,12 @@ _FIELD_HELP = {
         "Che cosa l'app sta misurando davvero e che cosa sta stimando. "
         "I sensori della CPU richiedono che powermetrics sia autorizzato"
     ),
+    "measurement_macos_intel": (
+        "Che cosa l'app sta misurando davvero e che cosa sta stimando. "
+        "Sui Mac Intel CarbO'Nara non è stato provato e la potenza non si legge: "
+        "i consumi sono stimati. I consigli su quando usare l'elettricità, podio "
+        "compreso, dipendono solo dalla rete elettrica e valgono comunque."
+    ),
     "measurement_linux": (
         "Che cosa l'app sta misurando davvero e che cosa sta stimando. "
         "I contatori della CPU (RAPL) vanno resi leggibili una volta con la regola "
@@ -145,6 +152,11 @@ _ADVICE_SIDE_MARGINS = 64
 
 def measurement_help(system: str) -> str:
     key = {"Darwin": "measurement_macos", "Linux": "measurement_linux"}.get(system, "measurement")
+    if key == "measurement_macos":
+        from ecomonitor.sensors.macos_powermetrics import is_apple_silicon
+
+        if not is_apple_silicon():
+            key = "measurement_macos_intel"
     return _FIELD_HELP[key]
 
 def _format_age(seconds: float) -> str:
@@ -357,13 +369,13 @@ class MainWindow(QMainWindow):
             "energia oggi", "Wh", _FIELD_HELP["energy"]
         )
         charges_card, self.phone_charges_label, _ = self._build_card(
-            "ricariche di smartphone", "", _FIELD_HELP["phone_charges"]
+            "pari ai Wh di", "ricariche di smartphone", _FIELD_HELP["phone_charges"]
         )
         gco2_card, self.operational_gco2_label, self.gco2_unit_label = self._build_card(
             "CO2eq oggi", "g", _FIELD_HELP["operational_gco2"]
         )
         emails_card, self.emails_label, _ = self._build_card(
-            "mail inviate", "", _FIELD_HELP["emails"]
+            "pari alla CO2 di", "email", _FIELD_HELP["emails"]
         )
 
         grid.addWidget(energy_card, 0, 0)

@@ -65,10 +65,17 @@ def cmd_env(args: argparse.Namespace) -> None:
 
     elevated = _has_elevated_privileges()
     if platform.system() == "Darwin":
-        from ecomonitor.sensors.macos_powermetrics import permissions_command
+        from ecomonitor.sensors.macos_powermetrics import (
+            INTEL_MAC_NOTICE,
+            is_apple_silicon,
+            permissions_command,
+        )
 
-        print(f"{INFO} privilegi elevati: non servono - conta la regola sudoers")
-        print(f"{INFO} se la misura ripiega: {permissions_command()}")
+        if not is_apple_silicon():
+            print(f"{WARN} {INTEL_MAC_NOTICE}")
+        else:
+            print(f"{INFO} privilegi elevati: non servono - conta la regola sudoers")
+            print(f"{INFO} se la misura ripiega: {permissions_command()}")
     elif platform.system() == "Linux":
         from ecomonitor.sensors.linux_rapl import permissions_command as rapl_command
 

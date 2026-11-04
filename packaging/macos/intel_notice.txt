@@ -1,0 +1,5 @@
+
+Questo pacchetto e' per i Mac Intel, su cui CarbO'Nara non e' stato provato.
+Qui la potenza del processore non si legge, quindi i consumi sono stimati.
+I consigli su quando usare l'elettricita', podio delle ore compreso, valgono
+lo stesso: dipendono solo dalla rete elettrica, non dal computer.

@@ -1,6 +1,8 @@
+import functools
 import logging
 import math
 import os
+import platform
 import plistlib
 import shlex
 import subprocess
@@ -94,6 +96,31 @@ def permissions_script_path() -> Path:
 
 def permissions_command() -> str:
     return f"sudo bash {shlex.quote(str(permissions_script_path()))}"
+
+
+INTEL_MAC_NOTICE = (
+    "Mac Intel: CarbO'Nara non è stato provato su questo processore, e qui i "
+    "consumi sono stimati. I consigli e il podio delle ore valgono lo stesso: "
+    "dipendono dalla rete elettrica, non dal computer."
+)
+
+
+@functools.cache
+def is_apple_silicon() -> bool:
+    current_platform: str = sys.platform
+    if current_platform != "darwin":
+        return True
+    try:
+        value = subprocess.run(
+            ["/usr/sbin/sysctl", "-n", "hw.optional.arm64"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return platform.machine() == "arm64"
+    return value == "1"
 
 
 def split_documents(buffer: bytes) -> tuple[list[bytes], bytes]:

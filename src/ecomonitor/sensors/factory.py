@@ -80,8 +80,15 @@ def _advice_for(system: str | None, calibrated: bool) -> str:
     if system != "Darwin":
         return _ELEVATE if calibrated else _ELEVATE_ONCE
     #su macOS si autorizza powermetrics
-    from ecomonitor.sensors.macos_powermetrics import permissions_command
+    from ecomonitor.sensors.macos_powermetrics import (
+        INTEL_MAC_NOTICE,
+        is_apple_silicon,
+        permissions_command,
+    )
 
+    if not is_apple_silicon():
+        #sui Mac Intel autorizzarlo non servirebbe: si dice cosa vale comunque
+        return INTEL_MAC_NOTICE
     if calibrated:
         return f"Autorizza powermetrics per misurare invece di stimare: {permissions_command()}"
     return (
@@ -120,8 +127,14 @@ def get_backend(db=None) -> SensorBackend:
 
             return _tagged(WindowsLhmBackend(), NATIVE_MODE)
         if system == "Darwin":
-            from ecomonitor.sensors.macos_powermetrics import MacosPowermetricsBackend
+            from ecomonitor.sensors.macos_powermetrics import (
+                MacosPowermetricsBackend,
+                is_apple_silicon,
+            )
 
+            if not is_apple_silicon():
+                #il parser legge solo le chiavi di Apple Silicon
+                raise SensorUnavailableError("Mac Intel, powermetrics non supportato")
             return _tagged(MacosPowermetricsBackend(), NATIVE_MODE)
     except SensorUnavailableError as exc:
         logger.warning("Backend nativo (%s) non disponibile: %s", system, exc)

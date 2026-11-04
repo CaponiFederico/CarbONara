@@ -40,6 +40,12 @@ if [ -x "${NEW_EXECUTABLE}" ]; then
     rm -f "${APPLICATIONS}/EcoMonitorUninstall.command"
 fi
 
+#sui Mac Intel l'app non usa powermetrics: la regola non servirebbe
+if [ "$(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null)" != 1 ]; then
+    echo "CarbO'Nara: Mac Intel, nessuna autorizzazione a powermetrics: i consumi saranno stimati"
+    exit 0
+fi
+
 #La regola si aggiunge per chi installa: chi l'aveva gia' la conserva
 TARGET_USER="${USER:-}"
 if [ -z "${TARGET_USER}" ] || [ "${TARGET_USER}" = root ]; then

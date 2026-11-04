@@ -7,6 +7,12 @@
 # Serve un venv con gli extra [macos] e [packaging]:
 #   python3 -m venv .venv && .venv/bin/pip install -e ".[gui,macos,packaging]"
 #
+# Per i Mac Intel, anche da un Mac Apple Silicon con Rosetta, serve un venv x86_64
+# fuori dal progetto (.gitignore copre solo .venv/), da un Python universale di python.org:
+#   arch -x86_64 /usr/local/bin/python3 -m venv ~/.venv-carbonara-intel
+#   arch -x86_64 ~/.venv-carbonara-intel/bin/pip install -e ".[gui,macos,packaging]"
+#   PYTHON=~/.venv-carbonara-intel/bin/python bash packaging/build_macos.sh --intel
+#
 
 set -euo pipefail
 
@@ -18,33 +24,43 @@ if [[ $(uname -s) != Darwin ]]; then
     exit 2
 fi
 
+EXPECTED_ARCH=arm64
+case "${1:-}" in
+"") ;;
+--intel) EXPECTED_ARCH=x86_64 ;;
+*)
+    echo "ERRORE: argomento sconosciuto ${1}. Uso: build_macos.sh [--intel]" >&2
+    exit 2
+    ;;
+esac
+
 PYTHON="${PYTHON:-${PROJECT_ROOT}/.venv/bin/python}"
 if [[ ! -x ${PYTHON} ]]; then
     echo "ERRORE: nessun interprete in ${PYTHON}. Impostare PYTHON=/percorso/python." >&2
     exit 2
 fi
+PY=(arch "-${EXPECTED_ARCH}" "${PYTHON}")
 
 VERSION="$(grep -m1 -E '^version = ' "${PROJECT_ROOT}/pyproject.toml" | cut -d'"' -f2)"
 [[ -n ${VERSION} ]] || { echo "ERRORE: versione non leggibile da pyproject.toml" >&2; exit 2; }
 
-#solo Apple Silicon
-ARCH="$("${PYTHON}" -c 'import platform; print(platform.machine())')"
-if [[ ${ARCH} != arm64 ]]; then
-    echo "ERRORE: serve un interprete arm64, ${PYTHON} e' ${ARCH}." >&2
+ARCH="$("${PY[@]}" -c 'import platform; print(platform.machine())' 2>/dev/null || true)"
+if [[ ${ARCH} != "${EXPECTED_ARCH}" ]]; then
+    echo "ERRORE: serve un interprete ${EXPECTED_ARCH}, ${PYTHON} e' ${ARCH:-non eseguibile in ${EXPECTED_ARCH}}." >&2
     exit 2
 fi
 
 #senza PyObjC il pacchetto esce senza notifiche native, e non lo dice
-if ! "${PYTHON}" -c 'import UserNotifications' 2>/dev/null; then
+if ! "${PY[@]}" -c 'import UserNotifications' 2>/dev/null; then
     echo "ERRORE: manca PyObjC per le notifiche native." >&2
-    echo "  ${PYTHON} -m pip install -e \".[gui,macos,packaging]\"" >&2
+    echo "  ${PY[*]} -m pip install -e \".[gui,macos,packaging]\"" >&2
     exit 2
 fi
 
 #Qt prima della 6.12 va in crash su macOS 27
-if ! "${PYTHON}" -c 'import sys, PySide6; sys.exit(PySide6.__version_info__[:2] < (6, 12))' 2>/dev/null; then
+if ! "${PY[@]}" -c 'import sys, PySide6; sys.exit(PySide6.__version_info__[:2] < (6, 12))' 2>/dev/null; then
     echo "ERRORE: serve PySide6 6.12 o successiva." >&2
-    echo "  ${PYTHON} -m pip install -U -e \".[gui,macos,packaging]\"" >&2
+    echo "  ${PY[*]} -m pip install -U -e \".[gui,macos,packaging]\"" >&2
     exit 2
 fi
 
@@ -66,7 +82,7 @@ STUDY_ENDPOINT="$(bash "${PACKAGING_DIR}/read_study_endpoint.sh")"
 
 PERMISSIONS_SCRIPT="${PROJECT_ROOT}/scripts/install_powermetrics_permissions.sh"
 RULE_SPEC="$(bash "${PERMISSIONS_SCRIPT}" --print-rule)"
-APP_SPEC="$(PYTHONPATH="${PROJECT_ROOT}/src" "${PYTHON}" -c \
+APP_SPEC="$(PYTHONPATH="${PROJECT_ROOT}/src" "${PY[@]}" -c \
     'from ecomonitor.sensors.macos_powermetrics import sudoers_command_spec; print(sudoers_command_spec())')"
 if [[ ${RULE_SPEC} != "${APP_SPEC}" ]]; then
     echo "ERRORE: la regola sudoers e l'app non lanciano la stessa riga di comando." >&2
@@ -75,13 +91,18 @@ if [[ ${RULE_SPEC} != "${APP_SPEC}" ]]; then
     exit 2
 fi
 
-"${PYTHON}" "${PACKAGING_DIR}/make_icon.py"
-"${PYTHON}" -m PyInstaller --clean --noconfirm \
+"${PY[@]}" "${PACKAGING_DIR}/make_icon.py"
+"${PY[@]}" -m PyInstaller --clean --noconfirm \
     --distpath "${DIST_DIR}" --workpath "${BUILD_DIR}" \
     "${PACKAGING_DIR}/ecomonitor.spec"
 
 if [[ ! -x ${APP}/Contents/MacOS/CarbONara ]]; then
     echo "ERRORE: PyInstaller non ha prodotto ${APP}." >&2
+    exit 2
+fi
+BUILT_ARCHS="$(lipo -archs "${APP}/Contents/MacOS/CarbONara")"
+if [[ " ${BUILT_ARCHS} " != *" ${EXPECTED_ARCH} "* ]]; then
+    echo "ERRORE: l'eseguibile e' ${BUILT_ARCHS}, non ${EXPECTED_ARCH}." >&2
     exit 2
 fi
 
@@ -118,11 +139,17 @@ pkgbuild \
     "${COMPONENT}"
 
 sed -e "s|__VERSION__|${VERSION}|" -e "s|__COMPONENT__|CarbONara.pkg|" \
+    -e "s|__HOST_ARCH__|${EXPECTED_ARCH}|" \
     "${MACOS_DIR}/distribution.xml" >"${STAGE_DIR}/distribution.xml"
+RESOURCES_DIR="${STAGE_DIR}/resources"
+cp -R "${MACOS_DIR}/resources" "${RESOURCES_DIR}"
+if [[ ${EXPECTED_ARCH} == x86_64 ]]; then
+    cat "${MACOS_DIR}/intel_notice.txt" >>"${RESOURCES_DIR}/welcome.txt"
+fi
 productbuild \
     --distribution "${STAGE_DIR}/distribution.xml" \
     --package-path "${STAGE_DIR}/components" \
-    --resources "${MACOS_DIR}/resources" \
+    --resources "${RESOURCES_DIR}" \
     "${PKG}"
 
 #Stesso controllo del .deb
@@ -160,6 +187,10 @@ rm -f "${PAYLOAD_LIST}"
 
 echo
 echo "Pacchetto pronto: ${PKG} ($(du -h "${PKG}" | cut -f1))"
-echo "Doppio clic, una password, e l'app e' installata e autorizzata a misurare."
+if [[ ${EXPECTED_ARCH} == x86_64 ]]; then
+    echo "Per Mac Intel: mai provato su un Mac Intel vero, i consumi li' sono stimati."
+else
+    echo "Doppio clic, una password, e l'app e' installata e autorizzata a misurare."
+fi
 echo "Non e' firmato con un Developer ID: al primo tentativo Gatekeeper lo blocca,"
 echo "si apre da Impostazioni di Sistema > Privacy e sicurezza > Apri comunque."

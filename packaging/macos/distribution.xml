@@ -3,12 +3,12 @@
 <!-- Installer grafico di CarbO'Nara
 
     domains: solo installazione di sistema
-    hostArchitectures: solo Apple Silicon-->
-    
+    hostArchitectures: arm64, x86_64 se build_macos.sh riceve l'opzione intel-->
+
 <installer-gui-script minSpecVersion="2">
     <title>CarbO'Nara</title>
     <organization>io.github.caponifederico</organization>
-    <options customize="never" require-scripts="true" hostArchitectures="arm64"/>
+    <options customize="never" require-scripts="true" hostArchitectures="__HOST_ARCH__"/>
     <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
     <volume-check>
         <allowed-os-versions>
