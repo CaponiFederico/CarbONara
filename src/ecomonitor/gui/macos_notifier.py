@@ -13,7 +13,8 @@ from PySide6.QtCore import QCoreApplication, QObject, Qt, QTimer, Signal, Slot
 if TYPE_CHECKING:
     from ecomonitor.notifications import Notification, NotificationKind
 
-#Notifiche native di macOS (UserNotifications, via PyObjC)
+#Notifiche native di macOS (UserNotifications, via PyObjC), e il centro vecchio
+#(NSUserNotification) quando macOS rifiuta quelle native alla firma ad hoc
 
 logger = logging.getLogger(__name__)
 
@@ -46,18 +47,17 @@ def _error_text(error: Any) -> str:
     except Exception:
         return str(error)
 
-def _on_authorization(granted: bool, error: Any) -> None:
+NOT_ALLOWED_DOMAIN = "UNErrorDomain"
+NOT_ALLOWED_CODE = 1
+
+
+def refused_by_system(granted: bool, error: Any) -> bool:
+    if granted or error is None:
+        return False
     try:
-        if granted:
-            logger.info("Notifiche di macOS: autorizzate")
-        else:
-            logger.warning(
-                "Le notifiche di CarbO'Nara non sono autorizzate nelle impostazioni di "
-                "macOS%s: non compariranno finche' non vengono riattivate",
-                "" if error is None else f" ({_error_text(error)})",
-            )
+        return str(error.domain()) == NOT_ALLOWED_DOMAIN and int(error.code()) == NOT_ALLOWED_CODE
     except Exception:
-        logger.exception("Esito dell'autorizzazione alle notifiche non letto")
+        return False
 
 
 def _on_posted(error: Any) -> None:
@@ -105,6 +105,7 @@ class UserNotificationCenter:
             #da sorgente non c'e' un bundle a cui macOS possa intestarle
             raise OSError("le notifiche native esistono solo nell'app impacchettata")
         self.on_click: Callable[[], None] = _ignore
+        self.refused_by_system = False
         try:
             import UserNotifications as framework
 
@@ -120,10 +121,30 @@ class UserNotificationCenter:
             self._center.setDelegate_(self._delegate)
             self._center.requestAuthorizationWithOptions_completionHandler_(
                 framework.UNAuthorizationOptionAlert | framework.UNAuthorizationOptionSound,
-                _on_authorization,
+                self._on_authorization,
             )
         except Exception as exc:
             raise OSError(f"centro notifiche di macOS non disponibile ({exc})") from exc
+
+    def _on_authorization(self, granted: bool, error: Any) -> None:
+        try:
+            if granted:
+                logger.info("Notifiche di macOS: autorizzate")
+            elif refused_by_system(granted, error):
+                self.refused_by_system = True
+                logger.info(
+                    "macOS rifiuta le notifiche native a questa firma (%s): se c'e', "
+                    "si usa il centro notifiche vecchio",
+                    _error_text(error),
+                )
+            else:
+                logger.warning(
+                    "Le notifiche di CarbO'Nara non sono autorizzate nelle impostazioni di "
+                    "macOS%s: non compariranno finche' non vengono riattivate",
+                    "" if error is None else f" ({_error_text(error)})",
+                )
+        except Exception:
+            logger.exception("Esito dell'autorizzazione alle notifiche non letto")
 
     def _clicked(self) -> None:
         self.on_click()
@@ -152,6 +173,134 @@ class UserNotificationCenter:
             self._center.removeAllDeliveredNotifications()
         except Exception as exc:
             raise OSError(f"notifiche non tolte ({exc})") from exc
+
+
+@functools.cache
+def _legacy_delegate_class() -> Any:
+    import objc
+    from Foundation import NSObject, NSUserNotificationActivationTypeContentsClicked
+
+    class CarbonaraLegacyNotificationDelegate(  # type: ignore[call-arg]
+        NSObject, protocols=[objc.protocolNamed("NSUserNotificationCenterDelegate")]
+    ):
+        def userNotificationCenter_shouldPresentNotification_(
+            self, center: Any, notification: Any
+        ) -> bool:
+            return True
+
+        def userNotificationCenter_didActivateNotification_(
+            self, center: Any, notification: Any
+        ) -> None:
+            try:
+                if notification.activationType() != NSUserNotificationActivationTypeContentsClicked:
+                    return
+                center.removeDeliveredNotification_(notification)
+                self.on_click()
+            except Exception:
+                logger.exception("Clic sulla notifica non gestito")
+
+    return CarbonaraLegacyNotificationDelegate
+
+
+class LegacyNotificationCenter:
+    def __init__(self) -> None:
+        if not getattr(sys, "frozen", False):
+            raise OSError("le notifiche native esistono solo nell'app impacchettata")
+        self.on_click: Callable[[], None] = _ignore
+        self._delivered: dict[str, Any] = {}
+        self._serial = 0
+        try:
+            import Foundation
+
+            self._foundation: Any = Foundation
+            self._center = Foundation.NSUserNotificationCenter.defaultUserNotificationCenter()
+            if self._center is None:
+                raise OSError("nessun bundle a cui intestarle")
+            self._delegate = _legacy_delegate_class().alloc().init()
+            self._delegate.on_click = self._clicked
+            self._center.setDelegate_(self._delegate)
+        except Exception as exc:
+            raise OSError(f"centro notifiche vecchio di macOS non disponibile ({exc})") from exc
+
+    def _clicked(self) -> None:
+        self.on_click()
+
+    def post(self, identifier: str, title: str, body: str) -> None:
+        try:
+            previous = self._delivered.pop(identifier, None)
+            if previous is not None:
+                self._center.removeDeliveredNotification_(previous)
+            self._serial += 1
+            notification = self._foundation.NSUserNotification.alloc().init()
+            notification.setIdentifier_(f"{identifier}.{self._serial}")
+            notification.setTitle_(title)
+            notification.setInformativeText_(body)
+            self._center.deliverNotification_(notification)
+            self._delivered[identifier] = notification
+        except Exception as exc:
+            raise OSError(f"notifica non inviata ({exc})") from exc
+
+    def remove(self, identifier: str) -> None:
+        previous = self._delivered.pop(identifier, None)
+        if previous is None:
+            return
+        try:
+            self._center.removeDeliveredNotification_(previous)
+        except Exception as exc:
+            raise OSError(f"notifica non tolta ({exc})") from exc
+
+    def clear(self) -> None:
+        self._delivered.clear()
+        try:
+            self._center.removeAllDeliveredNotifications()
+        except Exception as exc:
+            raise OSError(f"notifiche non tolte ({exc})") from exc
+
+
+class NativeCenter(NotificationCenter, Protocol):
+    refused_by_system: bool
+
+
+class FallbackNotificationCenter:
+    def __init__(self, native: NativeCenter, legacy: NotificationCenter) -> None:
+        self._native = native
+        self._legacy = legacy
+        self._legacy_announced = False
+        self._on_click: Callable[[], None] = _ignore
+
+    @property
+    def on_click(self) -> Callable[[], None]:
+        return self._on_click
+
+    @on_click.setter
+    def on_click(self, callback: Callable[[], None]) -> None:
+        self._on_click = callback
+        self._native.on_click = callback
+        self._legacy.on_click = callback
+
+    def _active(self) -> NotificationCenter:
+        if not self._native.refused_by_system:
+            return self._native
+        if not self._legacy_announced:
+            self._legacy_announced = True
+            logger.info("Notifiche di macOS dal centro vecchio (NSUserNotification)")
+        return self._legacy
+
+    def post(self, identifier: str, title: str, body: str) -> None:
+        self._active().post(identifier, title, body)
+
+    def remove(self, identifier: str) -> None:
+        self._active().remove(identifier)
+
+    def clear(self) -> None:
+        failure: OSError | None = None
+        for center in (self._native, self._legacy):
+            try:
+                center.clear()
+            except OSError as exc:
+                failure = failure or exc
+        if failure is not None:
+            raise failure
 
 
 def _click_forwarder(notifier: MacNotifier) -> Callable[[], None]:
@@ -248,7 +397,15 @@ class MacNotifier(QObject):
 
 
 def create_macos_notifier() -> MacNotifier:
-    notifier = MacNotifier(UserNotificationCenter())
+    native = UserNotificationCenter()
+    center: NotificationCenter = native
+    try:
+        center = FallbackNotificationCenter(native, LegacyNotificationCenter())
+    except OSError as exc:
+        logger.warning(
+            "%s: se macOS rifiuta le notifiche native, non ne comparira' nessuna", exc
+        )
+    notifier = MacNotifier(center)
     app = QCoreApplication.instance()
     if app is not None:
         app.aboutToQuit.connect(notifier.close_all)

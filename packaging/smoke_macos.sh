@@ -109,7 +109,9 @@ else
     echo "misura: stima (powermetrics non disponibile, vedi registro)"
 fi
 
-if grep -q "Notifiche native di macOS attive" "${LOG_FILE}"; then
+if grep -q "macOS rifiuta le notifiche native a questa firma" "${LOG_FILE}"; then
+    echo "notifiche: centro vecchio (NSUserNotification), macOS rifiuta le native alla firma ad hoc"
+elif grep -q "Notifiche native di macOS attive" "${LOG_FILE}"; then
     echo "notifiche: native"
 elif grep -q "Notifiche native di macOS non disponibili" "${LOG_FILE}"; then
     echo "notifiche: NON native, resta la barra dei menu (vedi registro)"
