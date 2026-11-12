@@ -1,7 +1,7 @@
 ; Procedura guidata di installazione per Windows (Inno Setup 6)
 ;
 ;
-;   ISCC.exe /DAppVersion=0.1.2 packaging\ecomonitor.iss
+;   ISCC.exe /DAppVersion=0.1.3 packaging\ecomonitor.iss
 ; la lancia packaging\build_windows.ps1 dopo PyInstaller
 ;
 ; L'AppId non va mai cambiato
