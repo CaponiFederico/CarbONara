@@ -2,6 +2,7 @@ import os
 import re
 import sys
 from collections.abc import Sequence
+from typing import Any
 
 #Chiede all'istanza in esecuzione di mostrare la finestra
 
@@ -19,9 +20,25 @@ def pipe_name_from(arguments: Sequence[str]) -> str | None:
     return None
 
 
+#AllowSetForegroundWindow
+ASFW_ANY = -1
+
+
+def allow_foreground_handover() -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        windows_ctypes: Any = ctypes
+        return bool(windows_ctypes.WinDLL("user32").AllowSetForegroundWindow(ASFW_ANY))
+    except (OSError, AttributeError):
+        return False
+
+
 def request_window(pipe_name: str) -> bool:
     if os.name != "nt":
         return False
+    allow_foreground_handover()
     try:
         with open(rf"\\.\pipe\{pipe_name}", "wb"):
             pass
