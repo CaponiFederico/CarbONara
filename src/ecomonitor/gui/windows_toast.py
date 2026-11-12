@@ -35,6 +35,9 @@ CLASSES_KEY = r"Software\Classes"
 IDENTITY_KEY = rf"{CLASSES_KEY}\AppUserModelId\{APP_USER_MODEL_ID}"
 PROTOCOL_KEY = rf"{CLASSES_KEY}\{URI_SCHEME}"
 
+#HRESULT_FROM_WIN32(ERROR_NOT_FOUND), «Impossibile trovare elemento»
+IDENTITY_NOT_YET_KNOWN = -2147023728
+
 
 def activation_command(
     pipe_name: str, executable: Path | None = None, frozen: bool | None = None
@@ -123,7 +126,17 @@ class WinRtToastPlatform:
         self._notifier = ToastNotificationManager.create_toast_notifier_with_id(app_id)
         self._history = ToastNotificationManager.history
 
-        setting = self._notifier.setting
+        try:
+            setting = self._notifier.setting
+        except OSError as exc:
+            if getattr(exc, "winerror", None) != IDENTITY_NOT_YET_KNOWN:
+                raise
+            #Windows 10 conosce l'identita' solo dal primo toast, anche registrata
+            logger.info(
+                "Identita' delle notifiche non ancora nota a Windows: la conoscera' "
+                "dalla prima notifica"
+            )
+            return
         if setting != NotificationSetting.ENABLED:
             logger.warning(
                 "Le notifiche di CarbO'Nara sono disattivate nelle impostazioni di "
